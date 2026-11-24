@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Secrets — keep .env.example committed, never .env
+.env
+.env.*
+!.env.example
+
+# Local SQLite database (created automatically by db.js)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Tunnels / misc
+ngrok.yml
+coverage/
