@@ -94,7 +94,7 @@ def guest_register(request):
         }
         for o in rows
     ]
-    if request.query_params.get("format") == "csv":
+    if request.query_params.get("export") == "csv":  # not ?format=, which DRF reserves for content negotiation
         resp = HttpResponse(content_type="text/csv")
         resp["Content-Disposition"] = f'attachment; filename="guest-register-{start}-{end}.csv"'
         w = csv.writer(resp)

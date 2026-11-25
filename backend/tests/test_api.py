@@ -141,3 +141,16 @@ def test_host_card_payment_request_texts_the_link(host_api, unit, foreign_guest)
     assert r.status_code == 200, r.data
     link = Payment.objects.filter(booking=b, status="pending").latest("id").checkout_token
     assert Message.objects.filter(phone=foreign_guest.phone, kind="pay_link", body__contains=link).exists()
+
+
+@pytest.mark.django_db
+def test_compliance_csv_exports(host_api, unit, guest):
+    b = bookings.create_hold(unit=unit, guest=guest, check_in=days(1), check_out=days(3), channel="web")
+    payments.start_payment(b, method="mpesa")
+    payments.on_success(Payment.objects.get(booking=b), transaction_id="QCSV")
+    register = host_api.get(f"/api/host/compliance/register?from={days(0)}&to={days(5)}&export=csv")
+    assert register.status_code == 200 and register["Content-Type"].startswith("text/csv")
+    assert b.ref in register.content.decode()
+    month = f"{days(1):%Y-%m}"
+    tra = host_api.get(f"/api/host/compliance/tra-return?month={month}&export=csv")
+    assert tra.status_code == 200 and tra["Content-Type"].startswith("text/csv")
