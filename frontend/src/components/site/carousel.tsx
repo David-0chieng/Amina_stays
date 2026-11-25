@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils";
 // How many cards fit per breakpoint (gap 12px). Underscores keep the calc() operators spaced.
 const COLS = {
   homes:
-    "auto-cols-[44%] sm:auto-cols-[calc((100%_-_24px)/3)] md:auto-cols-[calc((100%_-_36px)/4)] lg:auto-cols-[calc((100%_-_60px)/6)] 2xl:auto-cols-[calc((100%_-_72px)/7)]",
+    "auto-cols-[44%] sm:auto-cols-[calc((100%_-_24px)/3)] md:auto-cols-[calc((100%_-_36px)/4)] lg:auto-cols-[calc((100%_-_48px)/5)] min-[1128px]:auto-cols-[calc((100%_-_60px)/6)] min-[1400px]:auto-cols-[calc((100%_-_72px)/7)]",
   tiles:
-    "auto-cols-[31%] sm:auto-cols-[calc((100%_-_48px)/5)] md:auto-cols-[calc((100%_-_60px)/6)] lg:auto-cols-[calc((100%_-_72px)/7)] 2xl:auto-cols-[calc((100%_-_96px)/9)]",
+    "auto-cols-[31%] sm:auto-cols-[calc((100%_-_48px)/5)] md:auto-cols-[calc((100%_-_72px)/7)] lg:auto-cols-[calc((100%_-_96px)/9)] min-[1128px]:auto-cols-[calc((100%_-_108px)/10)]",
   wide: "auto-cols-[82%] sm:auto-cols-[calc((100%_-_12px)/2)] md:auto-cols-[calc((100%_-_24px)/3)] xl:auto-cols-[calc((100%_-_36px)/4)]",
 };
 

@@ -102,21 +102,21 @@ export function RangeCalendar({
               <div className="mb-4 flex h-8 items-center justify-center">
                 <span className="text-base font-semibold">{format(month, "MMMM yyyy")}</span>
               </div>
-              <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-ink-2">
+              <div className="grid grid-cols-7 text-center text-xs font-medium text-ink-2">
                 {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
                   <div key={d} className="pb-2">{d}</div>
                 ))}
               </div>
               <div className="grid grid-cols-7" onMouseLeave={() => setHover(null)}>
                 {days.map((day) => {
-                  if (!isSameMonth(day, month)) return <div key={day.toISOString()} className="h-11" />;
+                  if (!isSameMonth(day, month)) return <div key={day.toISOString()} className="h-12" />;
                   const s = state(day);
                   const price = prices?.[s.key];
                   return (
                     <div
                       key={s.key}
                       className={cn(
-                        "relative h-11",
+                        "relative h-12",
                         s.inRange && "bg-surface",
                         s.isStart && (value.to || hover) && "bg-gradient-to-r from-transparent from-50% to-surface to-50%",
                         s.isEnd && "bg-gradient-to-l from-transparent from-50% to-surface to-50%",
@@ -130,10 +130,10 @@ export function RangeCalendar({
                         aria-label={`${format(day, "EEEE d MMMM")}${s.nightTaken ? " (unavailable)" : ""}`}
                         aria-pressed={s.isStart || s.isEnd}
                         className={cn(
-                          "absolute inset-0 m-auto flex size-11 flex-col items-center justify-center rounded-full text-sm font-medium transition-colors",
+                          "absolute inset-0 m-auto flex size-12 flex-col items-center justify-center rounded-full text-sm font-medium transition-colors",
                           !s.disabled && "hover:ring-1 hover:ring-ink",
-                          s.disabled && "cursor-default text-[#b0b0b0]",
-                          s.nightTaken && !s.checkoutOnly && "line-through decoration-ink-3",
+                          s.disabled && "cursor-default text-ink-disabled",
+                          s.nightTaken && !s.checkoutOnly && "line-through decoration-ink-disabled",
                           (s.isStart || s.isEnd) && "bg-ink text-white hover:ring-0",
                         )}
                       >

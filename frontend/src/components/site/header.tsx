@@ -160,18 +160,19 @@ function Tabs({ active }: { active: SiteTab }) {
 /** Mobile tab chips (Homes · Experiences · Services) shown under the search pill. */
 export function MobileTabs({ active, className }: { active: SiteTab; className?: string }) {
   return (
-    <nav className={cn("no-scrollbar flex gap-2 overflow-x-auto border-b border-line-soft px-6 pt-1 pb-3 md:hidden", className)} aria-label="Browse">
+    <nav className={cn("no-scrollbar flex gap-2 overflow-x-auto border-b border-line-soft px-6 pt-1.5 pb-4 md:hidden", className)} aria-label="Browse">
       {SITE_TABS.map((t) => (
         <Link
           key={t.id}
           href={t.href}
           aria-current={t.id === active ? "page" : undefined}
           className={cn(
-            "flex h-11 shrink-0 items-center gap-1.5 rounded-full pr-4 pl-2 text-sm font-medium shadow-[0_2px_6px_rgb(0_0_0/0.08)] transition-colors",
-            t.id === active ? "border border-line bg-chip text-ink" : "border border-line-soft bg-white text-ink-2",
+            // Airbnb's "pillow" chip: layered drop shadow plus a soft top highlight
+            "flex h-10 shrink-0 items-center gap-1.5 rounded-full pr-3.5 pl-2 text-sm text-ink shadow-[0_3px_2.5px_rgb(0_0_0/0.1),0_1px_1px_rgb(0_0_0/0.15),0_0.8px_0.4px_rgb(0_0_0/0.15),inset_0_1px_0_rgb(255_255_255/0.9)] transition-colors",
+            t.id === active ? "bg-chip font-medium" : "bg-white",
           )}
         >
-          <Icon3D name={t.icon} size={30} eager />
+          <Icon3D name={t.icon} size={28} eager />
           {t.label}
         </Link>
       ))}
@@ -342,10 +343,10 @@ export function MobileTabBar() {
                   requireLogin();
                 }
               }}
-              className={cn("flex min-w-16 flex-col items-center gap-1 pt-2.5 pb-2 text-[10px] font-medium", active ? "text-brand-500" : "text-ink-2")}
+              className={cn("flex min-w-16 flex-col items-center gap-1 pt-2.5 pb-2 text-[10px]", active ? "font-medium text-brand-600" : "text-ink-2")}
             >
               <Icon className={cn("size-6", !active && t.icon === BrandMark && "text-ink-3")} strokeWidth={active ? 2.2 : 1.6} />
-              <span className={active ? "text-ink" : undefined}>{t.label}</span>
+              {t.label}
             </Link>
           );
         })}

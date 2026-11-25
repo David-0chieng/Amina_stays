@@ -24,11 +24,11 @@ export function DialogContent({
   const width = { sm: "sm:max-w-md", md: "sm:max-w-xl", lg: "sm:max-w-3xl", xl: "sm:max-w-5xl", full: "sm:max-w-[1200px]" }[size];
   return (
     <D.Portal>
-      <D.Overlay className="fixed inset-0 z-50 bg-black/50 animate-fade-in" />
+      <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-fade-in" />
       <D.Content
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col rounded-t-2xl bg-white shadow-float animate-slide-up outline-none",
-          "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl",
+          "fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col rounded-t-3xl bg-white shadow-float animate-slide-up outline-none",
+          "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl",
           width,
           className,
         )}

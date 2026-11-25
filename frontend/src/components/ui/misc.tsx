@@ -61,7 +61,7 @@ export function Stepper({ value, min = 0, max = 16, onChange, label }: { value: 
         aria-label={`Fewer ${label}`}
         disabled={value <= min}
         onClick={() => onChange(value - 1)}
-        className="grid size-8 place-items-center rounded-full border border-ink-3 text-ink-2 transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-25"
+        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft disabled:cursor-not-allowed disabled:bg-chip/60 disabled:text-ink-disabled"
       >
         <Minus className="size-3.5" strokeWidth={2.5} />
       </button>
@@ -71,7 +71,7 @@ export function Stepper({ value, min = 0, max = 16, onChange, label }: { value: 
         aria-label={`More ${label}`}
         disabled={value >= max}
         onClick={() => onChange(value + 1)}
-        className="grid size-8 place-items-center rounded-full border border-ink-3 text-ink-2 transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-25"
+        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft disabled:cursor-not-allowed disabled:bg-chip/60 disabled:text-ink-disabled"
       >
         <Plus className="size-3.5" strokeWidth={2.5} />
       </button>

@@ -116,15 +116,15 @@ export function HomeCard({ listing: l, query = "", priority }: { listing: Card; 
         {l.guest_favourite && <GuestFavouriteBadge size="sm" className="absolute top-3 left-3" />}
         <WishlistHeart slug={l.slug} saved={l.wishlisted} className="absolute top-2 right-2" />
       </div>
-      <h3 className="mt-2 truncate text-[13px] font-medium">{cardTitle(l)}</h3>
-      <p className="line-clamp-2 text-xs text-ink-2">
+      <h3 className="mt-2 truncate px-1 text-[13px] leading-4 font-medium">{cardTitle(l)}</h3>
+      <p className="line-clamp-2 px-1 text-xs leading-4 text-ink-2">
         {p.total ? `${kes(p.total)} for ${p.nights} night${p.nights !== 1 ? "s" : ""}` : `From ${kes(p.from_nightly)} a night`}
+        <span className="font-bold text-ink-disabled"> · </span>
         {l.rating ? (
           <>
-            {" · "}
             <StarIcon className="-mt-0.5 inline size-2.5" /> {l.rating.toFixed(2)}
           </>
-        ) : " · New"}
+        ) : "New"}
       </p>
     </Link>
   );
@@ -141,8 +141,8 @@ export function HomeCardSkeleton() {
 }
 
 /** Swipeable photo strip with hover arrows and Airbnb-style pager dots (the active one stretches). */
-export function PhotoCarousel({ photos, alt, priority, className, sizes, dotsClassName }: {
-  photos: string[]; alt: string; priority?: boolean; className?: string; sizes?: string; dotsClassName?: string;
+export function PhotoCarousel({ photos, alt, priority, className, sizes, dotsClassName, counter }: {
+  photos: string[]; alt: string; priority?: boolean; className?: string; sizes?: string; dotsClassName?: string; counter?: boolean;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [index, setIndex] = React.useState(0);
@@ -170,11 +170,28 @@ export function PhotoCarousel({ photos, alt, priority, className, sizes, dotsCla
         <>
           <ArrowButton side="left" hidden={index === 0} onClick={(e) => go(e, -1)} />
           <ArrowButton side="right" hidden={index >= list.length - 1} onClick={(e) => go(e, 1)} />
-          <div className={cn("pointer-events-none absolute inset-x-0 bottom-3 flex items-center justify-center gap-1", dotsClassName)}>
-            {list.slice(start, start + 5).map((_, i) => (
-              <span key={start + i} className={cn("h-1.5 rounded-full bg-white transition-all duration-300", start + i === index ? "w-4" : "w-1.5 opacity-60")} />
-            ))}
-          </div>
+          {counter ? (
+            <span className={cn("pointer-events-none absolute right-4 bottom-3 rounded bg-[rgb(34_34_34/0.66)] px-2 py-0.5 text-xs font-medium text-white tabular-nums", dotsClassName)}>
+              {index + 1} / {list.length}
+            </span>
+          ) : (
+            <div className={cn("pointer-events-none absolute inset-x-0 bottom-3 flex items-center justify-center gap-1.5", dotsClassName)}>
+              {list.slice(start, start + 5).map((_, i) => {
+                const n = start + i;
+                // dots at the window's edges shrink when more photos lie beyond them
+                const edge = (i === 0 && start > 0) || (i === 4 && start + 5 < list.length);
+                return (
+                  <span
+                    key={n}
+                    className={cn(
+                      "rounded-full transition-all duration-300",
+                      n === index ? "h-1.5 w-4 bg-white/95" : edge ? "size-1 bg-white/70" : "size-1.5 bg-white/70",
+                    )}
+                  />
+                );
+              })}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -195,7 +212,7 @@ function ArrowButton({ side, hidden, onClick }: { side: "left" | "right"; hidden
         hidden && "md:hidden",
       )}
     >
-      <Icon className="size-4" strokeWidth={2.6} />
+      <Icon className="size-3" strokeWidth={3} />
     </button>
   );
 }
@@ -223,12 +240,12 @@ export function ListingCard({ listing: l, query = "", priority, checkIn, checkOu
         )}
         <WishlistHeart slug={l.slug} saved={l.wishlisted} className="absolute top-2.5 right-2.5" />
       </div>
-      <div className="mt-3 text-[15px] leading-5">
+      <div className="mt-3 space-y-0.5 px-1 text-[15px] leading-[19px] font-medium">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="truncate font-medium">{cardTitle(l)}</h3>
+          <h3 className="truncate">{cardTitle(l)}</h3>
           {l.rating ? (
             <span className="flex shrink-0 items-center gap-1">
-              <StarIcon /> {l.rating.toFixed(2)} <span className="text-ink-2">({l.reviews_count})</span>
+              <StarIcon /> {l.rating.toFixed(2)} ({l.reviews_count})
             </span>
           ) : (
             <span className="shrink-0">New</span>
@@ -239,20 +256,20 @@ export function ListingCard({ listing: l, query = "", priority, checkIn, checkOu
           {l.bedrooms} bedroom{l.bedrooms !== 1 ? "s" : ""} · {l.beds} bed{l.beds !== 1 ? "s" : ""} · {l.bathrooms} bath{l.bathrooms !== 1 ? "s" : ""}
         </p>
         {checkIn && checkOut && <p className="text-ink-2">{fmtRange(checkIn, checkOut)}</p>}
-        <p className="mt-1.5">
+        <p className="pt-1">
           {p.total ? (
             <>
-              <span className="font-semibold underline decoration-1 underline-offset-2">{kes(p.total)}</span>
+              <span className="underline decoration-1 underline-offset-2">{kes(p.total)}</span>
               <span className="text-ink-2"> for {p.nights} night{p.nights !== 1 ? "s" : ""}</span>
             </>
           ) : (
             <>
-              <span className="font-semibold">{kes(p.from_nightly)}</span>
+              <span>{kes(p.from_nightly)}</span>
               <span className="text-ink-2"> a night · sleeps {l.max_guests}</span>
             </>
           )}
         </p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 pt-1.5">
           {l.free_cancellation && <Perk>Free cancellation</Perk>}
           {l.breakfast_available && <Perk>Breakfast available</Perk>}
         </div>
@@ -262,7 +279,7 @@ export function ListingCard({ listing: l, query = "", priority, checkIn, checkOu
 }
 
 function Perk({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-md bg-chip/80 px-1.5 py-0.5 text-[11px] font-medium text-ink">{children}</span>;
+  return <span className="rounded-md bg-chip/75 px-1 py-0.5 text-[11px] leading-[15px] font-medium text-ink-2">{children}</span>;
 }
 
 export function ListingCardSkeleton() {

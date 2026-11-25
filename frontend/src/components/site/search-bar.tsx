@@ -22,7 +22,7 @@ export type SearchState = { area?: string; checkIn?: string; checkOut?: string }
 export type Segment = "where" | "dates" | "who";
 
 /** Search-page filters that survive a new destination/date search from the header. */
-export const FILTER_KEYS = ["tag", "type", "bedrooms", "amenities", "min_price", "max_price", "free_cancellation", "sort"] as const;
+export const FILTER_KEYS = ["tag", "type", "bedrooms", "amenities", "min_price", "max_price", "free_cancellation", "guest_favourite", "sort"] as const;
 
 export function useSearchState(): SearchState {
   const p = useSearchParams();
@@ -198,15 +198,19 @@ export function SearchBar({ initial = null, onClose }: { initial?: Segment | nul
           >
             <span className={cn("block truncate text-sm", guestsSet ? "text-ink" : "text-ink-2")}>{guestsLabel(s)}</span>
           </Field>
-          <Button
-            variant="brand"
+          {/* flat, deeper brand tone like Airbnb's #DA1249 search button; grows into a "Search" pill while a field is open */}
+          <button
+            type="button"
             onClick={go}
             aria-label="Search"
-            className={cn("absolute right-2 h-12 gap-2 overflow-hidden transition-[width,padding] duration-300", active ? "w-[112px] px-4" : "w-12 px-0")}
+            className={cn(
+              "absolute right-2 flex h-12 items-center justify-center gap-2 overflow-hidden rounded-full bg-brand-600 text-white transition-[width,background-color] duration-300 ease-[cubic-bezier(.2,0,0,1)] hover:bg-brand-700 active:scale-[0.96]",
+              active ? "w-[104px] px-4" : "w-12",
+            )}
           >
-            <Search className="size-4" strokeWidth={3} />
-            {active && <span className="text-base">Search</span>}
-          </Button>
+            <Search className="size-4 shrink-0" strokeWidth={3} />
+            {active && <span className="text-base font-medium">Search</span>}
+          </button>
         </div>
       </PopoverAnchor>
       <PopoverContent
@@ -249,7 +253,7 @@ function Field({ label, active, barActive, onClick, onHover, className, children
       onMouseEnter={onHover}
       className={cn(
         "flex h-full min-w-0 cursor-pointer flex-col justify-center rounded-full px-6 text-left transition-[background-color,box-shadow] duration-200",
-        active ? "bg-white shadow-[0_3px_12px_rgb(0_0_0/0.15)]" : barActive ? "hover:bg-line" : "hover:bg-line-soft",
+        active ? "bg-white shadow-[0_3px_12px_rgb(0_0_0/0.1),0_1px_2px_rgb(0_0_0/0.08)]" : barActive ? "hover:bg-line" : "hover:bg-line-soft",
         className,
       )}
     >
@@ -295,7 +299,7 @@ function AreaRow({ onClick, selected, tile, title, subtitle }: { onClick: () => 
       <button type="button" onClick={onClick} className={cn("flex w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors hover:bg-surface", selected && "bg-surface")}>
         {tile}
         <span className="min-w-0">
-          <span className="block truncate text-[15px] text-ink">{title}</span>
+          <span className="block truncate text-base font-medium text-ink">{title}</span>
           <span className="line-clamp-1 text-sm text-ink-2">{subtitle}</span>
         </span>
       </button>
@@ -315,7 +319,7 @@ function DatesPanel({ s, onChange, months = 2 }: { s: SearchState; onChange: (r:
               key={p.label}
               type="button"
               onClick={() => onChange({ from: iso(p.range[0]), to: iso(p.range[1]) })}
-              className={cn("h-8 rounded-full border px-3 text-xs transition-colors", on ? "border-ink bg-surface font-medium" : "border-line hover:border-ink")}
+              className={cn("h-[34px] rounded-3xl border px-3.5 text-xs transition-colors", on ? "border-ink" : "border-line hover:border-ink")}
             >
               {p.label}
             </button>
@@ -352,7 +356,7 @@ export function CompactSearch({ onOpen, className }: { onOpen: (seg: Segment) =>
       <button type="button" onClick={() => onOpen("who")} className={cn("h-full pr-3 pl-4 text-sm whitespace-nowrap", who ? "font-medium" : "text-ink-2")}>
         {who ? guestsLabel(s) : "Add guests"}
       </button>
-      <button type="button" onClick={() => onOpen("where")} aria-label="Search" className="grid size-8 place-items-center rounded-full bg-brand-500 text-white transition-colors hover:bg-brand-600">
+      <button type="button" onClick={() => onOpen("where")} aria-label="Search" className="grid size-8 place-items-center rounded-full bg-brand-600 text-white transition-colors hover:bg-brand-700">
         <Search className="size-3.5" strokeWidth={3.2} />
       </button>
     </div>
@@ -380,16 +384,16 @@ export function MobileSearch({ className }: { className?: string }) {
           setStep("where");
           setOpen(true);
         }}
-        className={cn("flex h-14 w-full items-center justify-center gap-3 rounded-full border border-line-soft bg-white px-6 shadow-[0_3px_12px_rgb(0_0_0/0.1)]", className)}
+        className={cn("flex h-14 w-full items-center justify-center gap-3 rounded-full border border-line bg-white px-6 shadow-[0_6px_20px_rgb(0_0_0/0.1)]", className)}
       >
         <Search className="size-4 shrink-0" strokeWidth={2.8} />
         {hasSearch ? (
           <span className="min-w-0 text-left">
-            <span className="block truncate text-sm font-semibold">{areaName ? `Homes in ${areaName}` : "Homes anywhere"}</span>
+            <span className="block truncate text-sm font-medium">{areaName ? `Homes in ${areaName}` : "Homes anywhere"}</span>
             <span className="block truncate text-xs text-ink-2">{[whenLabel(s, "Any week"), guestsLabel(s)].join(" · ")}</span>
           </span>
         ) : (
-          <span className="text-sm font-semibold">Start your search</span>
+          <span className="text-sm font-medium">Start your search</span>
         )}
       </button>
       <D.Root open={open} onOpenChange={setOpen}>

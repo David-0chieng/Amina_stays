@@ -20,7 +20,7 @@ import { Icon3D } from "@/components/ui/icon3d";
 import { Skeleton, Spinner } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/overlays";
 import { get, post } from "@/lib/api";
-import { approx, fmtDate, fmtRange, fmtTime, kes } from "@/lib/format";
+import { approx, fmtDate, fmtRange, fmtTime, freeCancelUntil, kes } from "@/lib/format";
 import type { Addon, CalendarData, ListingDetail, PaymentResult, Quote, Trip } from "@/lib/types";
 import { COUNTRIES, cn } from "@/lib/utils";
 
@@ -68,6 +68,7 @@ export function CheckoutView({ slug }: { slug: string }) {
   if (!l) return <CheckoutSkeleton />;
 
   const kenyan = !!me?.phone?.startsWith("+254");
+  const freeUntil = freeCancelUntil(l.cancellation.policy, range.from);
   const dueNow = q ? (plan === "deposit" && q.deposit_available ? q.deposit : q.total) : 0;
 
   async function submit() {
@@ -107,12 +108,12 @@ export function CheckoutView({ slug }: { slug: string }) {
   return (
     <>
       <SiteHeader mode="minimal" width="narrow" />
-      <main className="container-narrow pt-6 pb-24 md:pt-12">
+      <main className="container-narrow max-w-[1136px] pt-6 pb-24 md:pt-12">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="-ml-2" onClick={() => router.back()} aria-label="Back"><ChevronLeft className="size-5" /></Button>
           <h1 className="text-[26px] font-semibold tracking-tight md:text-[32px]">{q?.problems?.length ? "Check your trip" : "Confirm and pay"}</h1>
         </div>
-        <div className="mt-6 grid gap-8 md:mt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-16">
+        <div className="mt-6 grid gap-8 md:mt-10 lg:grid-cols-[minmax(0,1fr)_372px] lg:gap-20">
           <div className="min-w-0 space-y-4">
             {showLogin && (
               <StepCard n={num("login")} title="Log in or sign up" state={state("login")} summary={me?.phone ? `Logged in as ${me.phone}` : undefined}>
@@ -255,7 +256,7 @@ export function CheckoutView({ slug }: { slug: string }) {
           </div>
 
           <aside className="order-first lg:order-none">
-            <div className="rounded-2xl border border-line p-6 lg:sticky lg:top-12">
+            <div className="rounded-3xl border border-line p-6 lg:sticky lg:top-12">
               <div className="flex gap-4">
                 <div className="size-[104px] shrink-0 overflow-hidden rounded-xl"><Photo src={l.photos[0]?.src} alt={l.name} className="size-full" sizes="120px" /></div>
                 <div className="min-w-0 self-center">
@@ -265,11 +266,15 @@ export function CheckoutView({ slug }: { slug: string }) {
                 </div>
               </div>
               <div className="mt-6 border-t border-line pt-5">
-                <p className="text-sm"><b className="font-medium">{l.cancellation.label} cancellation.</b> <span className="text-ink-2">{l.cancellation.text}</span></p>
+                {freeUntil ? (
+                  <p className="text-sm"><b className="font-semibold">Free cancellation</b><br /><span className="text-ink-2">Cancel before {fmtDate(freeUntil, "d MMMM")} for a full refund. {l.cancellation.label} policy.</span></p>
+                ) : (
+                  <p className="text-sm"><b className="font-semibold">{l.cancellation.label} cancellation</b><br /><span className="text-ink-2">{l.cancellation.text}</span></p>
+                )}
               </div>
               <SummaryRow label="Dates" value={ready ? fmtRange(range.from, range.to) : "Choose dates"}>
                 <Dialog>
-                  <DialogTrigger asChild><Button variant="soft" size="sm">Change</Button></DialogTrigger>
+                  <DialogTrigger asChild><Button variant="soft" size="sm" className="text-xs">Change</Button></DialogTrigger>
                   <DialogContent title="Change dates" size="lg">
                     <div className="p-6">
                       <RangeCalendar value={range} onChange={setRange} unavailable={new Set(cal?.unavailable ?? [])} prices={cal?.prices} minNights={l.min_nights} />
@@ -279,7 +284,7 @@ export function CheckoutView({ slug }: { slug: string }) {
               </SummaryRow>
               <SummaryRow label="Guests" value={guestsLabel(guests)}>
                 <Dialog>
-                  <DialogTrigger asChild><Button variant="soft" size="sm">Change</Button></DialogTrigger>
+                  <DialogTrigger asChild><Button variant="soft" size="sm" className="text-xs">Change</Button></DialogTrigger>
                   <DialogContent title="Guests" size="sm">
                     <div className="px-6 pb-4"><GuestPicker value={guests} onChange={setGuests} max={l.max_guests} /></div>
                   </DialogContent>
@@ -323,13 +328,13 @@ function StepCard({ n, title, state, summary, onChange, children }: {
   n: number; title: string; state: "active" | "done" | "todo"; summary?: string; onChange?: () => void; children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-line p-6", state === "active" && "shadow-[0_6px_20px_rgb(0_0_0/0.08)]")}>
+    <section className={cn("p-6", state === "active" ? "rounded-3xl shadow-badge" : "rounded-[20px] border border-line")}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className={cn("text-[22px] leading-7 font-semibold", state === "todo" && "text-ink-2")}>{n}. {title}</h2>
+          <h2 className={cn("text-lg leading-6 font-semibold", state === "todo" && "text-ink-2")}>{n}. {title}</h2>
           {state === "done" && summary && <p className="mt-1 truncate text-sm text-ink-2">{summary}</p>}
         </div>
-        {state === "done" && onChange && <Button variant="soft" size="sm" onClick={onChange}>Change</Button>}
+        {state === "done" && onChange && <Button variant="soft" size="sm" className="text-xs" onClick={onChange}>Change</Button>}
       </div>
       {state === "active" && <div className="mt-6 animate-fade-in">{children}</div>}
     </section>

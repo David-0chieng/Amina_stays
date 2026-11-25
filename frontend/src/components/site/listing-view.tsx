@@ -22,7 +22,7 @@ import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar, Skeleton } from "@/components/ui/misc";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlays";
 import { get, post } from "@/lib/api";
-import { approx, fmtRange, fmtShort, hhmm, kes, nightsBetween } from "@/lib/format";
+import { approx, fmtDate, fmtRange, fmtShort, freeCancelUntil, hhmm, kes, nightsBetween } from "@/lib/format";
 import type { CalendarData, ListingDetail, Quote, Review } from "@/lib/types";
 import { cn, flag } from "@/lib/utils";
 
@@ -43,6 +43,13 @@ const CATEGORIES: { key: string; label: string; icon: LucideIcon }[] = [
 const ROOM_LABEL: Record<string, string> = {
   view: "The view", living: "Living room", bedroom: "Bedrooms", kitchen: "Full kitchen", bathroom: "Bathroom", pool: "Pool", exterior: "Exterior",
   garden: "Garden", balcony: "Balcony", dining: "Dining area", workspace: "Workspace",
+};
+
+// Highlight icons (lucide names in the data) → 3D art, as Airbnb's listing highlights now use.
+const HIGHLIGHT_ICON: Record<string, Icon3DName> = {
+  sunrise: "sunrise", sunset: "sunset", waves: "wave", umbrella: "beach", "battery-charging": "light-bulb", croissant: "croissant",
+  "key-round": "key", baby: "baby-bottle", "shield-check": "shield", laptop: "wifi", "map-pin": "pushpin", sailboat: "sailboat",
+  utensils: "kitchen", landmark: "classical-building", "building-2": "homes", coffee: "hot-beverage", wifi: "wifi",
 };
 
 // Essentials guests look for; any this home lacks are listed struck through, as on the big platforms.
@@ -135,18 +142,18 @@ export function ListingView({ slug }: { slug: string }) {
       <div className="relative md:hidden">
         <PhotoTour listing={l}>
           <div className="block w-full cursor-pointer" aria-label="Show all photos">
-            <PhotoCarousel photos={l.photos.map((p) => p.src)} alt={l.name} priority className="aspect-[4/3]" sizes="100vw" dotsClassName="bottom-9" />
+            <PhotoCarousel photos={l.photos.map((p) => p.src)} alt={l.name} priority className="aspect-[20/19]" sizes="100vw" dotsClassName="bottom-9" counter />
           </div>
         </PhotoTour>
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-4">
-          <button type="button" onClick={() => (history.length > 1 ? router.back() : router.push("/s"))} aria-label="Back" className="pointer-events-auto grid size-9 place-items-center rounded-full bg-white shadow-badge">
+          <button type="button" onClick={() => (history.length > 1 ? router.back() : router.push("/s"))} aria-label="Back" className="pointer-events-auto grid size-10 place-items-center rounded-full bg-white shadow-badge">
             <ChevronLeft className="size-4" strokeWidth={2.6} />
           </button>
           <div className="pointer-events-auto flex gap-3">
-            <button type="button" onClick={share} aria-label="Share" className="grid size-9 place-items-center rounded-full bg-white shadow-badge">
+            <button type="button" onClick={share} aria-label="Share" className="grid size-10 place-items-center rounded-full bg-white shadow-badge">
               <Share className="size-4" />
             </button>
-            <span className="grid size-9 place-items-center rounded-full bg-white shadow-badge">
+            <span className="grid size-10 place-items-center rounded-full bg-white shadow-badge">
               <WishlistHeart slug={l.slug} saved={l.wishlisted} className="[&_path:not(.fill-brand-500)]:fill-transparent [&_path]:stroke-ink [&_svg]:size-[18px]" />
             </span>
           </div>
@@ -196,10 +203,10 @@ export function ListingView({ slug }: { slug: string }) {
             <Section>
               <div className="space-y-6">
                 {l.highlights.map((h) => (
-                  <div key={h.title} className="flex gap-6">
-                    <Icon name={h.icon} className="mt-0.5 size-6 shrink-0" />
+                  <div key={h.title} className="flex items-center gap-5">
+                    <Icon3D name={HIGHLIGHT_ICON[h.icon] ?? "sparkles"} size={40} />
                     <div>
-                      <p className="font-medium">{h.title}</p>
+                      <p className="text-sm font-medium">{h.title}</p>
                       <p className="text-sm text-ink-2">{h.text}</p>
                     </div>
                   </div>
@@ -213,12 +220,12 @@ export function ListingView({ slug }: { slug: string }) {
 
             {!!l.sleeping.length && (
               <Section title="Where you'll sleep">
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                <div className="grid grid-cols-2 gap-4">
                   {l.sleeping.map((s, i) => {
                     const photo = l.photos.filter((p) => p.room === "bedroom")[i];
                     return (
                       <div key={s.room}>
-                        <div className="aspect-[4/3] overflow-hidden rounded-xl bg-surface">
+                        <div className="aspect-[3/2] overflow-hidden rounded-lg bg-surface">
                           {photo && <Photo src={photo.src} alt={s.room} className="size-full" sizes="240px" />}
                         </div>
                         <p className="mt-3 font-medium">{s.room}</p>
@@ -252,8 +259,8 @@ export function ListingView({ slug }: { slug: string }) {
               </Section>
             )}
 
-            <section id="calendar" className="scroll-mt-28 border-t border-line py-8">
-              <h2 className="text-[22px] font-medium">
+            <section id="calendar" className="scroll-mt-28 border-t border-line py-12">
+              <h2 className="text-[22px] leading-[26px] font-medium">
                 {range.from && range.to ? `${nightsBetween(range.from, range.to)} nights in ${l.area.name}` : range.from ? "Select checkout date" : "Select check-in date"}
               </h2>
               <p className="mt-1 text-sm text-ink-2">
@@ -270,7 +277,7 @@ export function ListingView({ slug }: { slug: string }) {
 
           <aside className="hidden lg:block">
             <div className="sticky top-[112px] pt-8 pb-12">
-              <RareFind cal={cal} />
+              <TipCard cal={cal} />
               <BookingCard {...card} />
               <UssdNote />
             </div>
@@ -283,7 +290,7 @@ export function ListingView({ slug }: { slug: string }) {
         <Divider />
 
         <section id="location" className="scroll-mt-24 py-12">
-          <h2 className="text-[22px] font-medium">Where you&apos;ll be</h2>
+          <h2 className="text-[22px] leading-[26px] font-medium">Where you&apos;ll be</h2>
           <p className="mt-6 mb-6 text-base">{l.area.name}, Mombasa, Kenya</p>
           {l.location && <LocationMap lat={l.location.lat} lng={l.location.lng} />}
           <p className="mt-6 text-base font-medium">{l.area_info.name}, Mombasa, Kenya</p>
@@ -306,8 +313,8 @@ export function ListingView({ slug }: { slug: string }) {
 
 function Section({ id, title, subtitle, children }: { id?: string; title?: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24 border-t border-line py-8">
-      {title && <h2 className="text-[22px] font-medium">{title}</h2>}
+    <section id={id} className={cn("scroll-mt-24 border-t border-line", title ? "py-12" : "py-8")}>
+      {title && <h2 className="text-[22px] leading-[26px] font-medium">{title}</h2>}
       {subtitle && <p className="mt-1 text-sm text-ink-2">{subtitle}</p>}
       <div className={cn(title && "mt-6")}>{children}</div>
     </section>
@@ -338,19 +345,19 @@ function FavouriteBox({ rating, count }: { rating: number; count: number }) {
     <a href="#reviews" className="mt-6 flex items-center rounded-xl border border-line px-6 py-5 text-left transition-shadow hover:shadow-soft">
       <div className="flex items-center gap-0.5">
         <Laurel />
-        <span className="text-center text-[17px] leading-[19px] font-semibold">Guest<br />favourite</span>
+        <span className="text-center text-lg leading-5 font-medium">Guest<br />favourite</span>
         <Laurel flip />
       </div>
       <p className="hidden flex-1 px-6 text-base font-medium md:block">One of the most loved homes on Amina Stays, according to guests</p>
       <div className="ml-auto flex items-center">
         <div className="px-5 text-center">
-          <p className="text-lg leading-6 font-semibold">{rating.toFixed(2)}</p>
+          <p className="text-[22px] leading-[26px] font-medium">{rating.toFixed(2)}</p>
           <span className="flex gap-px"><StarIcon className="size-2.5" /><StarIcon className="size-2.5" /><StarIcon className="size-2.5" /><StarIcon className="size-2.5" /><StarIcon className="size-2.5" /></span>
         </div>
         <span className="h-10 w-px bg-line" />
         <div className="pl-5 text-center">
-          <p className="text-lg leading-6 font-semibold">{count}</p>
-          <p className="text-xs underline">Reviews</p>
+          <p className="text-[22px] leading-[26px] font-medium">{count}</p>
+          <p className="text-xs font-medium underline">Reviews</p>
         </div>
       </div>
     </a>
@@ -454,7 +461,7 @@ function About({ listing: l }: { listing: ListingDetail }) {
       <p className="line-clamp-6 text-base leading-6 whitespace-pre-line">{l.description}</p>
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="soft" className="mt-6 h-10 px-5 text-base">Show more</Button>
+          <Button variant="soft" size="lg" className="mt-6">Show more</Button>
         </DialogTrigger>
         <DialogContent title="About this place" size="lg">
           <div className="space-y-8 p-6 text-base leading-relaxed sm:p-8">
@@ -478,7 +485,7 @@ function Amenities({ listing: l }: { listing: ListingDetail }) {
   }, {});
   return (
     <div>
-      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
         {l.amenities.slice(0, 10 - missing.length).map((a) => (
           <div key={a.code} className="flex items-center gap-4 text-base">
             <Icon name={a.icon} className="size-6 shrink-0" /> {a.name}
@@ -486,13 +493,13 @@ function Amenities({ listing: l }: { listing: ListingDetail }) {
         ))}
         {missing.map(([code, label]) => (
           <div key={code} className="flex items-center gap-4 text-base">
-            <Icon name="check" className="size-6 shrink-0 opacity-0" /> <span className="line-through">{label}</span>
+            <Icon name="check" className="size-6 shrink-0 opacity-0" /> <span className="line-through"><span className="sr-only">Unavailable: </span>{label}</span>
           </div>
         ))}
       </div>
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="soft" className="mt-8 h-12 px-6 text-base">Show all {l.amenities.length} amenities</Button>
+          <Button variant="soft" size="lg" className="mt-10">Show all {l.amenities.length} amenities</Button>
         </DialogTrigger>
         <DialogContent title="What this place offers" size="md">
           <div className="space-y-8 p-6">
@@ -567,63 +574,94 @@ function ReserveButton(props: CardProps & { className?: string; onNeedDates?: ()
   );
 }
 
-/** "Rare find": shown when most of the next two months are already booked. */
-function RareFind({ cal }: { cal?: CalendarData }) {
-  if (!cal) return null;
-  const booked = cal.unavailable.filter((d) => d < (cal.end ?? "9999")).length;
-  const span = nightsBetween(cal.start, cal.end) || 120;
-  if (booked / span < 0.45) return null;
+/** The tip card above the booking card: "Rare find!" when the next months are mostly booked, else the all-in price promise. */
+function TipCard({ cal }: { cal?: CalendarData }) {
+  const booked = cal ? cal.unavailable.filter((d) => d < (cal.end ?? "9999")).length : 0;
+  const span = cal ? nightsBetween(cal.start, cal.end) || 120 : 120;
+  const rare = !!cal && booked / span >= 0.45;
   return (
-    <div className="mb-6 flex items-center gap-4 rounded-xl border border-line px-6 py-5">
-      <p className="flex-1 text-base"><b className="font-semibold">This is a rare find.</b> This home is usually booked.</p>
-      <Icon3D name="glowing-star" size={36} />
+    <div className="mb-6 flex items-center gap-4 rounded-xl border border-line px-5 py-3.5">
+      <p className="flex-1 text-sm">{rare ? <><b className="font-medium">Rare find!</b> This place is usually booked</> : <b className="font-medium">Prices include all fees</b>}</p>
+      <Icon3D name={rare ? "glowing-star" : "label"} size={28} />
     </div>
+  );
+}
+
+/** "Price details": the itemised breakdown behind the underlined total, as on Airbnb. */
+function PriceDetails({ q, depositPercent, children }: { q: Quote; depositPercent: number; children: React.ReactNode }) {
+  const { data: config } = useConfig();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent align="start" sideOffset={12} className="w-[360px] rounded-3xl border-0 bg-white/95 p-6 shadow-[0_0_0_1px_rgb(0_0_0/0.02),0_4px_8px_rgb(0_0_0/0.08),0_12px_30px_rgb(0_0_0/0.18)] backdrop-blur-md">
+        <p className="text-base font-semibold">Price details</p>
+        <div className="mt-4 space-y-3 text-sm">
+          {q.lines.map((line) => (
+            <div key={line.label} className={cn("flex justify-between gap-4", line.amount < 0 && "text-success")}>
+              <span>{line.label}</span>
+              <span className="shrink-0">{line.amount < 0 ? `−${kes(-line.amount)}` : kes(line.amount)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between gap-4 border-t border-line pt-3 font-semibold">
+            <span>Total <span className="underline">KES</span></span>
+            <span>{kes(q.total)}</span>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-ink-2">
+          {q.deposit_available ? `Pay ${kes(q.deposit)} today (${depositPercent}%) and the rest before you arrive — no extra fees.` : "No extra fees — cleaning and the 2% tourism levy are included."}
+        </p>
+        {config && <p className="mt-1 text-xs text-ink-2">{approx(q.total, config.currencies, "USD")} · {approx(q.total, config.currencies, "EUR")} · {approx(q.total, config.currencies, "GBP")}</p>}
+      </PopoverContent>
+    </Popover>
   );
 }
 
 function BookingCard(props: CardProps & { flat?: boolean }) {
   const { listing: l, range, setRange, guests, setGuests, unavailable, prices, flat } = props;
-  const { data: config } = useConfig();
   const { data: q } = useQuote(l.slug, range, guests);
   const [datesOpen, setDatesOpen] = React.useState(false);
   const ready = !!(range.from && range.to);
+  const freeUntil = freeCancelUntil(l.cancellation.policy, range.from);
   return (
-    <div className={cn("bg-white", !flat && "rounded-xl border border-line p-6 shadow-card")}>
+    <div className={cn("bg-white", !flat && "rounded-xl border border-black/5 p-6 shadow-card")}>
       {q ? (
-        <p className="text-[22px] leading-7">
-          <span className="font-semibold underline decoration-1 underline-offset-4">{kes(q.total)}</span> <span className="text-base">for {q.nights} night{q.nights !== 1 ? "s" : ""}</span>
+        <p className="text-[22px] leading-[26px]">
+          <PriceDetails q={q} depositPercent={l.deposit_percent}>
+            <button type="button" className="font-medium underline decoration-1 underline-offset-4" aria-label="Show price breakdown">{kes(q.total)}</button>
+          </PriceDetails>{" "}
+          <span className="text-base">for {q.nights} night{q.nights !== 1 ? "s" : ""}</span>
         </p>
       ) : (
-        <p className="text-[22px] leading-7 font-medium">Add dates for prices</p>
+        <p className="text-[22px] leading-[26px] font-medium">Add dates for prices</p>
       )}
-      <div className="mt-6 rounded-lg border border-[#b0b0b0]">
+      <div className="mt-6 rounded-xl border border-ink-3">
         <Popover open={datesOpen} onOpenChange={setDatesOpen}>
           <PopoverTrigger asChild>
             <button type="button" className="grid w-full grid-cols-2 text-left">
-              <span className="border-r border-[#b0b0b0] px-3 py-2.5">
-                <span className="block text-[10px] font-bold uppercase">Check-in</span>
-                <span className={cn("text-sm", !range.from && "text-ink-2")}>{range.from ? fmtShort(range.from) : "Add date"}</span>
+              <span className="border-r border-ink-3 px-3 py-2.5">
+                <span className="block text-[10px] leading-3 font-bold uppercase">Check-in</span>
+                <span className={cn("mt-1 block text-sm", !range.from && "text-ink-2")}>{range.from ? fmtShort(range.from) : "Add date"}</span>
               </span>
               <span className="px-3 py-2.5">
-                <span className="block text-[10px] font-bold uppercase">Checkout</span>
-                <span className={cn("text-sm", !range.to && "text-ink-2")}>{range.to ? fmtShort(range.to) : "Add date"}</span>
+                <span className="block text-[10px] leading-3 font-bold uppercase">Checkout</span>
+                <span className={cn("mt-1 block text-sm", !range.to && "text-ink-2")}>{range.to ? fmtShort(range.to) : "Add date"}</span>
               </span>
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(720px,95vw)] rounded-[32px] border-0 p-8 shadow-pop">
             <RangeCalendar value={range} onChange={(r) => { setRange(r); if (r.from && r.to) setDatesOpen(false); }} unavailable={unavailable} prices={prices} minNights={l.min_nights} />
             <div className="mt-5 flex items-center justify-end gap-3">
-              <button type="button" className="text-sm font-semibold underline" onClick={() => setRange({})}>Clear dates</button>
+              <Button variant="soft" size="sm" onClick={() => setRange({})}>Clear dates</Button>
               <Button size="sm" onClick={() => setDatesOpen(false)}>Close</Button>
             </div>
           </PopoverContent>
         </Popover>
         <Popover>
           <PopoverTrigger asChild>
-            <button type="button" className="flex w-full items-center justify-between border-t border-[#b0b0b0] px-3 py-2.5 text-left">
+            <button type="button" className="flex w-full items-center justify-between border-t border-ink-3 px-3 py-2.5 text-left">
               <span>
-                <span className="block text-[10px] font-bold uppercase">Guests</span>
-                <span className="text-sm">{guestsLabel(guests)}</span>
+                <span className="block text-[10px] leading-3 font-bold uppercase">Guests</span>
+                <span className="mt-1 block text-sm">{guestsLabel(guests)}</span>
               </span>
               <ChevronDown className="size-4" />
             </button>
@@ -634,26 +672,18 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
           </PopoverContent>
         </Popover>
       </div>
+      {ready && q && q.available !== false && (q.deposit_available || freeUntil) && (
+        <p className="mt-4 rounded-lg bg-chip px-3 py-2 text-xs">
+          {q.deposit_available && <>{kes(q.deposit)} today</>}
+          {q.deposit_available && freeUntil && " · "}
+          {freeUntil && <>Free cancellation before <b className="font-medium">{fmtDate(freeUntil, "d MMMM")}</b></>}
+        </p>
+      )}
       <ReserveButton {...props} className="mt-4 h-12 w-full text-base" onNeedDates={() => setDatesOpen(true)} />
       {q?.problems?.length ? (
         <p className="mt-3 text-center text-sm text-danger">{q.problems[0]}</p>
       ) : (
         <p className="mt-3 text-center text-sm text-ink-2">{ready ? "You won't be charged yet" : `M-Pesa or card · ${l.deposit_percent}% deposit option`}</p>
-      )}
-      {q && (
-        <div className="mt-6 space-y-3 text-base">
-          {q.lines.map((line) => (
-            <div key={line.label} className={cn("flex justify-between gap-4", line.amount < 0 && "text-success")}>
-              <span className="underline decoration-1 underline-offset-2">{line.label}</span>
-              <span>{line.amount < 0 ? `−${kes(-line.amount)}` : kes(line.amount)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between border-t border-line pt-5 font-semibold">
-            <span>Total</span>
-            <span>{kes(q.total)}</span>
-          </div>
-          {config && <p className="text-right text-xs text-ink-2">{approx(q.total, config.currencies, "USD")} · {approx(q.total, config.currencies, "EUR")} · {approx(q.total, config.currencies, "GBP")}</p>}
-        </div>
       )}
     </div>
   );
@@ -737,8 +767,8 @@ function Reviews({ listing: l, reviews }: { listing: ListingDetail; reviews: Rev
           <p className="mt-1 max-w-sm text-base text-ink-2">One of the most loved homes on Amina Stays based on ratings, reviews and reliability</p>
         </div>
       ) : (
-        <h2 className="flex items-center gap-2 text-[22px] font-medium">
-          <StarIcon className="size-4" /> {l.rating?.toFixed(2)} · {l.reviews_count} reviews
+        <h2 className="flex items-center gap-2 text-[26px] leading-[30px] font-medium">
+          <StarIcon className="size-5" /> {l.rating?.toFixed(2)} · {l.reviews_count} reviews
         </h2>
       )}
 
@@ -769,11 +799,11 @@ function Reviews({ listing: l, reviews }: { listing: ListingDetail; reviews: Rev
 
       {!!mentions.length && (
         <div className="mt-10">
-          <p className="text-sm font-medium">Guests mention</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <p className="text-lg leading-6 font-semibold">Guests mention</p>
+          <div className="mt-4 flex flex-wrap gap-2">
             {mentions.map((m) => (
-              <span key={m.label} className="flex h-11 items-center gap-2 rounded-full border border-line pr-4 pl-2 text-sm">
-                <Icon3D name={m.icon} size={26} /> {m.label} <span className="text-ink-2">{m.count}</span>
+              <span key={m.label} className="flex h-14 items-center gap-2.5 rounded-2xl border border-line-soft px-4 text-sm font-medium">
+                <Icon3D name={m.icon} size={24} /> {m.label} <span className="font-normal text-ink-3">{m.count}</span>
               </span>
             ))}
           </div>
@@ -787,7 +817,7 @@ function Reviews({ listing: l, reviews }: { listing: ListingDetail; reviews: Rev
         {reviews.length > 6 && (
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="soft" className="h-12 px-6 text-base">Show all {reviews.length} reviews</Button>
+              <Button variant="soft" size="lg">Show all {reviews.length} reviews</Button>
             </DialogTrigger>
             <DialogContent title={`${reviews.length} reviews`} size="lg">
               <div className="space-y-10 p-6 sm:p-8">{reviews.map((r) => <ReviewCard key={r.id} review={r} full />)}</div>
@@ -806,7 +836,7 @@ function ReviewCard({ review: r, full }: { review: Review; full?: boolean }) {
       <div className="flex items-center gap-3">
         <Avatar name={r.guest} size={48} />
         <div>
-          <p className="font-semibold">{r.guest}</p>
+          <p className="font-medium">{r.guest}</p>
           <p className="text-sm text-ink-2">{flag(r.country)} {regionName(r.country)}</p>
         </div>
       </div>
@@ -830,7 +860,7 @@ function MeetHost({ listing: l }: { listing: ListingDetail }) {
   const years = 2026 - l.host.since;
   return (
     <section className="py-12">
-      <h2 className="text-[22px] font-medium">Meet your host</h2>
+      <h2 className="text-[22px] leading-[26px] font-medium">Meet your host</h2>
       <div className="mt-8 grid gap-10 md:grid-cols-[minmax(0,380px)_1fr] md:gap-16">
         <div className="flex items-center gap-6 self-start rounded-3xl bg-white px-6 py-8 shadow-[0_6px_20px_rgb(0_0_0/0.2)]">
           <div className="flex flex-1 flex-col items-center text-center">
@@ -862,7 +892,7 @@ function MeetHost({ listing: l }: { listing: ListingDetail }) {
           <p className="mt-2 text-base">Response rate: 100%</p>
           <p className="text-base">Responds {l.host.response_time}</p>
           <p className="text-base">Speaks {l.host.languages.join(" and ")}</p>
-          <Button variant="soft" asChild className="mt-6 h-12 px-6 text-base">
+          <Button variant="soft" size="lg" asChild className="mt-6">
             <Link href="/messages">Message host</Link>
           </Button>
           <p className="mt-8 flex max-w-md items-start gap-3 border-t border-line pt-6 text-xs text-ink-2">
@@ -921,7 +951,7 @@ function ThingsToKnow({ listing: l }: { listing: ListingDetail }) {
   ];
   return (
     <section className="py-12">
-      <h2 className="text-[22px] font-medium">Things to know</h2>
+      <h2 className="text-[22px] leading-[26px] font-medium">Things to know</h2>
       <div className="mt-6 grid gap-10 md:grid-cols-3">
         {blocks.map((b) => (
           <div key={b.title}>

@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, format, formatDistanceToNowStrict, isToday, isTomorrow, isYesterday, parseISO } from "date-fns";
+import { addDays, differenceInCalendarDays, format, formatDistanceToNowStrict, isToday, isTomorrow, isYesterday, parseISO, startOfToday } from "date-fns";
 
 export const kes = (n?: number | null) => `KES ${Math.round(n ?? 0).toLocaleString("en-KE")}`;
 
@@ -23,6 +23,14 @@ export function fmtRange(a?: string | null, b?: string | null) {
   const da = toDate(a), db = toDate(b);
   if (da.getMonth() === db.getMonth() && da.getFullYear() === db.getFullYear()) return `${format(da, "d")} – ${format(db, "d MMM")}`;
   return `${format(da, "d MMM")} – ${format(db, "d MMM")}`;
+}
+
+/** Last day a stay can be cancelled for a full refund under our policies (null when the policy never refunds in full). */
+export function freeCancelUntil(policy: string | undefined, checkIn?: string | null) {
+  const days = { flexible: 1, moderate: 5, firm: 30 }[policy ?? ""];
+  if (!days || !checkIn) return null;
+  const until = addDays(toDate(checkIn), -days);
+  return until >= startOfToday() ? until : null;
 }
 
 export const nightsBetween = (a?: string | null, b?: string | null) => (a && b ? differenceInCalendarDays(toDate(b), toDate(a)) : 0);

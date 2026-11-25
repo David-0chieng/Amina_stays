@@ -21,11 +21,16 @@ import { cn } from "@/lib/utils";
 const ListingsMap = dynamic(() => import("@/components/site/maps"), { ssr: false, loading: () => <div className="size-full animate-pulse bg-surface" /> });
 
 type Results = { results: Card[]; count: number; nights: number | null };
-type Filters = { tag?: string; type?: string; bedrooms?: string; amenities?: string; min_price?: string; max_price?: string; free_cancellation?: string; sort?: string };
-const FILTER_PARAMS: (keyof Filters)[] = ["tag", "type", "bedrooms", "amenities", "min_price", "max_price", "free_cancellation", "sort"];
+type Filters = {
+  tag?: string; type?: string; bedrooms?: string; amenities?: string; min_price?: string; max_price?: string; free_cancellation?: string; guest_favourite?: string; sort?: string;
+};
+const FILTER_PARAMS: (keyof Filters)[] = ["tag", "type", "bedrooms", "amenities", "min_price", "max_price", "free_cancellation", "guest_favourite", "sort"];
 
-// Quick filters in the bar: a few categories (tags) plus the amenities people filter on most.
-const QUICK: { label: string; tag?: string; amenity?: string }[] = [
+// Quick filters in the bar: Airbnb's booking-confidence chips first, then categories (tags) and the
+// amenities people filter on most.
+const QUICK: { label: string; tag?: string; amenity?: string; flag?: "free_cancellation" | "guest_favourite" }[] = [
+  { label: "Free cancellation", flag: "free_cancellation" },
+  { label: "Guest favourite", flag: "guest_favourite" },
   { label: "Beachfront", tag: "beachfront" },
   { label: "Pool", amenity: "pool" },
   { label: "Family-friendly", tag: "family" },
@@ -95,7 +100,7 @@ export function SearchView() {
   const linkQuery = searchQuery(s);
   const areaName = areas?.find((a) => a.slug === s.area)?.name;
   const count = data?.count ?? 0;
-  const activeCount = [filters.type, filters.bedrooms, filters.min_price || filters.max_price, filters.free_cancellation, ...csv(filters.amenities)].filter(Boolean).length;
+  const activeCount = [filters.type, filters.bedrooms, filters.min_price || filters.max_price, filters.free_cancellation, filters.guest_favourite, ...csv(filters.amenities)].filter(Boolean).length;
 
   const setFilters = (patch: Partial<Filters>) => {
     const q = new URLSearchParams(params.toString());
@@ -123,13 +128,15 @@ export function SearchView() {
             <span className="h-8 w-px shrink-0 bg-line" />
             <div className="no-scrollbar -mr-6 flex flex-1 gap-2 overflow-x-auto pr-6 md:mr-0 md:pr-0">
               {QUICK.map((q) => {
-                const on = q.tag ? filters.tag === q.tag : csv(filters.amenities).includes(q.amenity!);
+                const on = q.flag ? !!filters[q.flag] : q.tag ? filters.tag === q.tag : csv(filters.amenities).includes(q.amenity!);
+                const toggle = (): Partial<Filters> =>
+                  q.flag ? { [q.flag]: on ? undefined : "1" } : q.tag ? { tag: on ? undefined : q.tag } : { amenities: toggleCsv(filters.amenities, q.amenity!) };
                 return (
                   <button
                     key={q.label}
                     type="button"
                     aria-pressed={on}
-                    onClick={() => setFilters(q.tag ? { tag: on ? undefined : q.tag } : { amenities: toggleCsv(filters.amenities, q.amenity!) })}
+                    onClick={() => setFilters(toggle())}
                     className={cn(
                       "h-[34px] shrink-0 rounded-3xl border px-3 text-xs whitespace-nowrap transition-colors",
                       on ? "border-ink bg-surface font-medium shadow-[inset_0_0_0_1px_var(--color-ink)]" : "border-line hover:border-ink",
@@ -144,7 +151,7 @@ export function SearchView() {
         </div>
       </SiteHeader>
 
-      <main className={cn("container-site pb-10", mapOnly ? "lg:grid-cols-1" : "lg:grid lg:grid-cols-[minmax(0,1fr)_40%] lg:gap-8")}>
+      <main className={cn("container-site pb-10", mapOnly ? "lg:grid-cols-1" : "lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-12")}>
         <div className={cn(mapOnly && "lg:hidden")}>
           <div className="flex items-end justify-between gap-4 pt-6 pb-5">
             <h1 className="text-lg font-semibold tracking-[-0.18px] md:text-xl">{heading}</h1>
@@ -155,7 +162,7 @@ export function SearchView() {
           {error ? (
             <NoResults title="We couldn't load homes" text={(error as Error).message} action={<Button variant="soft" onClick={() => location.reload()}>Try again</Button>} />
           ) : (
-            <div className={cn("grid gap-x-6 gap-y-10 transition-opacity sm:grid-cols-2 2xl:grid-cols-3", isFetching && !isLoading && "opacity-60")}>
+            <div className={cn("grid gap-x-6 gap-y-10 transition-opacity sm:grid-cols-2 min-[1880px]:grid-cols-3", isFetching && !isLoading && "opacity-60")}>
               {isLoading
                 ? Array.from({ length: 4 }).map((_, i) => <ListingCardSkeleton key={i} />)
                 : listings.map((l, i) => (
@@ -185,7 +192,7 @@ export function SearchView() {
         </div>
 
         <div className="hidden lg:block">
-          <div className={cn("sticky top-[168px] mt-6 overflow-hidden rounded-card", mapOnly ? "h-[calc(100dvh-192px)]" : "h-[calc(100dvh-192px)]")}>
+          <div className="sticky top-[168px] mt-6 h-[calc(100dvh-192px)] overflow-hidden rounded-3xl">
             <ListingsMap listings={listings} query={linkQuery} hoverId={hoverId} resizeToken={mapOnly} />
             <button
               type="button"
@@ -266,6 +273,7 @@ function FiltersDialog({ open, onOpenChange, base, filters, onApply }: {
 
   const recommended: { label: string; icon: Icon3DName; on: boolean; toggle: () => void }[] = [
     { label: "Free cancellation", icon: "spiral-calendar", on: !!draft.free_cancellation, toggle: () => set({ free_cancellation: draft.free_cancellation ? undefined : "1" }) },
+    { label: "Guest favourite", icon: "trophy", on: !!draft.guest_favourite, toggle: () => set({ guest_favourite: draft.guest_favourite ? undefined : "1" }) },
     { label: "Self check-in", icon: "key", on: csv(draft.amenities).includes("self_checkin"), toggle: () => set({ amenities: toggleCsv(draft.amenities, "self_checkin") }) },
     { label: "Breakfast", icon: "croissant", on: csv(draft.amenities).includes("breakfast_service"), toggle: () => set({ amenities: toggleCsv(draft.amenities, "breakfast_service") }) },
   ];
@@ -286,7 +294,7 @@ function FiltersDialog({ open, onOpenChange, base, filters, onApply }: {
           </div>
           <div className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto px-6">
             <Section title="Recommended for you">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {recommended.map((r) => (
                   <button
                     key={r.label}

@@ -172,3 +172,4 @@ def test_search_filters_by_property_type_and_free_cancellation(api, unit, area):
     flexible = api.get("/api/listings?free_cancellation=1").data["results"]
     assert [c["name"] for c in flexible] == ["Palm Suite"]
     assert flexible[0]["free_cancellation"] is True
+    assert api.get("/api/listings?guest_favourite=1").data["count"] == 0  # no reviews yet, so no favourites

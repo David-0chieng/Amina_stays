@@ -86,6 +86,8 @@ def listings(request):
     for u in qs.distinct():
         q = services.quote(u, ci, co, guests=guests or 1) if ci else None
         card = listing_card(u, quote=q, stats=stats, wished=u.pk in wished)
+        if p.get("guest_favourite") and not card["guest_favourite"]:
+            continue
         price = card["price"].get("avg_nightly") or card["price"]["from_nightly"]
         if p.get("min_price") and price < int(p["min_price"]):
             continue

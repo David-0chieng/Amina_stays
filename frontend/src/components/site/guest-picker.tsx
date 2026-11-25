@@ -20,9 +20,9 @@ export function GuestPicker({ value, onChange, max = 16 }: { value: Guests; onCh
   return (
     <div className="divide-y divide-line-soft">
       {rows.map((r) => (
-        <div key={r.key} className="flex items-center justify-between gap-8 py-4">
+        <div key={r.key} className="flex items-center justify-between gap-8 py-5">
           <div>
-            <p className="font-semibold">{r.label}</p>
+            <p className="font-medium">{r.label}</p>
             <p className="text-sm text-ink-2">{r.hint}</p>
           </div>
           <Stepper value={value[r.key]} min={r.min} max={r.max} label={r.label.toLowerCase()} onChange={(v) => onChange({ ...value, [r.key]: v })} />
