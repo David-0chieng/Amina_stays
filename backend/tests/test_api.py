@@ -115,3 +115,29 @@ def test_ical_export_and_import(unit, other_unit, guest):
     assert CalendarBlock.objects.filter(unit=other_unit, start_date=ci, end_date=co).exists()
     with pytest.raises(bookings.BookingError):
         bookings.create_hold(unit=other_unit, guest=guest, check_in=days(15), check_out=days(16), channel="web")
+
+
+@pytest.mark.django_db
+def test_host_can_open_and_complete_a_task(host_api, unit):
+    from apps.operations.models import Task
+
+    task = Task.objects.create(type="maintenance", title="Fix the shower head", unit=unit)
+    assert host_api.get(f"/api/host/tasks/{task.pk}").status_code == 200
+    assert host_api.post(f"/api/host/tasks/{task.pk}/complete", {}, format="json").status_code == 200
+    task.refresh_from_db()
+    assert task.status == "done"
+
+
+@pytest.mark.django_db
+def test_host_card_payment_request_texts_the_link(host_api, unit, foreign_guest):
+    from apps.messaging.models import Message
+
+    b = bookings.create_hold(
+        unit=unit, guest=foreign_guest, check_in=days(20), check_out=days(22), channel="web", payment_plan="deposit"
+    )
+    payments.start_payment(b, method="card")
+    payments.on_success(Payment.objects.get(booking=b), transaction_id="CARD1")
+    r = host_api.post(f"/api/host/reservations/{b.ref}/request-payment", {"method": "card"}, format="json")
+    assert r.status_code == 200, r.data
+    link = Payment.objects.filter(booking=b, status="pending").latest("id").checkout_token
+    assert Message.objects.filter(phone=foreign_guest.phone, kind="pay_link", body__contains=link).exists()

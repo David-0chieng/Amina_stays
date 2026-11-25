@@ -25,6 +25,13 @@ DEFAULTS = {
         "de": "Wir halten {unit} für {dates}. Bezahle {amount} per Karte innerhalb von {minutes} Min.: {link} (Ref. {ref})",
         "fr": "Nous gardons {unit} pour {dates}. Payez {amount} par carte sous {minutes} min : {link} (ref {ref})",
     },
+    "pay_link": {
+        "en": "Hi {first_name}, please pay {amount} for {ref} ({unit}) securely by card: {link} - we never ask you to send money to a personal number.",
+        "sw": "Habari {first_name}, tafadhali lipa {amount} kwa {ref} ({unit}) kwa kadi hapa: {link} - hatutakuomba utume pesa kwa nambari ya mtu.",
+        "it": "Ciao {first_name}, paga {amount} per {ref} ({unit}) in modo sicuro con carta: {link}",
+        "de": "Hallo {first_name}, bitte bezahle {amount} für {ref} ({unit}) sicher per Karte: {link}",
+        "fr": "Bonjour {first_name}, merci de payer {amount} pour {ref} ({unit}) par carte en toute securite : {link}",
+    },
     "payment_failed": {
         "en": "Your payment for {ref} didn't go through ({reason}). Reply PAY to try again - we hold {unit} a few more minutes.",
         "sw": "Malipo yako ya {ref} hayakufanikiwa ({reason}). Jibu PAY kujaribu tena - tunashikilia {unit} kwa dakika chache zaidi.",
@@ -382,6 +389,7 @@ DESCRIPTIONS = {
     "pre_arrival": "3 days before arrival: breakfast, ETA and travel questions",
     "id_request": "Asks for the guest-register ID if it's missing",
     "balance_due": "Requests the balance for deposit bookings",
+    "pay_link": "Card payment link Amina sends from a reservation",
     "directions": "Day before arrival: directions, landmark, Wi-Fi",
     "checkin_code": "Arrival morning: the door code",
     "local_tips": "Arrival day: food, taxis, safety",

@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from apps.accounts.services import AuthError, get_or_create_user, set_identity
 from apps.core.activity import record
 from apps.core.api import IsGuest, IsHost
-from apps.core.utils import parse_date
+from apps.core.utils import kes, parse_date
 from apps.messaging import services as messaging
 from apps.payments import services as payments
 from apps.payments.providers import PaymentError
@@ -374,7 +374,11 @@ def host_action(request, ref, action):
                 actor=user,
             )
         elif action == "request-payment":
-            payments.start_payment(b, method=d.get("method"), amount=d.get("amount"), actor=user)
+            result = payments.start_payment(b, method=d.get("method"), amount=d.get("amount"), actor=user)
+            if result.get("method") == "card" and result.get(
+                "checkout_url"
+            ):  # M-Pesa prompts itself; a card link must be sent
+                services.send_guest(b, "pay_link", amount=kes(result["amount"]), link=result["checkout_url"])
         elif action == "release-code":
             state = services.release_code(b, force=bool(d.get("force", True)), actor=user)
             if state != "released":

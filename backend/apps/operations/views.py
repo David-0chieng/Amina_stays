@@ -35,7 +35,12 @@ class TaskViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status__in=("open", "in_progress"))
         elif status:
             qs = qs.filter(status=status)
-        return qs.order_by("status", "due_at", "-id")[:300]
+        return qs.order_by("status", "due_at", "-id")
+
+    def list(self, request, *args, **kwargs):
+        # Cap the board here: slicing get_queryset() would break the detail routes (DRF filters it by pk).
+        tasks = self.filter_queryset(self.get_queryset())[:300]
+        return Response(self.get_serializer(tasks, many=True).data)
 
     def perform_create(self, serializer):
         task = serializer.save(created_by=self.request.user, source="host")

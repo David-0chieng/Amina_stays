@@ -334,7 +334,7 @@ def host_calendar(request):
             }
         )
     blocks = {}
-    for blk in CalendarBlock.objects.filter(start_date__lt=end, end_date__gt=start):
+    for blk in CalendarBlock.objects.filter(start_date__lt=end, end_date__gt=start).select_related("feed"):
         blocks.setdefault(blk.unit_id, []).append(
             {
                 "id": blk.pk,
@@ -344,6 +344,7 @@ def host_calendar(request):
                 "reason_label": blk.get_reason_display(),
                 "note": blk.note,
                 "external": blk.feed_id is not None,
+                "source": blk.feed.name if blk.feed_id else None,  # "Airbnb", "Booking.com"… for iCal blocks
             }
         )
     overrides = {}
