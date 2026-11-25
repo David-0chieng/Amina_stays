@@ -247,5 +247,4 @@ BACKEND_URL = (env("BACKEND_URL", "http://127.0.0.1:8000")).rstrip("/")
 DEMO = env_bool("DEMO", False)
 OUTBOX_MODE = env("OUTBOX_MODE", "sync" if TESTING else "thread")  # thread | sync | queue
 ID_ENCRYPTION_KEY = env("ID_ENCRYPTION_KEY", "")
-GOODWILL_AIRTIME_KES = env_int("GOODWILL_AIRTIME_KES", 0)
 SCHEDULER_INTERVAL_SECONDS = env_int("SCHEDULER_INTERVAL_SECONDS", 30)

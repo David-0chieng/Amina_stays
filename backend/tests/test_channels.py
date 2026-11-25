@@ -139,3 +139,36 @@ def test_at_delivery_report_updates_the_message(client, guest):
     client.post("/at/sms/delivery", {"id": "ATXid_9", "status": "Success"})
     m.refresh_from_db()
     assert m.status == "delivered"
+
+
+def _confirmed_stay(unit, guest, check_in, check_out):
+    from apps.bookings import services as bookings
+    from apps.payments import services as payments
+    from apps.payments.models import Payment
+
+    b = bookings.create_hold(unit=unit, guest=guest, check_in=check_in, check_out=check_out, channel="web")
+    payments.start_payment(b, method="mpesa")
+    payments.on_success(Payment.objects.get(booking=b), transaction_id=f"Q{b.pk}")
+    return b
+
+
+@pytest.mark.django_db
+def test_wifi_asked_any_way_gets_this_guests_wifi(unit, guest):
+    from apps.messaging.models import FAQ
+
+    FAQ.objects.create(category="wifi", question="Is there Wi-Fi?", keywords="wifi,wi-fi,internet", answer_en="Yes - fast fibre in every home.")
+    FAQ.objects.create(category="wifi", question="What is the Wi-Fi password?", keywords="wifi,wi-fi,password", answer_en="Wi-Fi at {unit}: {wifi}",
+                       sort_order=5)
+    _confirmed_stay(unit, guest, days(0), days(2))
+    for text in ("Wi-Fi", "wi fi?", "WiFi password"):
+        assert "PalmWifi" in sms(text, phone=guest.phone)[-1], text
+
+
+@pytest.mark.django_db
+def test_web_chat_is_answered_in_the_web_chat_not_by_sms(unit, guest, guest_api):
+    from apps.messaging.models import FAQ
+
+    FAQ.objects.create(category="amenities", question="Is there parking?", keywords="parking,car", answer_en="Yes - free secure parking.")
+    guest_api.post("/api/messages", {"body": "Is there parking?"}, format="json")
+    reply = Message.objects.filter(phone=guest.phone, direction="out").latest("id")
+    assert reply.body.startswith("Yes - free secure parking") and reply.channel == "web" and reply.status == "sent"

@@ -267,7 +267,7 @@ ADDONS = [
 ]
 
 FAQS = [
-    ("check_in", "What time is check-in?", "check in,check-in,checkin,arrive,arrival time,what time can i,kuingia,kufika",
+    ("check_in", "What time is check-in?", "check in,check-in,checkin,checkout time,check-out time,what time is checkout,arrive,arrival time,what time can i,kuingia,kufika,kutoka",
      "Check-in is from {checkin_time} and checkout by {checkout_time}. Your door code arrives by SMS on the morning you arrive.",
      "Kuingia ni kuanzia {checkin_time} na kutoka kabla ya {checkout_time}. Nambari ya mlango itakuja kwa SMS asubuhi ya siku ya kufika."),
     ("check_in", "Can I check in early?", "early,early check-in,early checkin,arrive early,mapema",
@@ -298,7 +298,7 @@ FAQS = [
     ("transport", "Do you offer airport pickup?", "airport,pickup,pick up,transfer,taxi,driver,flight,uwanja wa ndege",
      "Yes - Amina's trusted driver can meet you at Moi International Airport (KES 2,500) or the SGR terminus (KES 2,000). Reply PICKUP once booked. Uber, Bolt and Little also work well.",
      "Ndiyo - dereva wetu anaweza kukuchukua Moi Airport (KES 2,500) au SGR (KES 2,000). Jibu PICKUP."),
-    ("transport", "How do I get to Diani from the airport?", "diani,likoni,ferry,south coast,bypass,dongo kundu",
+    ("transport", "How do I get to Diani from the airport?", "diani,get to diani,to diani,likoni,ferry,south coast,bypass,dongo kundu",
      "Take the Dongo Kundu bypass from the airport to Diani (45-60 min) - it avoids the Likoni ferry queues. Our driver can take you for KES 4,500.",
      "Tumia barabara ya Dongo Kundu kutoka uwanja wa ndege hadi Diani (dakika 45-60) - inaepuka foleni za feri ya Likoni."),
     ("transport", "How far is the SGR station?", "sgr,train,madaraka,miritini,station,treni",

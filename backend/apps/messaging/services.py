@@ -284,18 +284,50 @@ def _t(hhmm):
     return nice_time(hhmm)
 
 
+def _normalise(text):
+    """One spelling for the words guests write every way: Wi-Fi / wi fi / WiFi, check-in / check in, check-out."""
+    text = re.sub(r"\bwi[\s-]?fi\b", "wifi", text, flags=re.IGNORECASE)
+    return re.sub(r"\bcheck[\s-]?(in|out)\b", r"check\1", text, flags=re.IGNORECASE)
+
+
 def match_faq(text, lang="en", unit=None, ctx=None):
     """Best knowledge-base answer for a free-text question, or None if not confident.
-    Answers that reference booking-only facts are skipped when the sender has no booking."""
-    low = " " + (text or "").lower() + " "
+    Answers that reference booking-only facts are skipped when the sender has no booking; on a tie, a
+    personalised answer (this guest's Wi-Fi, directions…) beats a generic one."""
+    text = _normalise(text or "")
+    low = " " + text.lower() + " "
     toks = set(_tokens(text))
     if not toks:
         return None
+    ctx = ctx or {}
     scored = []
     for faq in FAQ.objects.filter(active=True).filter(unit__isnull=True) | FAQ.objects.filter(active=True, unit=unit):
         score = 0
-        for kw in (k.strip().lower() for k in faq.keywords.split(",") if k.strip()):
-            if " " in kw:
+        for kw in {_normalise(k.strip().lower()) for k in faq.keywords.split(",") if k.strip()}:
+            if not kw.replace("'", "").isalnum():  # phrases and hyphenated words ("late checkout", "how do i get")
+                score += 3 if kw in low else 0
+            elif kw in toks:
+                score += 2
+            elif len(kw) > 4 and any(t.startswith(kw[:5]) for t in toks):
+                score += 1
+        if faq.unit_id and unit is not None:
+            score += 1
+        if score < 2:
+            continue
+        answer = faq.answer(lang)
+        fields = {f for _, f, _, _ in string.Formatter().parse(answer) if f}
+        if all(ctx.get(f) not in (None, "") for f in fields):
+            scored.append((score, bool(fields), -faq.sort_order, faq.pk, faq, answer))
+    if not scored:
+        return None
+    *_, faq, answer = max(scored, key=lambda x: x[:4])
+    FAQ.objects.filter(pk=faq.pk).update(hits=F("hits") + 1)
+    return faq, string.Formatter().vformat(answer, (), _Safe(ctx))
+    scored = []
+    for faq in FAQ.objects.filter(active=True).filter(unit__isnull=True) | FAQ.objects.filter(active=True, unit=unit):
+        score = 0
+        for kw in (_normalise(k.strip().lower()) for k in faq.keywords.split(",") if k.strip()):
+            if not kw.replace("'", "").isalnum():  # phrases and hyphenated words ("check in", "check-out")
                 score += 3 if kw in low else 0
             elif kw in toks:
                 score += 2

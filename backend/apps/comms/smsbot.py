@@ -81,7 +81,9 @@ class GuestBot:
     # -- plumbing
     def reply(self, body, kind="", handled="auto", booking=None):
         messaging.mark(self.inbound, handled, kind)
-        messaging.send(self.phone, body, kind=kind or "bot_reply", sender="bot", booking=booking)
+        # A question typed in the web chat is answered in the web chat; SMS questions get SMS answers.
+        channel = "web" if getattr(self.inbound, "channel", "") == "web" else None
+        messaging.send(self.phone, body, kind=kind or "bot_reply", sender="bot", booking=booking, channel=channel)
         return body
 
     def say(self, key, handled="auto", booking=None, **ctx):
