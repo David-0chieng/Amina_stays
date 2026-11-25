@@ -74,6 +74,7 @@ export function TodayView() {
         <TodaySkeleton />
       ) : (
         <div className="space-y-6">
+          <ReservationsStrip data={d} />
           <KpiRow week={d.kpis.week} month={d.kpis.month} />
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -113,6 +114,91 @@ function TodaySkeleton() {
           <Skeleton className="h-80 rounded-2xl" />
         </div>
         <Skeleton className="h-[600px] rounded-2xl" />
+      </div>
+    </div>
+  );
+}
+
+// ---------- Today | Upcoming (Airbnb's reservation cards) ----------
+
+type CardKind = "checkout" | "arriving" | "hosting" | "upcoming";
+
+const KIND_STYLE: Record<CardKind, string> = {
+  checkout: "text-[#c13515]",
+  arriving: "text-[#008a05]",
+  hosting: "text-brand-600",
+  upcoming: "text-ink",
+};
+
+function upcomingLabel(checkIn: string) {
+  const r = relDay(checkIn);
+  if (r === "Tomorrow") return "Arriving tomorrow";
+  const days = Math.round((new Date(`${checkIn}T00:00:00`).getTime() - new Date(new Date().toDateString()).getTime()) / 86_400_000);
+  return days > 1 && days < 14 ? `Arrives in ${days} days` : `Arrives ${fmtDate(checkIn, "EEE d MMM")}`;
+}
+
+function ReservationsStrip({ data }: { data: TodayData }) {
+  const [view, setView] = React.useState<"today" | "upcoming">("today");
+  const leaving = new Set(data.departures.map((r) => r.ref));
+  const today: { r: ReservationRow; kind: CardKind; label: string }[] = [
+    ...data.departures.map((r) => ({ r, kind: "checkout" as const, label: "Checking out today" })),
+    ...data.arrivals.map((r) => ({ r, kind: "arriving" as const, label: r.status === "checked_in" ? "Checked in today" : "Arriving today" })),
+    ...data.in_house.filter((r) => !leaving.has(r.ref)).map((r) => ({ r, kind: "hosting" as const, label: "Currently hosting" })),
+  ];
+  const upcoming = data.upcoming.map((r) => ({ r, kind: "upcoming" as const, label: upcomingLabel(r.check_in) }));
+  const rows = view === "today" ? today : upcoming;
+  return (
+    <section className="pb-4">
+      <div className="inline-flex rounded-full bg-chip p-1" role="tablist" aria-label="Reservations">
+        {(["today", "upcoming"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => setView(v)}
+            className={cn("h-9 rounded-full px-5 text-sm font-medium transition-all", view === v ? "bg-white shadow-[0_1px_4px_rgb(0_0_0/0.15)]" : "text-ink-2 hover:text-ink")}
+          >
+            {v === "today" ? "Today" : `Upcoming${data.upcoming.length ? ` (${data.upcoming.length})` : ""}`}
+          </button>
+        ))}
+      </div>
+      <h2 className="mt-6 text-[22px] font-semibold tracking-tight">
+        {rows.length
+          ? `You have ${rows.length} ${view === "today" ? "reservation" : "upcoming reservation"}${rows.length === 1 ? "" : "s"}`
+          : view === "today" ? "You don't have any guests arriving, leaving or staying today" : "No upcoming reservations this week"}
+      </h2>
+      {rows.length > 0 && (
+        <div className="no-scrollbar -mx-5 mt-5 flex snap-x scroll-px-5 gap-4 overflow-x-auto px-5 pb-3 sm:-mx-8 sm:scroll-px-8 sm:px-8 md:-mx-10 md:scroll-px-10 md:px-10">
+          {rows.map(({ r, kind, label }) => (
+            <ReservationCard key={`${kind}-${r.ref}`} row={r} kind={kind} label={label} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReservationCard({ row: r, kind, label }: { row: ReservationRow; kind: CardKind; label: string }) {
+  const guest = displayName(r.guest.name, r.guest.phone);
+  return (
+    <div className="flex w-[300px] shrink-0 snap-start flex-col rounded-2xl border border-line bg-white transition-shadow hover:shadow-card">
+      <Link href={`/host/reservations/${r.ref}`} className="flex flex-1 items-start justify-between gap-3 p-5">
+        <div className="min-w-0">
+          <p className={cn("text-sm font-semibold", KIND_STYLE[kind])}>{label}</p>
+          <p className="mt-3 truncate text-[22px] leading-7 font-semibold">{guest}</p>
+          <p className="mt-1 truncate text-sm text-ink-2">{fmtRange(r.check_in, r.check_out)} · {plural(r.guests, "guest")}</p>
+          <p className="truncate text-sm text-ink-2">{r.unit.name}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <ChannelBadge channel={r.channel} />
+            {r.balance_due > 0 && <BalanceChip balance={r.balance_due} status={r.status} />}
+          </div>
+        </div>
+        <GuestAvatar name={r.guest.name} size={44} />
+      </Link>
+      <div className="grid grid-cols-2 border-t border-line text-sm font-semibold">
+        <a href={`tel:${r.guest.phone}`} className="flex h-12 items-center justify-center rounded-bl-2xl hover:bg-surface">Call</a>
+        <Link href={`/host/reservations/${r.ref}`} className="flex h-12 items-center justify-center rounded-br-2xl border-l border-line hover:bg-surface">Details</Link>
       </div>
     </div>
   );

@@ -2,55 +2,25 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarDays, ChefHat, ClipboardCheck, ClipboardList, FlaskConical, Home, Inbox, LayoutDashboard, LogOut, Menu, MessageSquareText, Phone,
-  Radio, Settings, ShieldCheck, Siren, Star, TrendingUp, Users, Wallet, X,
+  CalendarDays, ChefHat, ClipboardCheck, ClipboardList, FlaskConical, House, LogOut, Menu as MenuIcon, MessageSquare, MessageSquareText, Phone,
+  Plane, Radio, Settings, ShieldCheck, Siren, Star, Sun, TrendingUp, Users, Wallet, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useConfig, useLogout, useMe } from "@/components/providers";
+import { BrandLink, BrandMark } from "@/components/site/brand";
 import { PhoneLogin } from "@/components/site/phone-login";
 import { Button } from "@/components/ui/button";
+import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar, Spinner } from "@/components/ui/misc";
+import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/overlays";
 import { get, post } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type AlertRow = { id: number; kind: string; severity: string; status: string; summary: string; phone: string; created_at: string; booking: string | null };
-
-const NAV: { group: string; items: { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: "inbox" | "alerts" }[] }[] = [
-  {
-    group: "Operate",
-    items: [
-      { href: "/host", label: "Today", icon: LayoutDashboard },
-      { href: "/host/calendar", label: "Calendar", icon: CalendarDays },
-      { href: "/host/reservations", label: "Reservations", icon: ClipboardList },
-      { href: "/host/inbox", label: "Inbox", icon: Inbox, badge: "inbox" },
-      { href: "/host/tasks", label: "Housekeeping & tasks", icon: ClipboardCheck },
-      { href: "/host/kitchen", label: "Breakfast & kitchen", icon: ChefHat },
-    ],
-  },
-  {
-    group: "Grow",
-    items: [
-      { href: "/host/listings", label: "Listings", icon: Home },
-      { href: "/host/guests", label: "Guests", icon: Users },
-      { href: "/host/messaging", label: "Messaging & automations", icon: MessageSquareText },
-      { href: "/host/reviews", label: "Reviews", icon: Star },
-      { href: "/host/insights", label: "Insights", icon: TrendingUp },
-    ],
-  },
-  {
-    group: "Run the business",
-    items: [
-      { href: "/host/payments", label: "Payments", icon: Wallet },
-      { href: "/host/safety", label: "Safety & compliance", icon: ShieldCheck, badge: "alerts" },
-      { href: "/host/channels", label: "Africa's Talking", icon: Radio },
-      { href: "/host/settings", label: "Settings", icon: Settings },
-    ],
-  },
-];
 
 export function HostShell({ children }: { children: React.ReactNode }) {
   const { data: me, isLoading } = useMe();
@@ -71,9 +41,10 @@ function HostLogin() {
     <div className="grid min-h-dvh lg:grid-cols-2">
       <div className="flex items-center justify-center p-8">
         <div className="w-full max-w-sm">
-          <Link href="/" className="mb-10 inline-flex items-center gap-2 font-bold">
-            <Logo /> Amina Stays <span className="font-normal text-ink-2">· Host</span>
-          </Link>
+          <div className="mb-10 flex items-center gap-2">
+            <BrandLink />
+            <span className="text-sm text-ink-2">· Hosting</span>
+          </div>
           <PhoneLogin title="Host console" subtitle="Log in with your registered host phone number." cta="Send code" />
         </div>
       </div>
@@ -81,7 +52,7 @@ function HostLogin() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="https://images.unsplash.com/photo-1602002418082-a4443e081dd1?auto=format&fit=crop&w=1400&q=80" alt="" className="absolute inset-0 size-full object-cover opacity-60" />
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 p-12 text-white">
-          <p className="text-3xl font-bold tracking-tight">Every guest, every channel, one console.</p>
+          <p className="text-3xl font-semibold tracking-tight">Every guest, every channel, one console.</p>
           <p className="mt-3 max-w-md text-white/80">Bookings from the web, USSD, SMS and voice land here — with payments, door codes, breakfast, housekeeping and safety alerts in one place.</p>
         </div>
       </div>
@@ -108,59 +79,63 @@ function NotHost({ name }: { name?: string }) {
 export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn("grid size-8 place-items-center rounded-lg bg-brand-500 text-white", className)} aria-hidden>
-      <svg viewBox="0 0 24 24" className="size-5" fill="none">
-        <path d="M12 4l5 8H7z" fill="currentColor" />
-        <path d="M4 16c2.7-1.4 5.3-1.4 8 0s5.3 1.4 8 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <svg viewBox="0 0 32 32" className="size-[62%]" fill="none">
+        <path d="M7.5 19.5 17.2 3.4c.3-.5 1-.5 1.3 0 3 5 5.4 10 7 15.3.2.5-.2.8-.7.8H7.5Z" fill="currentColor" />
+        <path d="M3 25.2c2.2-1.6 4.4-1.6 6.5 0s4.3 1.6 6.5 0 4.3-1.6 6.5 0 4.3 1.6 6.5 0" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
       </svg>
     </span>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false);
-  const pathname = usePathname();
-  const [menuPath, setMenuPath] = React.useState(pathname);
-  if (pathname !== menuPath) {
-    // navigating closes the mobile menu
-    setMenuPath(pathname);
-    setOpen(false);
-  }
-  return (
-    <div className="min-h-dvh bg-surface">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] border-r border-line-soft bg-white lg:block">
-        <Sidebar />
-      </aside>
-      {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[280px] bg-white shadow-float animate-slide-up">
-            <button className="absolute top-4 right-3 grid size-9 place-items-center rounded-full hover:bg-surface" onClick={() => setOpen(false)} aria-label="Close menu">
-              <X className="size-4" />
-            </button>
-            <Sidebar />
-          </aside>
-        </div>
-      )}
-      <div className="lg:pl-[264px]">
-        <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line-soft bg-white px-4 lg:hidden">
-          <button className="grid size-9 place-items-center rounded-full hover:bg-surface" onClick={() => setOpen(true)} aria-label="Open menu">
-            <Menu className="size-5" />
-          </button>
-          <Logo className="size-7" />
-          <span className="font-bold">Host console</span>
-        </div>
-        <SosBanner />
-        <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-8 sm:py-8">{children}</main>
-      </div>
-    </div>
-  );
-}
+type Badge = "inbox" | "alerts";
 
-function Sidebar() {
-  const pathname = usePathname();
-  const { data: me } = useMe();
-  const { data: config } = useConfig();
-  const logout = useLogout();
+// Airbnb's hosting mode: four destinations plus Menu, the same on desktop (top bar) and phones (bottom bar).
+const TABS: { href: string; label: string; icon: LucideIcon; badge?: Badge }[] = [
+  { href: "/host", label: "Today", icon: Sun },
+  { href: "/host/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/host/listings", label: "Listings", icon: House },
+  { href: "/host/inbox", label: "Messages", icon: MessageSquare, badge: "inbox" },
+];
+
+export const HOST_MENU: {
+  group: string;
+  items: { href: string; label: string; text: string; icon: Icon3DName; lucide: LucideIcon; badge?: Badge; demoOnly?: boolean }[];
+}[] = [
+  {
+    group: "Business",
+    items: [
+      { href: "/host/reservations", label: "Reservations", text: "Every booking from every channel, in one list", icon: "clipboard", lucide: ClipboardList },
+      { href: "/host/payments", label: "Earnings & payments", text: "M-Pesa, cards, refunds and balances due", icon: "money-bag", lucide: Wallet },
+      { href: "/host/insights", label: "Insights", text: "Occupancy, nightly rates, channels and demand", icon: "bar-chart", lucide: TrendingUp },
+      { href: "/host/reviews", label: "Reviews", text: "Ratings, replies and what guests mention", icon: "star", lucide: Star },
+      { href: "/host/guests", label: "Guests", text: "Profiles, stays, preferences and IDs", icon: "guests", lucide: Users },
+    ],
+  },
+  {
+    group: "Operations",
+    items: [
+      { href: "/host/tasks", label: "Housekeeping & tasks", text: "Turnovers, inspections and repairs", icon: "broom", lucide: ClipboardCheck },
+      { href: "/host/kitchen", label: "Breakfast & kitchen", text: "Who eats what, when — and the shopping list", icon: "cooking", lucide: ChefHat },
+      { href: "/host/messaging", label: "Messaging & automations", text: "Templates, the guest timeline, FAQ and broadcasts", icon: "speech-balloon", lucide: MessageSquareText },
+    ],
+  },
+  {
+    group: "Compliance & channels",
+    items: [
+      { href: "/host/safety", label: "Safety & compliance", text: "SOS alerts, guest register and TRA returns", icon: "shield", lucide: ShieldCheck, badge: "alerts" },
+      { href: "/host/channels", label: "Africa's Talking", text: "SMS, USSD, voice and airtime — live status", icon: "antenna", lucide: Radio },
+    ],
+  },
+  {
+    group: "Account",
+    items: [
+      { href: "/host/settings", label: "Settings", text: "Business details, team, pricing and extras", icon: "gear", lucide: Settings },
+      { href: "/demo", label: "Demo Lab", text: "Simulated phones for USSD, SMS and voice", icon: "test-tube", lucide: FlaskConical, demoOnly: true },
+    ],
+  },
+];
+
+function useBadges(): Record<Badge, number> {
   const { data: inbox } = useQuery({
     queryKey: ["host", "inbox-count"],
     queryFn: () => get<unknown[]>("/api/host/inbox?filter=needs_reply"),
@@ -171,65 +146,163 @@ function Sidebar() {
     queryFn: () => get<AlertRow[]>("/api/host/alerts?status=active"),
     refetchInterval: 10_000,
   });
-  const badges = { inbox: inbox?.length ?? 0, alerts: alerts?.filter((a) => a.status === "open").length ?? 0 };
+  return { inbox: inbox?.length ?? 0, alerts: alerts?.filter((a) => a.status === "open").length ?? 0 };
+}
 
+const isActive = (pathname: string, href: string) => (href === "/host" ? pathname === "/host" : pathname.startsWith(href));
+
+function Shell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const badges = useBadges();
+  const menuActive = pathname.startsWith("/host/menu") || HOST_MENU.some((g) => g.items.some((i) => isActive(pathname, i.href)));
   return (
-    <div className="flex h-full flex-col">
-      <Link href="/host" className="flex h-16 shrink-0 items-center gap-2.5 px-5">
-        <Logo />
-        <span className="leading-tight">
-          <span className="block text-[15px] font-bold">Amina Stays</span>
-          <span className="block text-xs text-ink-2">Host console</span>
-        </span>
-      </Link>
-      <nav className="no-scrollbar flex-1 overflow-y-auto px-3 pb-4">
-        {NAV.map((g) => (
-          <div key={g.group} className="mt-4 first:mt-1">
-            <p className="px-3 pb-1.5 text-[11px] font-bold tracking-wider text-ink-3 uppercase">{g.group}</p>
-            {g.items.map((item) => {
-              const active = item.href === "/host" ? pathname === "/host" : pathname.startsWith(item.href);
-              const count = item.badge ? badges[item.badge] : 0;
+    <div className="min-h-dvh bg-white">
+      <header className="sticky top-0 z-40 hidden border-b border-line-soft bg-white md:block">
+        <div className="mx-auto grid h-20 max-w-[1400px] grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 md:px-10">
+          <Link href="/host" aria-label="Today" className="flex items-center gap-1.5 text-brand-500">
+            <BrandMark className="size-[34px]" />
+          </Link>
+          <nav className="flex items-center gap-1" aria-label="Hosting">
+            {TABS.map((t) => {
+              const on = isActive(pathname, t.href);
+              const n = t.badge ? badges[t.badge] : 0;
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] font-medium text-ink-2 transition-colors hover:bg-surface hover:text-ink",
-                    active && "bg-surface font-semibold text-ink",
-                  )}
+                  key={t.href}
+                  href={t.href}
+                  aria-current={on ? "page" : undefined}
+                  className={cn("relative flex h-10 items-center rounded-full px-4 text-[15px] font-medium transition-colors hover:bg-chip", on ? "text-ink" : "text-ink-2 hover:text-ink")}
                 >
-                  <item.icon className="size-[18px]" />
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {count > 0 && (
-                    <span className={cn("min-w-5 rounded-full px-1.5 text-center text-[11px] leading-5 font-bold text-white", item.badge === "alerts" ? "bg-danger" : "bg-brand-500")}>
-                      {count}
-                    </span>
-                  )}
+                  {t.label}
+                  {n > 0 && <span className="ml-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-brand-500 px-1 text-[10px] font-semibold text-white">{n}</span>}
+                  {on && <span className="absolute inset-x-4 -bottom-[19px] h-0.5 rounded-full bg-ink" />}
                 </Link>
               );
             })}
+          </nav>
+          <div className="flex items-center justify-end gap-2">
+            <Link href="/" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip lg:flex">
+              Switch to traveling
+            </Link>
+            <MenuDropdown badges={badges} active={menuActive} />
           </div>
-        ))}
-        {config?.demo && (
-          <Link href="/demo" className="mt-4 flex items-center gap-3 rounded-lg border border-dashed border-ocean-500/40 bg-ocean-50 px-3 py-2 text-[14px] font-semibold text-ocean-700">
-            <FlaskConical className="size-[18px]" /> Demo Lab · phones
-          </Link>
-        )}
-      </nav>
-      <div className="border-t border-line-soft p-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <Avatar name={me?.name} size={34} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{me?.name || me?.phone}</p>
-            <p className="truncate text-xs text-ink-2 capitalize">{me?.role}</p>
-          </div>
-          <button onClick={logout} className="grid size-8 place-items-center rounded-full text-ink-2 hover:bg-surface hover:text-ink" aria-label="Log out">
-            <LogOut className="size-4" />
-          </button>
         </div>
-        <Link href="/" className="mt-1 block rounded-lg px-2 py-1.5 text-center text-[13px] font-semibold text-ink-2 hover:text-ink">
-          View guest website →
-        </Link>
+      </header>
+      <SosBanner />
+      <main className="mx-auto w-full max-w-[1400px] px-5 pt-6 pb-28 sm:px-8 md:px-10 md:pt-10 md:pb-16">{children}</main>
+      <BottomBar pathname={pathname} badges={badges} menuActive={menuActive} />
+    </div>
+  );
+}
+
+function MenuDropdown({ badges, active }: { badges: Record<Badge, number>; active: boolean }) {
+  const { data: me } = useMe();
+  const { data: config } = useConfig();
+  const router = useRouter();
+  const logout = useLogout();
+  return (
+    <Dropdown>
+      <DropdownTrigger
+        className={cn("relative flex h-10 items-center gap-2 rounded-full bg-chip pr-1 pl-3 outline-none transition-colors hover:bg-line-soft data-[state=open]:bg-line-soft", active && "bg-line-soft shadow-[inset_0_0_0_1px_var(--color-line)]")}
+        aria-label="Menu"
+      >
+        <MenuIcon className="size-[18px]" strokeWidth={2.2} />
+        <Avatar name={me?.name || me?.phone} size={32} className="bg-ink! text-[13px]!" />
+        {badges.alerts > 0 && <span className="absolute -top-0.5 -right-0.5 size-3 rounded-full bg-danger ring-2 ring-white" />}
+      </DropdownTrigger>
+      <DropdownContent className="max-h-[80dvh] w-[300px] overflow-y-auto rounded-2xl border-0 py-2 shadow-pop">
+        <div className="px-5 py-3">
+          <p className="truncate text-sm font-semibold">{me?.name || "Host"}</p>
+          <p className="truncate text-xs text-ink-2 capitalize">{me?.role} · {me?.phone}</p>
+        </div>
+        {HOST_MENU.map((g) => (
+          <React.Fragment key={g.group}>
+            <DropdownSeparator />
+            <p className="px-5 pt-1 pb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">{g.group}</p>
+            {g.items
+              .filter((i) => !i.demoOnly || config?.demo)
+              .map((i) => (
+                <DropdownItem key={i.href} onSelect={() => router.push(i.href)} className="gap-3 px-5 py-2.5">
+                  <i.lucide className="size-[18px]" />
+                  <span className="flex-1">{i.label}</span>
+                  {i.badge && badges[i.badge] > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">{badges[i.badge]}</span>}
+                </DropdownItem>
+              ))}
+          </React.Fragment>
+        ))}
+        <DropdownSeparator />
+        <DropdownItem onSelect={() => router.push("/")} className="gap-3 px-5 py-2.5 font-medium"><Plane className="size-[18px]" /> Switch to traveling</DropdownItem>
+        <DropdownItem onSelect={logout} className="gap-3 px-5 py-2.5"><LogOut className="size-[18px]" /> Log out</DropdownItem>
+      </DropdownContent>
+    </Dropdown>
+  );
+}
+
+function BottomBar({ pathname, badges, menuActive }: { pathname: string; badges: Record<Badge, number>; menuActive: boolean }) {
+  const items = [
+    ...TABS.slice(0, 2),
+    TABS[2],
+    TABS[3],
+    { href: "/host/menu", label: "Menu", icon: MenuIcon, badge: "alerts" as Badge },
+  ];
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Hosting">
+      <div className="mx-auto flex max-w-md justify-around">
+        {items.map((t) => {
+          const on = t.href === "/host/menu" ? menuActive : isActive(pathname, t.href);
+          const n = t.badge ? badges[t.badge] : 0;
+          return (
+            <Link key={t.href} href={t.href} className={cn("relative flex min-w-16 flex-col items-center gap-1 pt-2.5 pb-2 text-[10px] font-medium", on ? "text-ink" : "text-ink-2")}>
+              <t.icon className={cn("size-6", on ? "text-brand-500" : "text-ink-2")} strokeWidth={on ? 2.2 : 1.6} />
+              {t.label}
+              {n > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-4 min-w-4 place-items-center rounded-full bg-brand-500 px-1 text-[9px] font-semibold text-white">{n}</span>}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/** The Menu destination (a full page on phones, also reachable on desktop): grouped cards, like Airbnb's account hub. */
+export function HostMenuPage() {
+  const { data: me } = useMe();
+  const { data: config } = useConfig();
+  const badges = useBadges();
+  const logout = useLogout();
+  return (
+    <div className="mx-auto max-w-[1080px]">
+      <h1 className="text-[32px] leading-tight font-semibold tracking-tight">Menu</h1>
+      <div className="mt-6 flex items-center gap-4 rounded-2xl p-5 shadow-[0_6px_16px_rgb(0_0_0/0.12)]">
+        <Avatar name={me?.name || me?.phone} size={56} className="bg-ink! text-xl!" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-semibold">{me?.name || "Host"}</p>
+          <p className="truncate text-sm text-ink-2 capitalize">{me?.role} · {me?.phone}</p>
+        </div>
+        <Button asChild variant="soft" className="hidden sm:inline-flex"><Link href="/">Switch to traveling</Link></Button>
+      </div>
+      {HOST_MENU.map((g) => (
+        <section key={g.group} className="mt-10">
+          <h2 className="text-lg font-semibold">{g.group}</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {g.items
+              .filter((i) => !i.demoOnly || config?.demo)
+              .map((i) => (
+                <Link key={i.href} href={i.href} className="group relative rounded-2xl p-5 shadow-[0_6px_16px_rgb(0_0_0/0.12)] transition-shadow hover:shadow-[0_8px_28px_rgb(0_0_0/0.18)]">
+                  <Icon3D name={i.icon} size={40} />
+                  <p className="mt-6 font-semibold">{i.label}</p>
+                  <p className="mt-1 text-sm text-ink-2">{i.text}</p>
+                  {i.badge && badges[i.badge] > 0 && (
+                    <span className="absolute top-5 right-5 grid h-6 min-w-6 place-items-center rounded-full bg-danger px-2 text-xs font-semibold text-white">{badges[i.badge]}</span>
+                  )}
+                </Link>
+              ))}
+          </div>
+        </section>
+      ))}
+      <div className="mt-12 flex flex-wrap gap-3 border-t border-line pt-8">
+        <Button asChild size="lg"><Link href="/"><Plane className="size-4" /> Switch to traveling</Link></Button>
+        <Button variant="soft" size="lg" onClick={logout}><LogOut className="size-4" /> Log out</Button>
       </div>
     </div>
   );
@@ -246,8 +319,8 @@ function SosBanner() {
   if (!sos.length) return null;
   const a = sos[0];
   return (
-    <div className="sticky top-0 z-30 border-b border-danger/30 bg-danger text-white lg:top-0">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-4 py-3 sm:px-8">
+    <div className="sticky top-0 z-30 border-b border-danger/30 bg-danger text-white md:top-20">
+      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-3 sm:px-8 md:px-10">
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/20 animate-pulse-ring">
           <Siren className="size-5" />
         </span>
