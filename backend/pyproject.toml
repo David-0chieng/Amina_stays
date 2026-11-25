@@ -1,0 +1,38 @@
+[project]
+name = "amina-stays-api"
+version = "2.0.0"
+description = "Amina Stays — booking, guest communication and host operations API (Django + DRF) on Africa's Talking"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=45",
+    "dj-database-url>=3.0",
+    "django>=6.1,<6.2",
+    "django-cors-headers>=4.9",
+    "djangorestframework>=3.18",
+    "drf-spectacular>=0.30",
+    "gunicorn>=23",
+    "httpx>=0.28",
+    "psycopg[binary,pool]>=3.3",
+    "python-dotenv>=1.0",
+    "whitenoise>=6.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.14",
+    "ruff>=0.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q --reuse-db"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
