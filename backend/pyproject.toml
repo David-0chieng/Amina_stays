@@ -32,7 +32,14 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 addopts = "-q --reuse-db"
+filterwarnings = ["ignore:No directory at:UserWarning"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "FURB", "RUF"]
+# RUF012: Django models/admin declare choices & list_display as class-level lists by design.
+# RUF001-003: guest-facing copy uses real typography (– ‘ ’ ×); the GSM-7 encoder maps it for SMS.
+ignore = ["RUF001", "RUF002", "RUF003", "RUF005", "RUF012"]

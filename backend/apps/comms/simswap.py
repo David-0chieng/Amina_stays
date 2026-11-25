@@ -71,7 +71,7 @@ def _state(check):
 
 def status_for(booking):
     check = SimSwapCheck.objects.filter(booking=booking).order_by("-id").first()
-    if check is None or (check.status not in ("Queued",) and timezone.now() - check.updated_at > timedelta(hours=12)):
+    if check is None or (check.status != "Queued" and timezone.now() - check.updated_at > timedelta(hours=12)):
         check = request_check(booking)
     return _state(check)
 

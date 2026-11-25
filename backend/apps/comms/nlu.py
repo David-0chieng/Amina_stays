@@ -96,7 +96,7 @@ def parse_dates(text, ref=None):
             co = _safe(int(m[4]), int(m[5]), int(m[6]))
     if not ci:  # "5-8 dec", "5 to 8 december", "from 5th to 8th dec"
         m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|until|till|hadi|–)\s*(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})", t)
-        if m and m[3][:4] in MONTHS or (m and m[3][:3] in MONTHS):
+        if (m and m[3][:4] in MONTHS) or (m and m[3][:3] in MONTHS):
             month = MONTHS.get(m[3][:4]) or MONTHS.get(m[3][:3])
             ci, co = _date(int(m[1]), month, ref), _date(int(m[2]), month, ref)
             if ci and co and co <= ci:
@@ -162,11 +162,14 @@ def parse_eta(text):
 
 
 BOOKING_WORDS = re.compile(
-    r"\b(free|available|availability|vacan\w*|book|reserve|stay|room|rooms|apartment|studio|place|nafasi|chumba|vyumba|"
-    r"kulala|same as last time|the usual|disponib\w*|libero|frei|zimmer|chambre)\b",
-    re.I,
+    r"\b(free|available|availability|vacan\w*|book|reserve|stay|room|rooms|apartment|studio|place|nights|nafasi|chumba|vyumba|"
+    r"kulala|nyumba|malazi|kukaa|usiku|same as last time|the usual|disponib\w*|libero|notti|frei|zimmer|n[aä]chte|chambre|nuits)\b",
+    re.IGNORECASE,
 )
 
 
 def looks_like_booking(text):
-    return bool(BOOKING_WORDS.search(text or ""))
+    if BOOKING_WORDS.search(text or ""):
+        return True
+    ci, co = parse_dates(text or "")
+    return bool(ci and co and parse_guests(text or ""))  # "Diani 12 Dec - 15 Dec, 2 of us"

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Booking, BookingGuest, BookingEvent, Addon, BookingAddon, AccessCode, Waitlist
+from .models import AccessCode, Addon, Booking, BookingAddon, BookingEvent, BookingGuest, Waitlist
 
 admin.site.register(Booking)
 admin.site.register(BookingGuest)

@@ -11,8 +11,7 @@ Guests always see one all-in total (total-price display, as Airbnb made standard
 
 import logging
 import re
-from datetime import date, datetime, timedelta
-from datetime import timezone as dt_timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -109,7 +108,7 @@ def nightly_rates(unit, check_in, check_out):
                 price, label = _apply(price, r), r.name
         if d in overrides:
             price, label = Decimal(overrides[d].price), overrides[d].note or "Special price"
-        out.append((d, int(max(price, 0).quantize(Decimal("1"))), label))
+        out.append((d, int(max(price, 0).quantize(Decimal(1))), label))
     return out
 
 
@@ -243,7 +242,7 @@ def _ics_date(value):
     d = date(int(m[1]), int(m[2]), int(m[3]))
     if "T" in value and value.endswith("Z"):  # a UTC datetime: convert to Kenya date
         try:
-            dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=dt_timezone.utc)
+            dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
             d = timezone.localtime(dt).date()
         except ValueError:
             pass

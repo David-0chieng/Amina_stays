@@ -61,6 +61,10 @@ class Unit(models.Model):
     ]
     STATUS = [("active", "Listed"), ("paused", "Paused"), ("draft", "Draft")]
     HOUSEKEEPING = [("clean", "Clean"), ("dirty", "Needs cleaning"), ("cleaning", "Cleaning"), ("inspect", "Needs inspection")]
+    GUEST_ACCESS = {
+        "simulated": "Self check-in with a keypad", "igloohome": "Self check-in with a smart lock", "ttlock": "Self check-in with a smart lock",
+        "nuki": "Self check-in with a smart lock", "lockbox": "Self check-in with a key lockbox", "caretaker": "The caretaker meets you with the keys",
+    }
 
     name = models.CharField(max_length=80)
     slug = models.SlugField(max_length=90, unique=True, blank=True)
@@ -161,6 +165,10 @@ class Unit(models.Model):
         from apps.core.models import SiteSettings
 
         return self.checkout_time or SiteSettings.load().default_checkout_time
+
+    @property
+    def guest_access_label(self):
+        return self.GUEST_ACCESS.get(self.access_method, "Self check-in")
 
     def approximate_location(self):
         """Public map pin: deterministic ~300–600 m offset so the exact door stays private."""

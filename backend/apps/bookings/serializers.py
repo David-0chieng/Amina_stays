@@ -49,7 +49,7 @@ def trip_dict(b, *, host=False):
     details_visible = host or (b.status in ("confirmed", "checked_in") and now >= reveal_at) or b.status == "checked_in"
     code = b.access_codes.filter(revoked_at__isnull=True).first()
     breakfast = b.addons.filter(addon__code="breakfast").exclude(status__in=("declined", "cancelled")).first()
-    checkin = {"time": services.effective_checkin_time(b), "checkout_time": services.effective_checkout_time(b), "method": u.get_access_method_display(),
+    checkin = {"time": services.effective_checkin_time(b), "checkout_time": services.effective_checkout_time(b), "method": u.guest_access_label,
                "reveal_at": reveal_at, "details_visible": details_visible}
     if confirmed or host:
         checkin.update(address=u.address, map_link=u.map_link,

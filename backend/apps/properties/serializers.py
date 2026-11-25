@@ -60,7 +60,7 @@ def listing_detail(unit, *, stats=None, wished=False):
         amenities=[{"code": a.code, "name": a.name, "icon": a.icon, "category": a.category} for a in unit.amenities.all()],
         highlights=unit.highlights, house_rules=unit.house_rules, pets_allowed=unit.pets_allowed, smoking_allowed=unit.smoking_allowed,
         events_allowed=unit.events_allowed, quiet_hours=unit.quiet_hours, safety_features=unit.safety_features,
-        checkin_time=unit.effective_checkin(), checkout_time=unit.effective_checkout(), access_method=unit.get_access_method_display(),
+        checkin_time=unit.effective_checkin(), checkout_time=unit.effective_checkout(), access_method=unit.guest_access_label,
         self_checkin=unit.access_method in ("simulated", "igloohome", "ttlock", "nuki", "lockbox"),
         min_nights=unit.min_nights, max_nights=unit.max_nights, cleaning_fee=unit.cleaning_fee, weekend_price=unit.weekend_price,
         weekly_discount=unit.weekly_discount, monthly_discount=unit.monthly_discount,

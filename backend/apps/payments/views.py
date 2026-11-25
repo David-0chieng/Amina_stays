@@ -118,7 +118,7 @@ def card_checkout(request, token):
     return Response({
         "ref": b.ref, "unit": b.unit.name, "check_in": b.check_in, "check_out": b.check_out, "amount": p.amount, "currency": p.currency,
         "status": p.status, "booking_status": b.status, "expires_at": b.hold_expires_at if b.status == "held" else None,
-        "expired": b.status == "held" and not b.hold_active or b.status == "expired", "simulated": p.provider == "simulate",
+        "expired": (b.status == "held" and not b.hold_active) or b.status == "expired", "simulated": p.provider == "simulate",
     })
 
 

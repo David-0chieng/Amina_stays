@@ -134,14 +134,14 @@ def nice_time(hhmm):
     h, m = (int(x) for x in hhmm.split(":")[:2])
     suffix = "am" if h < 12 else "pm"
     h12 = h % 12 or 12
-    return f"{h12}{':%02d' % m if m else ''}{suffix}"
+    return f"{h12}{f':{m:02d}' if m else ''}{suffix}"
 
 
 # ---------- money ----------
 
 
 def kes(amount):
-    return f"KES {int(round(amount or 0)):,}"
+    return f"KES {round(amount or 0):,}"
 
 
 # ---------- text ----------

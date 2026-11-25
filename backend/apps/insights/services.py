@@ -164,7 +164,7 @@ def tra_return(year, month):
     start = date(year, month, 1)
     end = date(year + (month == 12), month % 12 + 1, 1)
     occ = occupancy(start, end)
-    revenue, nights = room_revenue(start, end)
+    revenue, _nights = room_revenue(start, end)
     stays = Booking.objects.filter(status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start).select_related("guest").prefetch_related("occupants")
     countries = Counter()
     guest_nights = 0

@@ -64,7 +64,7 @@ def to_gsm(text):
             out.append(ch)
             continue
         base = unicodedata.normalize("NFKD", ch).encode("ascii", "ignore").decode()
-        out.append(base if base else "")
+        out.append(base or "")
     return "".join(out)
 
 
@@ -79,7 +79,7 @@ def sms_segments(text):
 
 
 def get_thread(phone, guest=None):
-    thread, created = Thread.objects.get_or_create(phone=phone, defaults={"guest": guest})
+    thread, _ = Thread.objects.get_or_create(phone=phone, defaults={"guest": guest})
     if guest is not None and thread.guest_id is None:
         thread.guest = guest
         thread.save(update_fields=["guest"])

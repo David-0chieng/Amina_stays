@@ -178,10 +178,13 @@ def demo_only(view):
 def _phone_messages(phone, after=0):
     from apps.messaging.models import Message
 
+    qs = Message.objects.filter(phone=phone)
+    # First load shows the latest messages; later polls fetch only what's new.
+    rows = qs.filter(id__gt=after).order_by("id")[:200] if after else reversed(qs.order_by("-id")[:100])
     return [
         {"id": m.id, "direction": m.direction, "channel": m.channel, "body": m.body, "status": m.status, "kind": m.kind,
          "created_at": m.created_at.isoformat()}
-        for m in Message.objects.filter(phone=phone, id__gt=after).order_by("id")[:200]
+        for m in rows
     ]
 
 

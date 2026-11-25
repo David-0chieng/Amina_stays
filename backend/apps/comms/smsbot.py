@@ -27,7 +27,7 @@ from . import nlu
 
 log = logging.getLogger("amina.sms")
 
-SOS = re.compile(r"^\s*(help|sos|msaada|dharura|emergency|aiuto|hilfe|au secours|urgence)\b", re.I)
+SOS = re.compile(r"^\s*(help|sos|msaada|dharura|emergency|aiuto|hilfe|au secours|urgence)\b", re.IGNORECASE)
 LANG_WORDS = {
     "english": "en", "en": "en", "kiswahili": "sw", "swahili": "sw", "sw": "sw", "italiano": "it", "italian": "it", "it": "it",
     "deutsch": "de", "german": "de", "de": "de", "francais": "fr", "français": "fr", "french": "fr", "fr": "fr",
@@ -177,7 +177,7 @@ class GuestBot:
             return None
         if self.word in ("skip", "no", "hapana", "none"):
             return self.say("review_thanks", rating=review.rating) if review.rating >= 3 else self.say("goodbye_ack")
-        if SOS.match(self.text) or nlu.looks_like_booking(self.text) and len(self.low.split()) < 6:
+        if SOS.match(self.text) or (nlu.looks_like_booking(self.text) and len(self.low.split()) < 6):
             return None
         add_comment(review, self.text)
         if review.rating <= 2:

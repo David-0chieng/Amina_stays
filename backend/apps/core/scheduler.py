@@ -164,6 +164,26 @@ def _due(key, schedule, now):
 
 
 def run_due(only=None):
+    """One scheduler pass. A Postgres advisory lock makes overlapping schedulers (two terminals,
+    two containers) skip instead of double-running jobs."""
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", [ADVISORY_LOCK_ID])
+        if not cur.fetchone()[0]:
+            log.info("another scheduler holds the lock - skipping this pass")
+            return {}
+    try:
+        return _run_due(only)
+    finally:
+        with connection.cursor() as cur:
+            cur.execute("SELECT pg_advisory_unlock(%s)", [ADVISORY_LOCK_ID])
+
+
+ADVISORY_LOCK_ID = 4_206_2026
+
+
+def _run_due(only=None):
     now = timezone.now()
     results = {}
     for key, schedule, fn in JOBS:

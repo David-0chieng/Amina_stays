@@ -121,7 +121,7 @@ def report_issue(booking, text, *, category=None, channel="sms", unit=None):
     label = dict(Task.CATEGORIES).get(category, "Issue")
     unit = unit or (booking.unit if booking else None)
     task = create_task(
-        "maintenance" if category not in ("cleanliness",) else "guest_request", f"{label}: {text[:90]}", unit=unit, booking=booking,
+        "maintenance" if category != "cleanliness" else "guest_request", f"{label}: {text[:90]}", unit=unit, booking=booking,
         priority=priority, description=text, category=category, source="guest", due_at=timezone.now() + timedelta(hours=1 if priority != "normal" else 6),
     )
     if category in URGENT and booking:

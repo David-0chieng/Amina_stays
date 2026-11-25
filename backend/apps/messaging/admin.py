@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Thread, Message, Template, Automation, FAQ, Broadcast, Conversation
+from .models import FAQ, Automation, Broadcast, Conversation, Message, Template, Thread
 
 admin.site.register(Thread)
 admin.site.register(Message)

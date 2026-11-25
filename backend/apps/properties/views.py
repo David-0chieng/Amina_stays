@@ -15,8 +15,17 @@ from apps.core.utils import daterange, parse_date, today
 from . import services
 from .models import Amenity, Area, CalendarBlock, ICalFeed, PriceOverride, PriceRule, Unit, UnitPhoto, Wishlist
 from .serializers import (
-    AmenitySerializer, BlockSerializer, HostUnitSerializer, ICalFeedSerializer, PhotoSerializer, PriceRuleSerializer, addon_dict, area_dict,
-    listing_card, listing_detail, review_stats,
+    AmenitySerializer,
+    BlockSerializer,
+    HostUnitSerializer,
+    ICalFeedSerializer,
+    PhotoSerializer,
+    PriceRuleSerializer,
+    addon_dict,
+    area_dict,
+    listing_card,
+    listing_detail,
+    review_stats,
 )
 
 

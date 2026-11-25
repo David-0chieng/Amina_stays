@@ -7,6 +7,7 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.core.activity import record
@@ -47,6 +48,12 @@ def request_otp(raw_phone):
     prev = OTPCode.objects.filter(phone=phone).first()
     if prev and now - prev.sent_at < RESEND_GAP:
         raise AuthError("Please wait 30 seconds before requesting another code.")
+    # SMS-pumping guard: at most 5 codes per number per hour (per-IP limits alone aren't enough)
+    hour_key = f"otp-count:{phone}:{now:%Y%m%d%H}"
+    sent = cache.get_or_set(hour_key, 0, 3600)
+    if sent >= 5:
+        raise AuthError("Too many codes requested for this number. Please try again in an hour.")
+    cache.incr(hour_key)
     code = f"{secrets.randbelow(900000) + 100000}"
     OTPCode.objects.update_or_create(phone=phone, defaults={"code_hash": _hash(code), "expires_at": now + OTP_TTL, "attempts": 0, "sent_at": now})
     user = User.objects.filter(phone=phone).first()

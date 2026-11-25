@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Area, Amenity, Unit, UnitPhoto, PriceRule, PriceOverride, CalendarBlock, ICalFeed, Wishlist
+from .models import Amenity, Area, CalendarBlock, ICalFeed, PriceOverride, PriceRule, Unit, UnitPhoto, Wishlist
 
 admin.site.register(Area)
 admin.site.register(Amenity)

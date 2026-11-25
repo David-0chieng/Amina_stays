@@ -36,7 +36,27 @@ def config(request):
         "deposit_percent": s.deposit_percent, "hold_minutes": s.hold_minutes, "levy_percent": float(s.tourism_levy_percent),
         "require_id": s.require_id_before_code, "demo": settings.DEMO, "sandbox": settings.AT_SANDBOX,
         "emergency": {"police_ambulance": "999 / 112", "red_cross": "1199", "e_plus": "1514"},
+        **({"demo_lab": _demo_lab(s)} if settings.DEMO else {}),
     })
+
+
+def _demo_lab(s):
+    """Phones the Demo Lab can 'hold': seeded demo users only, never real guests."""
+    from apps.accounts.models import User
+    from apps.bookings.models import Booking
+    from apps.core.api import STAFF_ROLES
+
+    guests = [
+        {"phone": b.guest.phone, "name": b.guest.name, "role": "guest", "lang": b.guest.lang, "ref": b.ref,
+         "note": f"{b.get_status_display()} · {b.unit.name}"}
+        for b in Booking.objects.filter(status__in=("held", "confirmed", "checked_in"), guest__tags__contains=["seed"])
+        .select_related("guest", "unit").order_by("check_in")[:8]
+    ]
+    staff = [
+        {"phone": u.phone, "name": u.name, "role": u.role, "lang": u.lang, "ref": None, "note": u.get_role_display()}
+        for u in User.objects.filter(role__in=STAFF_ROLES, tags__contains=["seed"]).exclude(phone=s.host_contact).order_by("role")
+    ]
+    return {"host_phone": s.host_contact, "host_name": s.host_name, "guests": guests, "staff": staff}
 
 
 class SettingsSerializer(serializers.ModelSerializer):

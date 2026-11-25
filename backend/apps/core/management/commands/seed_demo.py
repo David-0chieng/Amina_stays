@@ -181,7 +181,7 @@ class Command(BaseCommand):
                                     id_last4=guest.id_last4, nationality=guest.nationality, is_lead=True)
         if adults > 1 and guest.nationality != "KE":
             BookingGuest.objects.create(booking=b, full_name=f"Travel companion of {guest.name.split(' ')[0]}", nationality=guest.nationality)
-        amount = b.total if paid is None else paid
+        amount = (b.amount_due_now if plan == "deposit" else b.total) if paid is None else paid
         if amount:
             method = method or ("mpesa" if guest.phone.startswith("+254") else "card")
             p = Payment.objects.create(booking=b, amount=amount, method=method, purpose="deposit" if amount < b.total else "full", status="success",
@@ -278,9 +278,6 @@ class Command(BaseCommand):
                           created=ago(days=9), adults=4, plan="deposit", breakfast="english")
         d.arrival_mode, d.arrival_eta = "flight", "11:30"
         d.save(update_fields=["arrival_mode", "arrival_eta"])
-        Booking.objects.filter(pk=d.pk).update(amount_paid=d.amount_due_now, payment_status="deposit_paid")
-        Payment.objects.filter(booking=d).update(amount=d.amount_due_now, purpose="deposit")
-        d.refresh_from_db()
         locks.create_code(d)
         early = BookingAddon.objects.create(booking=d, addon=Addon.objects.get(code="early_checkin"), quantity=1, unit_price=1500, total=1500,
                                             status="requested", details={"time": "11:00"})

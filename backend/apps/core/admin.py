@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import SiteSettings, Activity, OnceMarker, JobRun
+from .models import Activity, JobRun, OnceMarker, SiteSettings
 
 admin.site.register(SiteSettings)
 admin.site.register(Activity)
