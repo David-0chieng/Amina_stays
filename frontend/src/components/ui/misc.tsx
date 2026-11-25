@@ -81,7 +81,7 @@ export function Stepper({ value, min = 0, max = 16, onChange, label }: { value: 
 
 export function EmptyState({ icon, title, children, action }: { icon?: React.ReactNode; title: string; children?: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line px-6 py-14 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-line-soft px-6 py-14 text-center">
       {icon && <div className="mb-4 grid size-12 place-items-center rounded-full bg-surface text-ink-2">{icon}</div>}
       <h3 className="text-lg font-semibold">{title}</h3>
       {children && <p className="mt-1.5 max-w-sm text-[15px] text-ink-2">{children}</p>}

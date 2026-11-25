@@ -1,5 +1,8 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+// Teach tailwind-merge our custom radius token so `rounded-card` overrides other radii cleanly.
+const twMerge = extendTailwindMerge({ extend: { theme: { radius: ["card"] } } });
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
