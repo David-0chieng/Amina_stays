@@ -105,16 +105,26 @@ Design consequences of AT's documented limits:
 
 We measured the live Airbnb product (Nov 2026: computed styles, layouts and screenshots of the home feed, search, listing, checkout and hosting pages) and rebuilt our UI on the same patterns, under our own coastal brand (name, sail-and-wave mark, coral `#e8553e`). Details are in briefs [06](research/06-airbnb-guest-ux.md) and [07](research/07-airbnb-host-ux.md).
 
-- **Tokens:** ink `#222`, secondary `#6A6A6A`, hairlines `#DDD`/`#EBEBEB`, surfaces `#F7F7F7`, flat `#F2F2F2` secondary buttons; type weights capped at 600; 8 px buttons, pill-shaped primary actions with a pointer-following gradient; 20 px photo radii; Airbnb's layered shadows for the search bar, popovers and badges.
-- **Type:** Figtree, the closest open-licence match to Airbnb Cereal's friendly geometric forms.
-- **3D icons:** Microsoft Fluent Emoji 3D (MIT) in the places Airbnb uses its 3D set — header tabs, search suggestions, "Things to know", "Guests mention", filters, the account and hosting menus.
+- **Tokens:**
+  - Ink `#222`, secondary `#6C6C6C`, tertiary `#8C8C8C`, disabled `#C1C1C1`.
+  - Hairlines `#DDD`/`#EBEBEB`, surfaces `#F7F7F7`, `#F2F2F2` fills.
+  - Type weights capped at 600.
+  - Buttons: 8 px radius on 32 px buttons and 12 px on larger ones; the primary action is a pill with a pointer-following gradient; the search button is a flat, deeper brand tone.
+  - 20 px photo radii; Airbnb's E2/E3 elevation for badges, search, popovers and the active checkout step.
+- **Type:** Figtree. The guest-UX brief measured 12 free fonts against Cereal: Manrope matches metrics most closely, and Figtree matches the friendly geometry best.
+- **3D icons:** Microsoft Fluent Emoji 3D (MIT), used where Airbnb uses its own 3D set: header tabs, search suggestions, listing highlights, "Things to know", "Guests mention", filters, and the account and hosting menus.
 - **Guest site:**
-  - **Header:** Homes / Experiences / Services tabs over a soft band; it collapses into the compact "Anywhere · Anytime · Add guests" pill on scroll and expands over a dimmed page.
-  - **Home feed:** carousel rows.
-  - **Search:** `/s` with filter chips, a Filters dialog (price histogram, rooms, amenities, type) and a sticky map with price pills that light up as you hover cards.
-  - **Listing:** 1 + 4 photo grid, photo tour by room, guest-favourite laurels, sticky section nav, rating breakdown, "Meet your host" and "Things to know".
-  - **Checkout:** numbered step cards beside a summary card.
-  - **Phones:** "Start your search" pill, full-screen search, a bottom tab bar that hides on scroll, and a full-bleed listing carousel under a rounded sheet.
+  - **Header:** Homes / Experiences / Services tabs over a soft band; collapses into the compact "Anywhere · Anytime · Add guests" pill on scroll and expands over a dimmed page.
+  - **Home feed:** carousel rows (7-up at 1440 px).
+  - **Search (`/s`):**
+    - Chips, led by Free cancellation and Guest favourite.
+    - A Filters dialog: price histogram, rooms, amenities, type.
+    - A sticky half-width map whose price pills light up as you hover cards.
+  - **Listing:**
+    - 1 + 4 photo grid and a photo tour by room; guest-favourite laurels; 3D highlights; a sticky section nav; rating breakdown plus "Guests mention"; "Meet your host" and "Things to know".
+    - Total-first booking card with a "Price details" popover and a "KES X today · Free cancellation before {date}" pill.
+  - **Checkout:** Airbnb's numbered accordion beside a summary card.
+  - **Phones:** "Start your search" pill, "pillow" tab chips, full-screen search, a bottom tab bar that hides on scroll, and a full-bleed 20:19 listing hero with a "1 / N" counter under a rounded sheet.
 - **Host console:** Airbnb's hosting mode. A top bar (Today · Calendar · Listings · Messages) with a grouped Menu (dropdown on desktop, a page and bottom tab on phones). Today opens with a Today | Upcoming toggle and "You have N reservations" cards; reservations, tasks, kitchen, safety and channels stay one tap away.
 
 Prices are always in KES, with USD/EUR/GBP approximations for international guests.
