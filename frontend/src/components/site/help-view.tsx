@@ -8,6 +8,7 @@ import * as React from "react";
 import { useConfig } from "@/components/providers";
 import { SiteHeader } from "@/components/site/header";
 import { Button } from "@/components/ui/button";
+import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Skeleton } from "@/components/ui/misc";
 import { get } from "@/lib/api";
 import type { FaqItem } from "@/lib/types";
@@ -18,6 +19,13 @@ const CATEGORY: Record<string, string> = {
   breakfast: "Breakfast", wifi: "Wi-Fi", amenities: "In the home", transport: "Getting here", area: "The area", safety: "Safety",
 };
 const ORDER = ["booking", "payment", "pricing", "policies", "check_in", "breakfast", "wifi", "amenities", "transport", "area", "safety"];
+
+const PRICE_PARTS: { icon: Icon3DName; title: string; text: string }[] = [
+  { icon: "homes", title: "Nightly rate", text: "Set per home and season — weekends and the festive season cost a little more, weekly stays a little less." },
+  { icon: "broom", title: "Cleaning fee", text: "One fixed amount per stay, shown before you book. Fresh linen and towels included." },
+  { icon: "classical-building", title: "2% tourism levy", text: "Collected for the Tourism Fund as Kenyan law requires, and listed on every receipt." },
+  { icon: "money-bag", title: "No booking fee", text: "Book direct and pay by M-Pesa or card — or 30% now and the balance before arrival." },
+];
 
 export function HelpView() {
   const { data: config } = useConfig();
@@ -72,6 +80,20 @@ export function HelpView() {
                 <Button asChild variant="ocean"><Link href="/demo">Open the Demo Lab</Link></Button>
               </div>
             )}
+          </section>
+
+          <section id="prices" className="scroll-mt-24">
+            <h2 className="text-[26px] font-bold tracking-tight">Prices include all fees</h2>
+            <p className="mt-1 text-ink-2">The total you see on a home is the total you pay — no booking fee is added at checkout.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {PRICE_PARTS.map((p) => (
+                <div key={p.title} className="rounded-2xl border border-line p-5">
+                  <Icon3D name={p.icon} size={36} />
+                  <p className="mt-4 font-semibold">{p.title}</p>
+                  <p className="mt-1 text-sm text-ink-2">{p.text}</p>
+                </div>
+              ))}
+            </div>
           </section>
 
           <section id="faq" className="scroll-mt-24">

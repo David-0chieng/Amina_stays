@@ -100,7 +100,7 @@ export function RangeCalendar({
           return (
             <div key={m} className={cn("w-full min-w-[280px] flex-1", m === 1 && "hidden md:block")}>
               <div className="mb-4 flex h-8 items-center justify-center">
-                <span className="text-[15px] font-semibold">{format(month, "MMMM yyyy")}</span>
+                <span className="text-base font-semibold">{format(month, "MMMM yyyy")}</span>
               </div>
               <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-ink-2">
                 {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
@@ -130,9 +130,9 @@ export function RangeCalendar({
                         aria-label={`${format(day, "EEEE d MMMM")}${s.nightTaken ? " (unavailable)" : ""}`}
                         aria-pressed={s.isStart || s.isEnd}
                         className={cn(
-                          "absolute inset-0 m-auto flex size-11 flex-col items-center justify-center rounded-full text-sm font-semibold transition-colors",
+                          "absolute inset-0 m-auto flex size-11 flex-col items-center justify-center rounded-full text-sm font-medium transition-colors",
                           !s.disabled && "hover:ring-1 hover:ring-ink",
-                          s.disabled && "cursor-default font-normal text-ink-3",
+                          s.disabled && "cursor-default text-[#b0b0b0]",
                           s.nightTaken && !s.checkoutOnly && "line-through decoration-ink-3",
                           (s.isStart || s.isEnd) && "bg-ink text-white hover:ring-0",
                         )}

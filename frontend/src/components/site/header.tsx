@@ -1,54 +1,181 @@
 "use client";
 
-import { CircleUser, Heart, Menu, MessageCircle, Search, Smartphone } from "lucide-react";
+import { CircleHelp, CircleUserRound, Heart, LogOut, Menu, MessageSquare, Search, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Logo } from "@/components/host/shell";
 import { useAuthDialog, useConfig, useLogout, useMe } from "@/components/providers";
+import { BrandLink, BrandMark } from "@/components/site/brand";
 import { PhoneLogin } from "@/components/site/phone-login";
+import { CompactSearch, MobileSearch, SearchBar, type Segment } from "@/components/site/search-bar";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/overlays";
+import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar } from "@/components/ui/misc";
+import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/overlays";
 import { cn } from "@/lib/utils";
 
-export function SiteHeader({ children }: { children?: React.ReactNode }) {
-  const pathname = usePathname();
-  const isHome = pathname === "/";
-  const [scrolled, setScrolled] = React.useState(false);
+export type SiteTab = "homes" | "experiences" | "services";
+
+export const SITE_TABS: { id: SiteTab; href: string; label: string; icon: Icon3DName }[] = [
+  { id: "homes", href: "/", label: "Homes", icon: "homes" },
+  { id: "experiences", href: "/experiences", label: "Experiences", icon: "sailboat" },
+  { id: "services", href: "/services", label: "Services", icon: "services" },
+];
+
+// Desktop heights: an 80px top row, plus a 116px search row while the home header is expanded.
+const ROW = 80;
+const EXPANDED = 196;
+
+/**
+ * The site header, modelled on Airbnb's 2025 header.
+ * - mode "home": a tall header (tabs + full search bar on a soft band) that collapses into the
+ *   compact search pill once you scroll; it's fixed with a spacer, so collapsing never shifts content.
+ * - mode "compact": the pill only (inner pages). Clicking it expands the full search over the page.
+ * - mode "minimal": just the logo (checkout), so nothing competes with finishing the booking.
+ * On phones the header is just the "Start your search" pill (when `mobileSearch`), as on Airbnb.
+ */
+export function SiteHeader({
+  mode = "compact", tab = "homes", width = "site", mobileSearch = false, children,
+}: {
+  mode?: "home" | "compact" | "minimal";
+  tab?: SiteTab;
+  width?: "site" | "narrow";
+  mobileSearch?: boolean;
+  children?: React.ReactNode;
+}) {
+  const isHome = mode === "home";
+  const [atTop, setAtTop] = React.useState(true);
+  const [overlay, setOverlay] = React.useState<Segment | null>(null);
+  const [overlayKey, setOverlayKey] = React.useState(0);
+
   React.useEffect(() => {
-    const on = () => setScrolled(window.scrollY > 8);
+    const on = () => {
+      if (isHome) setAtTop(window.scrollY < EXPANDED - ROW);
+      setOverlay(null);
+    };
     on();
     window.addEventListener("scroll", on, { passive: true });
     return () => window.removeEventListener("scroll", on);
-  }, []);
+  }, [isHome]);
+
+  const openOverlay = (seg: Segment) => {
+    setOverlayKey((k) => k + 1);
+    setOverlay(seg);
+  };
+  const tall = isHome && atTop;
+  const container = width === "narrow" ? "container-narrow" : "container-site";
+
+  if (mode === "minimal") {
+    return (
+      <header className="z-40 border-b border-line-soft bg-white max-md:hidden">
+        <div className={cn(container, "flex h-20 items-center")}>
+          <BrandLink />
+        </div>
+      </header>
+    );
+  }
+
+  const topRow = (expanded: boolean) => (
+    <div className={cn(container, "grid h-20 grid-cols-[1fr_auto_1fr] items-center gap-4")}>
+      <BrandLink compact />
+      <div className="flex justify-center">
+        {expanded ? (
+          <Tabs active={tab} />
+        ) : (
+          <React.Suspense fallback={<div className="h-12 w-[380px] rounded-full border border-line-soft shadow-pill" />}>
+            <CompactSearch onOpen={openOverlay} />
+          </React.Suspense>
+        )}
+      </div>
+      <UserMenu />
+    </div>
+  );
+  const searchRow = (initial: Segment | null) => (
+    <div className={cn(container, "pt-3.5 pb-9")}>
+      <React.Suspense fallback={<div className="mx-auto h-[66px] max-w-[850px] rounded-full border border-line bg-white shadow-search" />}>
+        <SearchBar key={overlayKey} initial={initial} onClose={() => setOverlay(null)} />
+      </React.Suspense>
+    </div>
+  );
+
   return (
-    <header className={cn("sticky top-0 z-40 border-b bg-white transition-shadow", scrolled ? "border-line-soft shadow-soft" : "border-transparent", !isHome && "border-line-soft")}>
-      <div className={cn(isHome ? "container-site" : "container-narrow max-w-[1280px]")}>
-        <div className="flex h-[76px] items-center justify-between gap-4">
-          <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="Amina Stays home">
-            <Logo className="size-9 rounded-xl" />
-            <span className="hidden text-[19px] font-extrabold tracking-tight text-brand-600 sm:inline">amina stays</span>
-          </Link>
-          {!isHome && (
-            <Link
-              href="/#stays"
-              className="hidden items-center gap-3 rounded-full border border-line-soft py-2 pr-2 pl-5 text-sm font-semibold shadow-pill transition-shadow hover:shadow-card md:flex"
-            >
-              <span>Anywhere on the coast</span>
-              <span className="h-5 w-px bg-line" />
-              <span className="font-medium text-ink-2">Any week</span>
-              <span className="grid size-8 place-items-center rounded-full bg-brand-500 text-white">
-                <Search className="size-3.5" strokeWidth={3} />
-              </span>
-            </Link>
+    <>
+      <header
+        className={cn(
+          "z-40 bg-white",
+          isHome ? "sticky top-0 md:fixed md:inset-x-0" : "sticky top-0",
+          !mobileSearch && "max-md:hidden",
+        )}
+      >
+        {/* phones */}
+        {mobileSearch && (
+          <div className="bg-white px-6 pt-3 pb-3 md:hidden">
+            <React.Suspense fallback={<div className="h-14 rounded-full border border-line-soft shadow-pill" />}>
+              <MobileSearch />
+            </React.Suspense>
+          </div>
+        )}
+        {/* desktop & tablet */}
+        <div className={cn("relative hidden border-b border-line-soft md:block", tall ? "hero-band" : "bg-white")}>
+          {topRow(tall)}
+          {tall && searchRow(null)}
+          {overlay !== null && !tall && (
+            <div className="hero-band absolute inset-x-0 top-0 z-10 border-b border-line-soft animate-fade-in">
+              {topRow(true)}
+              {searchRow(overlay)}
+            </div>
           )}
-          <UserMenu />
         </div>
         {children}
-      </div>
-    </header>
+      </header>
+      {isHome && <div aria-hidden className="hidden md:block" style={{ height: EXPANDED }} />}
+      {overlay !== null && !tall && <div className="fixed inset-0 z-30 bg-black/25 animate-fade-in max-md:hidden" onClick={() => setOverlay(null)} />}
+    </>
+  );
+}
+
+function Tabs({ active }: { active: SiteTab }) {
+  return (
+    <nav className="flex items-center gap-2 lg:gap-4" aria-label="Browse">
+      {SITE_TABS.map((t) => {
+        const on = t.id === active;
+        return (
+          <Link
+            key={t.id}
+            href={t.href}
+            aria-current={on ? "page" : undefined}
+            className={cn("group relative flex h-14 items-center gap-1.5 px-2.5 text-sm font-medium transition-colors", on ? "text-ink" : "text-ink-2 hover:text-ink")}
+          >
+            <Icon3D name={t.icon} size={44} eager className="transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3" />
+            {t.label}
+            <span className={cn("absolute inset-x-2.5 -bottom-1 h-[3px] rounded-full bg-ink transition-opacity", on ? "opacity-100" : "opacity-0 group-hover:opacity-20")} />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Mobile tab chips (Homes · Experiences · Services) shown under the search pill. */
+export function MobileTabs({ active, className }: { active: SiteTab; className?: string }) {
+  return (
+    <nav className={cn("no-scrollbar flex gap-2 overflow-x-auto border-b border-line-soft px-6 pt-1 pb-3 md:hidden", className)} aria-label="Browse">
+      {SITE_TABS.map((t) => (
+        <Link
+          key={t.id}
+          href={t.href}
+          aria-current={t.id === active ? "page" : undefined}
+          className={cn(
+            "flex h-11 shrink-0 items-center gap-1.5 rounded-full pr-4 pl-2 text-sm font-medium shadow-[0_2px_6px_rgb(0_0_0/0.08)] transition-colors",
+            t.id === active ? "border border-line bg-chip text-ink" : "border border-line-soft bg-white text-ink-2",
+          )}
+        >
+          <Icon3D name={t.icon} size={30} eager />
+          {t.label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -58,56 +185,87 @@ function UserMenu() {
   const { requireLogin } = useAuthDialog();
   const logout = useLogout();
   const router = useRouter();
-  const ways = config?.channels.ussd_code || config?.channels.sms_number;
+  const c = config?.channels;
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center justify-end gap-2">
       {me?.is_host ? (
-        <Link href="/host" className="hidden rounded-full px-4 py-2.5 text-sm font-semibold hover:bg-surface lg:block">
-          Host console
+        <Link href="/host" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip lg:flex">
+          Switch to hosting
         </Link>
       ) : (
-        <Link href="/help#book-your-way" className="hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold hover:bg-surface lg:flex">
-          <Smartphone className="size-4" /> {ways ? `Book by SMS or ${config?.channels.ussd_code ? "USSD" : "phone"}` : "Book without data"}
+        <Link href="/help#book-your-way" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip lg:flex">
+          Book without data
         </Link>
       )}
+      <button
+        type="button"
+        onClick={() => (me?.authenticated ? router.push("/account") : requireLogin())}
+        aria-label={me?.authenticated ? "Your profile" : "Log in"}
+        className="grid size-10 place-items-center rounded-full bg-chip transition-colors hover:bg-line-soft"
+      >
+        {me?.authenticated ? <Avatar name={me.name || me.phone} size={32} className="bg-ink! text-[13px]!" /> : <CircleUserRound className="size-5" strokeWidth={1.8} />}
+      </button>
       <Dropdown>
-        <DropdownTrigger
-          className="flex items-center gap-3 rounded-full border border-line-soft py-1.5 pr-1.5 pl-3.5 transition-shadow hover:shadow-card data-[state=open]:shadow-card"
-          aria-label="Account menu"
-        >
-          <Menu className="size-4" strokeWidth={2.4} />
-          {me?.authenticated ? <Avatar name={me.name || me.phone} size={30} /> : <CircleUser className="size-[30px] text-ink-2" strokeWidth={1.4} />}
+        <DropdownTrigger className="grid size-10 place-items-center rounded-full bg-chip transition-colors outline-none hover:bg-line-soft data-[state=open]:bg-line-soft" aria-label="Main menu">
+          <Menu className="size-[18px]" strokeWidth={2.2} />
         </DropdownTrigger>
-        <DropdownContent className="w-60">
+        <DropdownContent className="w-[260px] rounded-2xl border-0 py-2 shadow-pop">
           {me?.authenticated ? (
             <>
-              <div className="px-4 py-2">
-                <p className="truncate text-sm font-semibold">{me.name || "Welcome"}</p>
-                <p className="truncate text-xs text-ink-2">{me.phone}</p>
-              </div>
+              <MenuItem onSelect={() => router.push("/wishlists")} icon={Heart}>Wishlists</MenuItem>
+              <MenuItem onSelect={() => router.push("/trips")} icon={BrandMark}>Trips</MenuItem>
+              <MenuItem onSelect={() => router.push("/messages")} icon={MessageSquare}>Messages</MenuItem>
+              <MenuItem onSelect={() => router.push("/account")} icon={UserRound}>Profile</MenuItem>
               <DropdownSeparator />
-              <DropdownItem onSelect={() => router.push("/messages")} className="font-semibold">Messages</DropdownItem>
-              <DropdownItem onSelect={() => router.push("/trips")} className="font-semibold">Trips</DropdownItem>
-              <DropdownItem onSelect={() => router.push("/wishlists")} className="font-semibold">Wishlists</DropdownItem>
+              <MenuItem onSelect={() => router.push("/account")} icon={Settings}>Account &amp; privacy</MenuItem>
+              <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
               <DropdownSeparator />
-              <DropdownItem onSelect={() => router.push("/account")}>Account &amp; privacy</DropdownItem>
-              {me.is_host && <DropdownItem onSelect={() => router.push("/host")}>Host console</DropdownItem>}
-              <DropdownItem onSelect={() => router.push("/help")}>Help centre</DropdownItem>
+              {me.is_host ? (
+                <PromoItem onSelect={() => router.push("/host")} icon="key" title="Switch to hosting" text="Today, calendar, inbox and the team." />
+              ) : (
+                <PromoItem onSelect={() => router.push("/help#book-your-way")} icon="mobile-phone" title="Book without data" text={c?.ussd_code ? `Dial ${c.ussd_code} or text Amina — English or Kiswahili.` : "Book by USSD, SMS or a phone call."} />
+              )}
               <DropdownSeparator />
-              <DropdownItem onSelect={logout}>Log out</DropdownItem>
+              <MenuItem onSelect={logout} icon={LogOut}>Log out</MenuItem>
             </>
           ) : (
             <>
-              <DropdownItem onSelect={() => requireLogin()} className="font-semibold">Log in or sign up</DropdownItem>
+              <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
               <DropdownSeparator />
-              <DropdownItem onSelect={() => router.push("/help#book-your-way")}>Book by SMS, USSD or phone</DropdownItem>
-              <DropdownItem onSelect={() => router.push("/help")}>Help centre</DropdownItem>
-              <DropdownItem onSelect={() => router.push("/host")}>Host console</DropdownItem>
+              <PromoItem onSelect={() => router.push("/help#book-your-way")} icon="mobile-phone" title="Book without data" text={c?.ussd_code ? `Dial ${c.ussd_code} or text Amina — English or Kiswahili.` : "Book by USSD, SMS or a phone call."} />
+              <DropdownSeparator />
+              <MenuItem onSelect={() => router.push("/host")}>Host console</MenuItem>
+              <MenuItem onSelect={() => router.push("/demo")}>Demo Lab</MenuItem>
+              <DropdownSeparator />
+              <MenuItem onSelect={() => requireLogin()} className="font-medium">Log in or sign up</MenuItem>
             </>
           )}
         </DropdownContent>
       </Dropdown>
     </div>
+  );
+}
+
+function MenuItem({ icon: Icon, children, onSelect, className }: {
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>; children: React.ReactNode; onSelect: () => void; className?: string;
+}) {
+  return (
+    <DropdownItem onSelect={onSelect} className={cn("gap-3 px-5 py-3 text-sm", className)}>
+      {Icon && <Icon className="size-[18px] shrink-0" strokeWidth={1.8} />}
+      {children}
+    </DropdownItem>
+  );
+}
+
+function PromoItem({ icon, title, text, onSelect }: { icon: Icon3DName; title: string; text: string; onSelect: () => void }) {
+  return (
+    <DropdownItem onSelect={onSelect} className="items-start gap-3 px-5 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="mt-0.5 block text-xs leading-snug text-ink-2">{text}</span>
+      </span>
+      <Icon3D name={icon} size={44} />
+    </DropdownItem>
   );
 }
 
@@ -132,43 +290,62 @@ export function LoginDialog() {
   );
 }
 
+const TAB_BAR_PAGES = ["/", "/s", "/experiences", "/services", "/trips", "/wishlists", "/messages", "/account", "/help"];
+
+/** Phone bottom navigation; slides away while scrolling down, returns on scroll up. */
 export function MobileTabBar() {
   const pathname = usePathname();
   const { data: me } = useMe();
   const { requireLogin } = useAuthDialog();
-  const show = ["/", "/trips", "/wishlists", "/messages", "/account", "/help"].includes(pathname);
-  if (!show) return null;
-  const tabs = [
-    { href: "/", label: "Explore", icon: Search },
+  const [hidden, setHidden] = React.useState(false);
+  React.useEffect(() => {
+    let last = window.scrollY;
+    const on = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) > 6) setHidden(y > last && y > 120);
+      last = y;
+    };
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  if (!TAB_BAR_PAGES.includes(pathname)) return null;
+  const authed = !!me?.authenticated;
+  const tabs: { href: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; auth?: boolean; match?: string[] }[] = [
+    { href: "/", label: "Explore", icon: Search, match: ["/", "/s", "/experiences", "/services"] },
     { href: "/wishlists", label: "Wishlists", icon: Heart, auth: true },
-    { href: "/trips", label: "Trips", icon: Logo as unknown as React.ComponentType<{ className?: string }>, auth: true },
-    { href: "/messages", label: "Messages", icon: MessageCircle, auth: true },
-    { href: "/account", label: me?.authenticated ? "Profile" : "Log in", icon: CircleUser, auth: true },
+    ...(authed
+      ? [
+          { href: "/trips", label: "Trips", icon: BrandMark },
+          { href: "/messages", label: "Messages", icon: MessageSquare },
+          { href: "/account", label: "Profile", icon: CircleUserRound },
+        ]
+      : [{ href: "/account", label: "Log in", icon: CircleUserRound, auth: true }]),
   ];
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-      <div className="grid grid-cols-5">
+    <nav
+      className={cn(
+        "fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] transition-transform duration-300 md:hidden",
+        hidden && "translate-y-full",
+      )}
+    >
+      <div className="mx-auto flex max-w-md justify-around">
         {tabs.map((t) => {
-          const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
+          const active = t.match ? t.match.includes(pathname) : pathname.startsWith(t.href);
           const Icon = t.icon;
           return (
             <Link
-              key={t.href}
+              key={t.label}
               href={t.href}
               onClick={(e) => {
-                if (t.auth && !me?.authenticated) {
+                if (t.auth && !authed) {
                   e.preventDefault();
                   requireLogin();
                 }
               }}
-              className={cn("flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold", active ? "text-brand-600" : "text-ink-2")}
+              className={cn("flex min-w-16 flex-col items-center gap-1 pt-2.5 pb-2 text-[10px] font-medium", active ? "text-brand-500" : "text-ink-2")}
             >
-              {t.label === "Trips" ? (
-                <Logo className={cn("size-6 rounded-md", !active && "bg-ink-3")} />
-              ) : (
-                <Icon className="size-6" />
-              )}
-              {t.label}
+              <Icon className={cn("size-6", !active && t.icon === BrandMark && "text-ink-3")} strokeWidth={active ? 2.2 : 1.6} />
+              <span className={active ? "text-ink" : undefined}>{t.label}</span>
             </Link>
           );
         })}

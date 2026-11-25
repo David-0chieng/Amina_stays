@@ -80,6 +80,7 @@ export interface ListingCard {
   location: { lat: number; lng: number } | null;
   wishlisted: boolean;
   breakfast_available: boolean;
+  free_cancellation: boolean;
   price: { from_nightly: number; base_price: number; total?: number; nights?: number; avg_nightly?: number };
 }
 
@@ -90,6 +91,7 @@ export interface Addon {
   description: string;
   category: string;
   icon: string;
+  photo_url: string;
   price: number;
   pricing: string;
   pricing_label: string;

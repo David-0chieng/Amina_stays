@@ -58,7 +58,7 @@ export function useHydrated() {
 
 // `me` and `config` are shared queries that early-hydrating parts (footer, tab bar) start fetching. A Suspense
 // boundary that streams in later would otherwise hydrate with cached data the server HTML never had.
-function hydrationSafe<T extends { data: unknown }>(q: T, hydrated: boolean): T {
+export function hydrationSafe<T extends { data: unknown }>(q: T, hydrated: boolean): T {
   return hydrated ? q : ({ ...q, data: undefined, isLoading: true, isPending: true, isSuccess: false, status: "pending" } as T);
 }
 

@@ -13,12 +13,22 @@ import { SiteHeader } from "@/components/site/header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
+import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar, Badge } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/overlays";
 import { get, patch, post } from "@/lib/api";
 import { fmtDate } from "@/lib/format";
 import type { Me } from "@/lib/types";
 import { COUNTRIES } from "@/lib/utils";
+
+const ACCOUNT_CARDS: { icon: Icon3DName; title: string; text: string; href: string }[] = [
+  { icon: "guests", title: "Personal info", text: "Your name, email, language and how we reach you", href: "#personal" },
+  { icon: "clipboard", title: "Guest register ID", text: "The ID Kenyan law asks every host to record — stored encrypted", href: "#identity" },
+  { icon: "envelope", title: "Notifications", text: "Booking messages always come; offers only if you say so", href: "#notifications" },
+  { icon: "lock", title: "Privacy & your data", text: "Download or erase your data under the Data Protection Act", href: "#data" },
+  { icon: "homes", title: "Trips", text: "Bookings from the web, USSD, SMS and calls", href: "/trips" },
+  { icon: "mobile-phone", title: "Book without data", text: "USSD, SMS and voice — the same account", href: "/help#book-your-way" },
+];
 
 export function AccountView() {
   return (
@@ -77,16 +87,23 @@ function Account() {
   return (
     <>
       <SiteHeader />
-      <main className="container-narrow max-w-[880px] pt-10 pb-24">
-        <div className="flex items-center gap-5">
-          <Avatar name={me.name || me.phone} size={72} />
-          <div>
-            <h1 className="text-[28px] font-bold tracking-tight">{me.name || "Your account"}</h1>
-            <p className="text-ink-2">{me.phone} · your phone number is your login everywhere</p>
-          </div>
+      <main className="container-narrow max-w-[1080px] pt-10 pb-24">
+        <h1 className="text-[32px] leading-tight font-semibold tracking-tight">Account</h1>
+        <div className="mt-3 flex items-center gap-4">
+          <Avatar name={me.name || me.phone} size={48} className="bg-ink!" />
+          <p className="text-lg"><b className="font-semibold">{me.name || "Your account"}</b><span className="text-ink-2">, {me.phone} · your phone number is your login everywhere</span></p>
+        </div>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {ACCOUNT_CARDS.map((c) => (
+            <Link key={c.title} href={c.href} className="rounded-2xl p-5 shadow-[0_6px_16px_rgb(0_0_0/0.12)] transition-shadow hover:shadow-[0_8px_28px_rgb(0_0_0/0.18)]">
+              <Icon3D name={c.icon} size={36} />
+              <p className="mt-6 font-semibold">{c.title}</p>
+              <p className="mt-1 text-sm text-ink-2">{c.text}</p>
+            </Link>
+          ))}
         </div>
 
-        <section className="mt-12">
+        <section id="personal" className="mt-16 scroll-mt-24 border-t border-line-soft pt-10">
           <h2 className="flex items-center gap-2 text-[22px] font-bold"><UserRound className="size-5" /> Personal info</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -111,7 +128,7 @@ function Account() {
           <Button className="mt-5" onClick={() => save(form)} loading={saving}>Save changes</Button>
         </section>
 
-        <section className="mt-12 border-t border-line-soft pt-10">
+        <section id="identity" className="mt-12 scroll-mt-24 border-t border-line-soft pt-10">
           <h2 className="flex items-center gap-2 text-[22px] font-bold"><ShieldCheck className="size-5" /> Identity for the guest register</h2>
           {me.identity?.last4 ? (
             <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-line-soft p-5">
@@ -145,7 +162,7 @@ function Account() {
           }}>Save ID</Button>
         </section>
 
-        <section className="mt-12 border-t border-line-soft pt-10">
+        <section id="notifications" className="mt-12 scroll-mt-24 border-t border-line-soft pt-10">
           <h2 className="flex items-center gap-2 text-[22px] font-bold"><Megaphone className="size-5" /> Notifications</h2>
           <div className="mt-5 flex items-start justify-between gap-6 rounded-2xl border border-line-soft p-5">
             <div>
@@ -156,7 +173,7 @@ function Account() {
           </div>
         </section>
 
-        <section className="mt-12 border-t border-line-soft pt-10">
+        <section id="data" className="mt-12 scroll-mt-24 border-t border-line-soft pt-10">
           <h2 className="flex items-center gap-2 text-[22px] font-bold"><Globe className="size-5" /> Your data</h2>
           <p className="mt-2 text-ink-2">Your rights under Kenya&apos;s Data Protection Act, 2019. Read the <Link href="/privacy" className="underline">privacy notice</Link>.</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
