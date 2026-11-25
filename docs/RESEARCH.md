@@ -9,6 +9,8 @@ Amina Stays was designed from five research briefs written on 25 Nov 2026. The f
 | [03 Kenya & Mombasa](research/03-kenya-mombasa-context.md) | TRA licensing (Tourism Enterprises Regulations 2025), Tourism Levy, KRA, guest register, Data Protection Act, SMS rules, safety, payments, coastal operations |
 | [04 Africa's Talking](research/04-africas-talking.md) | SMS, USSD, Voice, Payments, Airtime, Mobile Data, Insights, SDKs, callbacks, sandbox limits |
 | [05 Tech stack](research/05-tech-stack.md) | Django/DRF + PostgreSQL + Next.js choices, auth across origins, jobs, Postgres patterns, deployment |
+| [06 Airbnb guest UX (2025–26)](research/06-airbnb-guest-ux.md) | Page-by-page anatomy of the current guest product: header and search, home feed, search results and map, listing page, checkout, trips, account; design tokens and the top details to replicate |
+| [07 Airbnb host UX (2025–26)](research/07-airbnb-host-ux.md) | Hosting mode: Today / Calendar / Listings / Messages / Menu, reservation cards and statuses, calendar and pricing tools, inbox, earnings, insights; comparable PMS patterns and a recommended console IA |
 
 ## The challenge
 
@@ -101,13 +103,21 @@ Design consequences of AT's documented limits:
 
 ## Design language
 
-The guest site follows the interaction patterns of the industry's best-tested consumer product (Airbnb's search pill, cards, listing layout, sticky booking card, checkout and trip pages), under our own coastal brand:
-- coral `#e8553e` and ocean teal;
-- Plus Jakarta Sans;
-- generous white space, 12–24 px radii, soft shadows;
-- mobile-first with a bottom tab bar.
+We measured the live Airbnb product (Nov 2026: computed styles, layouts and screenshots of the home feed, search, listing, checkout and hosting pages) and rebuilt our UI on the same patterns, under our own coastal brand (name, sail-and-wave mark, coral `#e8553e`). Details are in briefs [06](research/06-airbnb-guest-ux.md) and [07](research/07-airbnb-host-ux.md).
 
-Prices are always in KES, with USD/EUR/GBP approximations for international guests. The host console follows calm operational dashboards (Hospitable, Guesty): a "Today" view first, then calendar, inbox, tasks and insights.
+- **Tokens:** ink `#222`, secondary `#6A6A6A`, hairlines `#DDD`/`#EBEBEB`, surfaces `#F7F7F7`, flat `#F2F2F2` secondary buttons; type weights capped at 600; 8 px buttons, pill-shaped primary actions with a pointer-following gradient; 20 px photo radii; Airbnb's layered shadows for the search bar, popovers and badges.
+- **Type:** Figtree, the closest open-licence match to Airbnb Cereal's friendly geometric forms.
+- **3D icons:** Microsoft Fluent Emoji 3D (MIT) in the places Airbnb uses its 3D set — header tabs, search suggestions, "Things to know", "Guests mention", filters, the account and hosting menus.
+- **Guest site:**
+  - **Header:** Homes / Experiences / Services tabs over a soft band; it collapses into the compact "Anywhere · Anytime · Add guests" pill on scroll and expands over a dimmed page.
+  - **Home feed:** carousel rows.
+  - **Search:** `/s` with filter chips, a Filters dialog (price histogram, rooms, amenities, type) and a sticky map with price pills that light up as you hover cards.
+  - **Listing:** 1 + 4 photo grid, photo tour by room, guest-favourite laurels, sticky section nav, rating breakdown, "Meet your host" and "Things to know".
+  - **Checkout:** numbered step cards beside a summary card.
+  - **Phones:** "Start your search" pill, full-screen search, a bottom tab bar that hides on scroll, and a full-bleed listing carousel under a rounded sheet.
+- **Host console:** Airbnb's hosting mode. A top bar (Today · Calendar · Listings · Messages) with a grouped Menu (dropdown on desktop, a page and bottom tab on phones). Today opens with a Today | Upcoming toggle and "You have N reservations" cards; reservations, tasks, kitchen, safety and channels stay one tap away.
+
+Prices are always in KES, with USD/EUR/GBP approximations for international guests.
 
 ## Out of scope (for now)
 

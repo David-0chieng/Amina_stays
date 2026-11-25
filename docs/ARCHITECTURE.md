@@ -161,15 +161,16 @@ stateDiagram-v2
 
 - **Next.js 16** App Router with `cacheComponents`. Pages are thin server components. Anything reading `params` or `useSearchParams` sits behind `<Suspense>`, and the interactive views are client components using **TanStack Query** against the same-origin API.
 - **Shared queries** `useMe()` and `useConfig()` are hydration-safe: they report "pending" until hydration finishes, so a streamed Suspense boundary never hydrates with data the server HTML didn't have.
-- **Design system.** Tailwind CSS v4 tokens in `globals.css` (ink, line, surface, brand coral, ocean teal, semantic colours, shadows, motion), Radix primitives (dialog, popover, dropdown, tabs, switch, tooltip), lucide icons, Plus Jakarta Sans. Maps use Leaflet with OpenStreetMap tiles and are loaded client-only.
+- **Design system.** Tailwind CSS v4 tokens in `globals.css`, measured from the live Airbnb product (see [research 06/07](RESEARCH.md#design-language)): ink, hairlines, surfaces, chip grey, brand coral, ocean teal, semantic colours, layered shadows, a 20 px card radius, `bold` capped at 600, the gradient pill CTA. Also Radix primitives (dialog, popover, dropdown, tabs, switch, tooltip), lucide line icons, Fluent Emoji 3D icons (`Icon3D`, files in `public/3d`) and Figtree. Maps use Leaflet with softened OpenStreetMap tiles and price-pill markers, loaded client-only.
 - **Routes.**
 
   | Guest | Host console (`/host`) |
   |---|---|
-  | `/` search & discovery (map view) | Today |
+  | `/` home feed · `/experiences` · `/services` | Today (Today \| Upcoming cards) |
+  | `/s` search results + map + filters | Menu (grouped hub) |
   | `/stays/[slug]` listing | Calendar (multi-unit, prices) |
   | `/book/[slug]` checkout | Reservations + detail |
-  | `/pay/card/[token]` hosted card page | Inbox |
+  | `/pay/card/[token]` hosted card page | Messages (inbox) |
   | `/trips`, `/trips/[ref]` trip hub | Tasks, Kitchen |
   | `/messages` | Listings + editor (photos, pricing, rules, check-in info) |
   | `/wishlists` | Guests (CRM) |

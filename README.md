@@ -152,12 +152,12 @@ Africa's Talking no longer offers self-serve payments with a sandbox (see [resea
 5. **Web.** Search → listing → checkout with a 30% deposit and breakfast → trip page: the checklist, directions unlocking 48 h before, and the receipt.
 6. **Time machine.** Pick Hans's booking and press *Release door code*: it is held because the guest register (ID) is missing. Hold Hans's phone, text "ID C01X00T47", release again, and the door code arrives by SMS in German.
 7. **Safety.** Holding Wanjiku's phone, text "HELP": she gets an instant reply in Kiswahili and Amina gets an SMS alert. Switch to Amina's phone and *Answer the SOS safety call*: it names the guest, home and booking, and pressing 1 connects Amina to her.
-8. **Host console.** Today view, calendar, inbox (reply from her phone with "#3 …"), the kitchen sheet, insights and the one-click TRA return.
+8. **Host console.** Today (the Today | Upcoming reservation cards), Calendar and Messages (Amina can also reply from her phone with "#3 …"). Then open the Menu for the kitchen sheet, insights and the one-click TRA return.
 
 ## Tests
 
 ```bash
-cd backend && uv run pytest          # 41 tests on a real PostgreSQL test database
+cd backend && uv run pytest          # 42 tests on a real PostgreSQL test database
 cd backend && uv run ruff check .
 cd frontend && npx tsc --noEmit && npm run lint
 ```
@@ -187,3 +187,11 @@ scripts/                 dev.sh (run everything), db.sh (local PostgreSQL)
 ```
 
 More: [Architecture](docs/ARCHITECTURE.md) · [Research](docs/RESEARCH.md) · [Project brief](<AMINA-STAYS_Project_Brief (2).pdf>)
+
+## Credits
+
+- 3D icons: [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (MIT licence), downscaled copies in `frontend/public/3d`.
+- Photos: [Unsplash](https://unsplash.com) (Unsplash licence), loaded from their CDN.
+- Map data: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+- Typeface: [Figtree](https://fonts.google.com/specimen/Figtree) (SIL Open Font License).
+- Interaction patterns follow the published Airbnb product (see [research 06/07](docs/RESEARCH.md#design-language)); all branding, names and artwork are Amina Stays' own.
