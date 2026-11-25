@@ -5,7 +5,7 @@ import pytest
 from apps.bookings import services as bookings
 from apps.payments import services as payments
 from apps.payments.models import Payment
-from apps.properties.models import CalendarBlock, ICalFeed
+from apps.properties.models import CalendarBlock, ICalFeed, Unit
 from apps.properties.services import export_ics, sync_feed
 
 from .conftest import days
@@ -154,3 +154,21 @@ def test_compliance_csv_exports(host_api, unit, guest):
     month = f"{days(1):%Y-%m}"
     tra = host_api.get(f"/api/host/compliance/tra-return?month={month}&export=csv")
     assert tra.status_code == 200 and tra["Content-Type"].startswith("text/csv")
+
+
+@pytest.mark.django_db
+def test_search_filters_by_property_type_and_free_cancellation(api, unit, area):
+    Unit.objects.create(
+        name="Baobab House",
+        area=area,
+        base_price=12_000,
+        max_guests=6,
+        property_type="house",
+        cancellation_policy="strict",
+    )
+    houses = api.get("/api/listings?type=house").data["results"]
+    assert [c["name"] for c in houses] == ["Baobab House"]
+    assert houses[0]["free_cancellation"] is False
+    flexible = api.get("/api/listings?free_cancellation=1").data["results"]
+    assert [c["name"] for c in flexible] == ["Palm Suite"]
+    assert flexible[0]["free_cancellation"] is True

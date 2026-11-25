@@ -73,6 +73,10 @@ def listings(request):
             qs = qs.filter(max_guests__gte=guests)
     if p.get("tag"):
         qs = qs.filter(tags__contains=[p["tag"]])
+    if p.get("type"):
+        qs = qs.filter(property_type__in=p["type"].split(","))
+    if p.get("free_cancellation"):
+        qs = qs.filter(cancellation_policy__in=["flexible", "moderate"])
     if p.get("bedrooms"):
         qs = qs.filter(bedrooms__gte=int(p["bedrooms"]))
     for code in filter(None, (p.get("amenities") or "").split(",")):

@@ -617,6 +617,7 @@ UNITS = [
 ADDONS = [
     {
         "code": "breakfast",
+        "photo": "1728050829024-8113f4cd85ec",
         "name": "Breakfast",
         "category": "breakfast",
         "icon": "croissant",
@@ -633,6 +634,7 @@ ADDONS = [
     },
     {
         "code": "airport_pickup",
+        "photo": "1764304532648-a5e422917a72",
         "name": "Airport pickup",
         "category": "transport",
         "icon": "plane",
@@ -644,6 +646,7 @@ ADDONS = [
     },
     {
         "code": "sgr_pickup",
+        "photo": "1732833450938-a243b117f0aa",
         "name": "SGR station pickup",
         "category": "transport",
         "icon": "train-front",
@@ -655,6 +658,7 @@ ADDONS = [
     },
     {
         "code": "early_checkin",
+        "photo": "1661284212491-97221bab24ce",
         "name": "Early check-in (from 11am)",
         "category": "flexibility",
         "icon": "sunrise",
@@ -666,6 +670,7 @@ ADDONS = [
     },
     {
         "code": "late_checkout",
+        "photo": "1514890084135-f16d926f4d03",
         "name": "Late checkout (until 2pm)",
         "category": "flexibility",
         "icon": "sunset",
@@ -677,6 +682,7 @@ ADDONS = [
     },
     {
         "code": "mid_stay_clean",
+        "photo": "1787168295699-03aed18d17d4",
         "name": "Mid-stay clean & fresh towels",
         "category": "cleaning",
         "icon": "sparkles",
@@ -686,6 +692,7 @@ ADDONS = [
     },
     {
         "code": "dhow_cruise",
+        "photo": "1602174423520-daa2d87175a0",
         "name": "Sunset dhow cruise",
         "category": "experience",
         "icon": "sailboat",
@@ -696,6 +703,7 @@ ADDONS = [
     },
     {
         "code": "swahili_cooking",
+        "photo": "1507048331197-7d4ac70811cf",
         "name": "Swahili cooking class",
         "category": "experience",
         "icon": "chef-hat",
@@ -705,6 +713,7 @@ ADDONS = [
     },
     {
         "code": "groceries",
+        "photo": "1743636521230-15e192f1cfec",
         "name": "Groceries on arrival",
         "category": "comfort",
         "icon": "shopping-basket",
@@ -714,6 +723,7 @@ ADDONS = [
     },
     {
         "code": "baby_cot",
+        "photo": "1542901689-8917f44e3541",
         "name": "Baby cot & high chair",
         "category": "comfort",
         "icon": "baby",

@@ -209,6 +209,7 @@ class Addon(models.Model):
     description = models.TextField(blank=True)
     category = models.CharField(max_length=12, choices=CATEGORIES, default="comfort")
     icon = models.CharField(max_length=40, default="sparkles")
+    photo_url = models.URLField(max_length=300, blank=True, help_text="Shown on the Experiences & Services pages")
     price = models.PositiveIntegerField(default=0)
     pricing = models.CharField(max_length=16, choices=PRICING, default="per_stay")
     requires_approval = models.BooleanField(

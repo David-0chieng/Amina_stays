@@ -186,6 +186,7 @@ class Command(BaseCommand):
                 name=a["name"],
                 category=a["category"],
                 icon=a["icon"],
+                photo_url=D.ph(a["photo"], 1200) if a.get("photo") else "",
                 price=a["price"],
                 pricing=a["pricing"],
                 short=a.get("short", ""),

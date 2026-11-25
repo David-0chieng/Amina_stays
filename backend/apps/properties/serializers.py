@@ -41,6 +41,7 @@ def listing_card(unit, *, quote=None, stats=None, wished=False):
         "location": unit.approximate_location(),
         "wishlisted": wished,
         "breakfast_available": unit.breakfast_available,
+        "free_cancellation": unit.cancellation_policy in ("flexible", "moderate"),
         "price": {"from_nightly": from_price(unit), "base_price": unit.base_price},
     }
     if quote:
@@ -137,6 +138,7 @@ def addon_dict(a):
         "description": a.description,
         "category": a.category,
         "icon": a.icon,
+        "photo_url": a.photo_url,
         "price": a.price,
         "pricing": a.pricing,
         "pricing_label": a.get_pricing_display(),
