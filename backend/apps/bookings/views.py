@@ -20,7 +20,9 @@ from .serializers import AddonSerializer, BookingCreateSerializer, reservation_r
 
 
 def _mine(request, ref):
-    return get_object_or_404(Booking.objects.select_related("unit", "unit__area", "guest"), ref=ref.upper(), guest=request.user)
+    return get_object_or_404(
+        Booking.objects.select_related("unit", "unit__area", "guest"), ref=ref.upper(), guest=request.user
+    )
 
 
 def _err(e, status=400):
@@ -34,7 +36,12 @@ def _err(e, status=400):
 @permission_classes([IsGuest])
 def bookings(request):
     if request.method == "GET":
-        qs = Booking.objects.filter(guest=request.user).exclude(status="expired").select_related("unit", "unit__area").prefetch_related("unit__photos")
+        qs = (
+            Booking.objects.filter(guest=request.user)
+            .exclude(status="expired")
+            .select_related("unit", "unit__area")
+            .prefetch_related("unit__photos")
+        )
         return Response([trip_card(b) for b in qs.order_by("-check_in")])
     ser = BookingCreateSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -59,15 +66,33 @@ def bookings(request):
     ident = d.get("identity") or {}
     if ident.get("id_number"):
         try:
-            set_identity(user, id_type=ident.get("id_type", ""), id_number=ident["id_number"], nationality=ident.get("nationality", ""),
-                         consent=bool(ident.get("consent")))
+            set_identity(
+                user,
+                id_type=ident.get("id_type", ""),
+                id_number=ident["id_number"],
+                nationality=ident.get("nationality", ""),
+                consent=bool(ident.get("consent")),
+            )
         except AuthError as e:
             return _err(e)
     try:
         b = services.create_hold(
-            unit=unit, guest=user, check_in=d["check_in"], check_out=d["check_out"], channel="web", adults=d["adults"], children=d["children"],
-            infants=d["infants"], addons=d["addons"], payment_plan=d["payment_plan"], arrival_eta=d["arrival_eta"], arrival_mode=d["arrival_mode"],
-            special_requests=d["special_requests"], purpose=d["purpose"], vehicle_plate=d["vehicle_plate"], occupants=d["occupants"],
+            unit=unit,
+            guest=user,
+            check_in=d["check_in"],
+            check_out=d["check_out"],
+            channel="web",
+            adults=d["adults"],
+            children=d["children"],
+            infants=d["infants"],
+            addons=d["addons"],
+            payment_plan=d["payment_plan"],
+            arrival_eta=d["arrival_eta"],
+            arrival_mode=d["arrival_mode"],
+            special_requests=d["special_requests"],
+            purpose=d["purpose"],
+            vehicle_plate=d["vehicle_plate"],
+            occupants=d["occupants"],
         )
     except services.BookingError as e:
         return _err(e, 409)
@@ -84,9 +109,20 @@ def booking_detail(request, ref):
     b = _mine(request, ref)
     if request.method == "PATCH":
         d = request.data
-        for field, limit in (("arrival_eta", 40), ("arrival_mode", 10), ("vehicle_plate", 12), ("special_requests", 1000)):
+        for field, limit in (
+            ("arrival_eta", 40),
+            ("arrival_mode", 10),
+            ("vehicle_plate", 12),
+            ("special_requests", 1000),
+        ):
             if field in d:
-                setattr(b, field, str(d[field] or "")[:limit].strip().upper() if field == "vehicle_plate" else str(d[field] or "")[:limit])
+                setattr(
+                    b,
+                    field,
+                    str(d[field] or "")[:limit].strip().upper()
+                    if field == "vehicle_plate"
+                    else str(d[field] or "")[:limit],
+                )
         b.save()
         services.event(b, "arrival", "Arrival details updated", "web")
     return Response(trip_dict(b))
@@ -119,7 +155,13 @@ def cancel(request, ref):
 def add_extra(request, ref):
     b = _mine(request, ref)
     try:
-        services.add_addon(b, request.data.get("code"), quantity=request.data.get("quantity"), details=request.data.get("details") or {}, channel="web")
+        services.add_addon(
+            b,
+            request.data.get("code"),
+            quantity=request.data.get("quantity"),
+            details=request.data.get("details") or {},
+            channel="web",
+        )
     except services.BookingError as e:
         return _err(e)
     b.refresh_from_db()
@@ -132,8 +174,15 @@ def breakfast(request, ref):
     b = _mine(request, ref)
     d = request.data
     try:
-        services.set_breakfast(b, d.get("style"), people=d.get("people"), dietary=d.get("dietary", ""), time=d.get("time", ""),
-                               notes=d.get("notes", ""), channel="web")
+        services.set_breakfast(
+            b,
+            d.get("style"),
+            people=d.get("people"),
+            dietary=d.get("dietary", ""),
+            time=d.get("time", ""),
+            notes=d.get("notes", ""),
+            channel="web",
+        )
     except services.BookingError as e:
         return _err(e)
     b.refresh_from_db()
@@ -147,8 +196,13 @@ def occupants(request, ref):
     for o in request.data.get("occupants") or []:
         if not o.get("full_name"):
             continue
-        bg = BookingGuest(booking=b, full_name=o["full_name"][:80], id_type=o.get("id_type", "")[:20],
-                          nationality=(o.get("nationality") or "")[:2].upper(), is_minor=bool(o.get("is_minor")))
+        bg = BookingGuest(
+            booking=b,
+            full_name=o["full_name"][:80],
+            id_type=o.get("id_type", "")[:20],
+            nationality=(o.get("nationality") or "")[:2].upper(),
+            is_minor=bool(o.get("is_minor")),
+        )
         if o.get("id_number"):
             bg.set_id_number(o["id_number"])
         bg.save()
@@ -179,7 +233,9 @@ def report_issue(request, ref):
         return _err("Tell us what's wrong.")
     task = report(b, text, category=request.data.get("category") or None, channel="web")
     services.notify_host(f"Issue #{task.pk} at {b.unit.name} ({b.guest.display_name}, web): {text[:120]}", booking=b)
-    return Response({"task": task.pk, "assignee": task.assignee.name if task.assignee else None, "priority": task.priority})
+    return Response(
+        {"task": task.pk, "assignee": task.assignee.name if task.assignee else None, "priority": task.priority}
+    )
 
 
 @api_view(["POST"])
@@ -204,7 +260,9 @@ def review(request, ref):
     rating = int(d.get("rating") or 0)
     if not 1 <= rating <= 5:
         return _err("Choose a rating from 1 to 5 stars.")
-    record_rating(b, rating, channel="web", comment=(d.get("comment") or "")[:2000], categories=d.get("categories") or {})
+    record_rating(
+        b, rating, channel="web", comment=(d.get("comment") or "")[:2000], categories=d.get("categories") or {}
+    )
     b.refresh_from_db()
     return Response(trip_dict(b))
 
@@ -233,7 +291,12 @@ def host_reservations(request):
         qs = qs.filter(check_in__lte=parse_date(p["to"]))
     if p.get("q"):
         q = p["q"].strip()
-        qs = qs.filter(Q(ref__icontains=q) | Q(guest__name__icontains=q) | Q(guest__phone__icontains=q) | Q(unit__name__icontains=q))
+        qs = qs.filter(
+            Q(ref__icontains=q)
+            | Q(guest__name__icontains=q)
+            | Q(guest__phone__icontains=q)
+            | Q(unit__name__icontains=q)
+        )
     limit = min(int(p.get("limit") or 200), 500)
     return Response([reservation_row(b) for b in qs[:limit]])
 
@@ -244,9 +307,17 @@ def _host_create(request):
     try:
         guest, _ = get_or_create_user(d.get("phone"), name=d.get("name", ""), channel="walk_in")
         b = services.create_hold(
-            unit=unit, guest=guest, check_in=parse_date(d.get("check_in")), check_out=parse_date(d.get("check_out")),
-            channel=d.get("channel") if d.get("channel") in ("walk_in", "airbnb", "booking_com", "whatsapp") else "walk_in",
-            adults=int(d.get("adults") or 1), children=int(d.get("children") or 0), addons=d.get("addons") or [], actor=request.user,
+            unit=unit,
+            guest=guest,
+            check_in=parse_date(d.get("check_in")),
+            check_out=parse_date(d.get("check_out")),
+            channel=d.get("channel")
+            if d.get("channel") in ("walk_in", "airbnb", "booking_com", "whatsapp")
+            else "walk_in",
+            adults=int(d.get("adults") or 1),
+            children=int(d.get("children") or 0),
+            addons=d.get("addons") or [],
+            actor=request.user,
             special_requests=d.get("notes", ""),
         )
     except (services.BookingError, AuthError) as e:
@@ -260,7 +331,12 @@ def _host_create(request):
             result = payments.start_payment(b, method="mpesa", actor=request.user)
         elif mode == "card":
             result = payments.start_payment(b, method="card", actor=request.user)
-            messaging.send(guest.phone, f"Pay {b.total:,} KES for {b.ref} securely here: {result.get('checkout_url')}", booking=b, kind="hold_card")
+            messaging.send(
+                guest.phone,
+                f"Pay {b.total:,} KES for {b.ref} securely here: {result.get('checkout_url')}",
+                booking=b,
+                kind="hold_card",
+            )
         else:
             services.confirm(b, actor=request.user)  # pay on arrival
     except PaymentError as e:
@@ -290,7 +366,13 @@ def host_action(request, ref, action):
         if action == "cancel":
             services.cancel(b, by="host", reason=d.get("reason", ""), actor=user, refund_amount=d.get("refund_amount"))
         elif action == "record-payment":
-            payments.record_manual_payment(b, int(d.get("amount") or b.balance_due), method=d.get("method", "cash"), reference=d.get("reference", ""), actor=user)
+            payments.record_manual_payment(
+                b,
+                int(d.get("amount") or b.balance_due),
+                method=d.get("method", "cash"),
+                reference=d.get("reference", ""),
+                actor=user,
+            )
         elif action == "request-payment":
             payments.start_payment(b, method=d.get("method"), amount=d.get("amount"), actor=user)
         elif action == "release-code":
@@ -332,12 +414,25 @@ def decide_request(request, pk):
 @api_view(["GET"])
 @permission_classes([IsHost])
 def pending_requests(request):
-    rows = BookingAddon.objects.filter(status="requested").select_related("booking", "booking__guest", "booking__unit", "addon")
-    return Response([
-        {"id": r.pk, "addon": r.addon.name, "code": r.addon.code, "ref": r.booking.ref, "unit": r.booking.unit.name, "guest": r.booking.guest.display_name,
-         "details": r.details, "total": r.total, "created_at": r.created_at}
-        for r in rows
-    ])
+    rows = BookingAddon.objects.filter(status="requested").select_related(
+        "booking", "booking__guest", "booking__unit", "addon"
+    )
+    return Response(
+        [
+            {
+                "id": r.pk,
+                "addon": r.addon.name,
+                "code": r.addon.code,
+                "ref": r.booking.ref,
+                "unit": r.booking.unit.name,
+                "guest": r.booking.guest.display_name,
+                "details": r.details,
+                "total": r.total,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
+    )
 
 
 class HostAddonViewSet(viewsets.ModelViewSet):

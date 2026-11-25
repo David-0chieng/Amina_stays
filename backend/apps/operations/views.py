@@ -52,7 +52,9 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        return Response(TaskSerializer(services.complete_task(self.get_object(), request.user, request.data.get("note", ""))).data)
+        return Response(
+            TaskSerializer(services.complete_task(self.get_object(), request.user, request.data.get("note", ""))).data
+        )
 
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
@@ -60,7 +62,9 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 
 class StaffSerializer(serializers.ModelSerializer):
-    unit_ids = serializers.PrimaryKeyRelatedField(source="assigned_units", many=True, required=False, queryset=Unit.objects.all())
+    unit_ids = serializers.PrimaryKeyRelatedField(
+        source="assigned_units", many=True, required=False, queryset=Unit.objects.all()
+    )
     open_tasks = serializers.SerializerMethodField()
 
     class Meta:
@@ -119,10 +123,22 @@ def roles(request):
 
 def _guest_row(u):
     return {
-        "id": u.pk, "phone": u.phone, "name": u.name, "email": u.email, "lang": u.lang, "nationality": u.nationality, "tags": u.tags,
-        "blocked": u.is_blocked, "first_channel": u.first_channel, "marketing_opt_in": u.marketing_opt_in, "opted_out": bool(u.sms_opt_out_at),
-        "id_registered": bool(u.id_last4), "stays": getattr(u, "stays", None), "spend": getattr(u, "spend", None) or 0,
-        "last_stay": getattr(u, "last_stay", None), "joined": u.date_joined,
+        "id": u.pk,
+        "phone": u.phone,
+        "name": u.name,
+        "email": u.email,
+        "lang": u.lang,
+        "nationality": u.nationality,
+        "tags": u.tags,
+        "blocked": u.is_blocked,
+        "first_channel": u.first_channel,
+        "marketing_opt_in": u.marketing_opt_in,
+        "opted_out": bool(u.sms_opt_out_at),
+        "id_registered": bool(u.id_last4),
+        "stays": getattr(u, "stays", None),
+        "spend": getattr(u, "spend", None) or 0,
+        "last_stay": getattr(u, "last_stay", None),
+        "joined": u.date_joined,
     }
 
 
@@ -133,7 +149,9 @@ def guests(request):
 
     live = Q(bookings__status__in=("confirmed", "checked_in", "completed"))
     qs = User.objects.filter(role="guest").annotate(
-        stays=Count("bookings", filter=live, distinct=True), spend=Sum("bookings__amount_paid", filter=live), last_stay=Max("bookings__check_in", filter=live)
+        stays=Count("bookings", filter=live, distinct=True),
+        spend=Sum("bookings__amount_paid", filter=live),
+        last_stay=Max("bookings__check_in", filter=live),
     )
     q = request.query_params.get("q")
     if q:
@@ -161,18 +179,36 @@ def guest_detail(request, pk):
             u.tags = [str(t)[:24] for t in d["tags"]][:12]
         if "is_blocked" in d:
             u.is_blocked = bool(d["is_blocked"])
-            record("guest", f"{u.display_name} {'added to' if u.is_blocked else 'removed from'} the do-not-host list", actor=request.user)
+            record(
+                "guest",
+                f"{u.display_name} {'added to' if u.is_blocked else 'removed from'} the do-not-host list",
+                actor=request.user,
+            )
         u.save()
     from apps.messaging.models import Thread
 
     thread = Thread.objects.filter(phone=u.phone).first()
-    return Response({
-        **_guest_row(u), "notes": u.host_notes, "block_reason": u.block_reason,
-        "identity": {"type": u.get_id_type_display() if u.id_type else "", "last4": u.id_last4, "verified": bool(u.id_verified_at)},
-        "bookings": [trip_card(b) for b in u.bookings.exclude(status="expired").select_related("unit", "unit__area").order_by("-check_in")],
-        "thread_id": thread.pk if thread else None,
-        "reviews": [{"ref": r.booking.ref, "rating": r.rating, "comment": r.comment} for r in u.reviews.select_related("booking")],
-    })
+    return Response(
+        {
+            **_guest_row(u),
+            "notes": u.host_notes,
+            "block_reason": u.block_reason,
+            "identity": {
+                "type": u.get_id_type_display() if u.id_type else "",
+                "last4": u.id_last4,
+                "verified": bool(u.id_verified_at),
+            },
+            "bookings": [
+                trip_card(b)
+                for b in u.bookings.exclude(status="expired").select_related("unit", "unit__area").order_by("-check_in")
+            ],
+            "thread_id": thread.pk if thread else None,
+            "reviews": [
+                {"ref": r.booking.ref, "rating": r.rating, "comment": r.comment}
+                for r in u.reviews.select_related("booking")
+            ],
+        }
+    )
 
 
 @api_view(["GET", "POST"])
@@ -190,4 +226,6 @@ def kitchen(request):
             messaging.send(c.phone, text, kind="kitchen_sheet", user=request.user)
         return Response({"sent_to": [c.display_name for c in cooks]})
     rows = services.kitchen_sheet(day)
-    return Response({"date": day, "rows": rows, "people": sum(r["people"] for r in rows), "text": services.kitchen_sheet_text(day)})
+    return Response(
+        {"date": day, "rows": rows, "people": sum(r["people"] for r in rows), "text": services.kitchen_sheet_text(day)}
+    )

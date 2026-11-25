@@ -9,7 +9,9 @@ class Command(BaseCommand):
     help = "Run Amina Stays' periodic jobs (holds, message timeline, door codes, checkouts, reviews, iCal…) forever."
 
     def add_arguments(self, parser):
-        parser.add_argument("--interval", type=int, default=None, help="Seconds between passes (default SCHEDULER_INTERVAL_SECONDS)")
+        parser.add_argument(
+            "--interval", type=int, default=None, help="Seconds between passes (default SCHEDULER_INTERVAL_SECONDS)"
+        )
 
     def handle(self, *args, **opts):
         stopping = {"flag": False}

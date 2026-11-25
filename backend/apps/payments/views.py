@@ -49,7 +49,13 @@ def at_callback(request, secret=""):
     value = str(d.get("value", "")).replace("KES", "").strip()
     try:
         if d.get("status") == "Success":
-            services.on_success(p, transaction_id=d.get("transactionId"), provider_ref=d.get("providerRefId", ""), raw=d, amount=value or None)
+            services.on_success(
+                p,
+                transaction_id=d.get("transactionId"),
+                provider_ref=d.get("providerRefId", ""),
+                raw=d,
+                amount=value or None,
+            )
         elif d.get("status") == "Failed":
             services.on_failure(p, d.get("description", "failed"), raw=d)
     except Exception:
@@ -71,9 +77,13 @@ def daraja_callback(request, secret=""):
     items = {i.get("Name"): i.get("Value") for i in (cb.get("CallbackMetadata") or {}).get("Item", [])}
     try:
         if str(cb.get("ResultCode")) == "0":
-            services.on_success(p, provider_ref=str(items.get("MpesaReceiptNumber", "")), raw=cb, amount=items.get("Amount"))
+            services.on_success(
+                p, provider_ref=str(items.get("MpesaReceiptNumber", "")), raw=cb, amount=items.get("Amount")
+            )
         else:
-            services.on_failure(p, services.FAILURE_TEXT.get(str(cb.get("ResultCode")), cb.get("ResultDesc", "failed")), raw=cb)
+            services.on_failure(
+                p, services.FAILURE_TEXT.get(str(cb.get("ResultCode")), cb.get("ResultDesc", "failed")), raw=cb
+            )
     except Exception:
         log.exception("Daraja callback failed")
     return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
@@ -90,8 +100,13 @@ def paystack_webhook(request):
     data = event.get("data") or {}
     p = Payment.objects.filter(checkout_token=data.get("reference"), method="card").first()
     if p and event.get("event") == "charge.success" and data.get("status") == "success":
-        services.on_success(p, transaction_id=str(data.get("id")), provider_ref=data.get("reference", ""), raw=data,
-                            amount=(data.get("amount") or 0) / 100)
+        services.on_success(
+            p,
+            transaction_id=str(data.get("id")),
+            provider_ref=data.get("reference", ""),
+            raw=data,
+            amount=(data.get("amount") or 0) / 100,
+        )
     return HttpResponse("OK")
 
 
@@ -99,7 +114,9 @@ def paystack_webhook(request):
 
 
 def _card(token):
-    return get_object_or_404(Payment.objects.select_related("booking", "booking__unit"), checkout_token=token, method="card")
+    return get_object_or_404(
+        Payment.objects.select_related("booking", "booking__unit"), checkout_token=token, method="card"
+    )
 
 
 @api_view(["GET", "POST"])
@@ -107,7 +124,11 @@ def card_checkout(request, token):
     p = _card(token)
     b = p.booking
     if request.method == "POST" and p.provider == "simulate":
-        if p.status in ("pending", "failed") and b.status in ("held", "confirmed", "checked_in") and (b.status != "held" or b.hold_active):
+        if (
+            p.status in ("pending", "failed")
+            and b.status in ("held", "confirmed", "checked_in")
+            and (b.status != "held" or b.hold_active)
+        ):
             if request.data.get("action") == "pay":
                 services.on_success(p, transaction_id=f"CARD-SIM-{p.pk}", provider_ref=f"AUTH{p.pk:06d}")
             else:
@@ -115,11 +136,21 @@ def card_checkout(request, token):
                     services.on_failure(p, "card declined")
         p.refresh_from_db()
         b.refresh_from_db()
-    return Response({
-        "ref": b.ref, "unit": b.unit.name, "check_in": b.check_in, "check_out": b.check_out, "amount": p.amount, "currency": p.currency,
-        "status": p.status, "booking_status": b.status, "expires_at": b.hold_expires_at if b.status == "held" else None,
-        "expired": (b.status == "held" and not b.hold_active) or b.status == "expired", "simulated": p.provider == "simulate",
-    })
+    return Response(
+        {
+            "ref": b.ref,
+            "unit": b.unit.name,
+            "check_in": b.check_in,
+            "check_out": b.check_out,
+            "amount": p.amount,
+            "currency": p.currency,
+            "status": p.status,
+            "booking_status": b.status,
+            "expires_at": b.hold_expires_at if b.status == "held" else None,
+            "expired": (b.status == "held" and not b.hold_active) or b.status == "expired",
+            "simulated": p.provider == "simulate",
+        }
+    )
 
 
 # ---------- host ledger ----------
@@ -135,19 +166,44 @@ def ledger(request):
     if q:
         qs = qs.filter(Q(booking__ref__icontains=q) | Q(phone__icontains=q) | Q(provider_ref__icontains=q))
     refunds = Refund.objects.select_related("booking", "booking__guest").order_by("-id")[:100]
-    return Response({
-        "payments": [
-            {"id": p.pk, "ref": p.booking.ref, "guest": p.booking.guest.display_name, "unit": p.booking.unit.name, "amount": p.amount,
-             "method": p.method, "method_label": p.get_method_display(), "purpose": p.purpose, "status": p.status, "provider": p.provider,
-             "reference": p.provider_ref, "failure_reason": p.failure_reason, "created_at": p.created_at, "completed_at": p.completed_at}
-            for p in qs[:300]
-        ],
-        "refunds": [
-            {"id": r.pk, "ref": r.booking.ref, "guest": r.booking.guest.display_name, "phone": r.booking.guest.phone, "amount": r.amount,
-             "method": r.get_method_display(), "status": r.status, "reason": r.reason, "reference": r.provider_ref, "created_at": r.created_at}
-            for r in refunds
-        ],
-    })
+    return Response(
+        {
+            "payments": [
+                {
+                    "id": p.pk,
+                    "ref": p.booking.ref,
+                    "guest": p.booking.guest.display_name,
+                    "unit": p.booking.unit.name,
+                    "amount": p.amount,
+                    "method": p.method,
+                    "method_label": p.get_method_display(),
+                    "purpose": p.purpose,
+                    "status": p.status,
+                    "provider": p.provider,
+                    "reference": p.provider_ref,
+                    "failure_reason": p.failure_reason,
+                    "created_at": p.created_at,
+                    "completed_at": p.completed_at,
+                }
+                for p in qs[:300]
+            ],
+            "refunds": [
+                {
+                    "id": r.pk,
+                    "ref": r.booking.ref,
+                    "guest": r.booking.guest.display_name,
+                    "phone": r.booking.guest.phone,
+                    "amount": r.amount,
+                    "method": r.get_method_display(),
+                    "status": r.status,
+                    "reason": r.reason,
+                    "reference": r.provider_ref,
+                    "created_at": r.created_at,
+                }
+                for r in refunds
+            ],
+        }
+    )
 
 
 @api_view(["POST"])

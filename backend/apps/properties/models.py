@@ -29,8 +29,19 @@ class Amenity(models.Model):
     CATEGORIES = [
         (c, c.replace("_", " ").capitalize())
         for c in (
-            "essentials", "coastal", "bedroom", "bathroom", "kitchen", "entertainment", "family",
-            "workspace", "outdoor", "parking", "safety", "accessibility", "services",
+            "essentials",
+            "coastal",
+            "bedroom",
+            "bathroom",
+            "kitchen",
+            "entertainment",
+            "family",
+            "workspace",
+            "outdoor",
+            "parking",
+            "safety",
+            "accessibility",
+            "services",
         )
     ]
     code = models.SlugField(max_length=40, unique=True)
@@ -60,10 +71,19 @@ class Unit(models.Model):
         ("caretaker", "Caretaker hands over keys"),
     ]
     STATUS = [("active", "Listed"), ("paused", "Paused"), ("draft", "Draft")]
-    HOUSEKEEPING = [("clean", "Clean"), ("dirty", "Needs cleaning"), ("cleaning", "Cleaning"), ("inspect", "Needs inspection")]
+    HOUSEKEEPING = [
+        ("clean", "Clean"),
+        ("dirty", "Needs cleaning"),
+        ("cleaning", "Cleaning"),
+        ("inspect", "Needs inspection"),
+    ]
     GUEST_ACCESS = {
-        "simulated": "Self check-in with a keypad", "igloohome": "Self check-in with a smart lock", "ttlock": "Self check-in with a smart lock",
-        "nuki": "Self check-in with a smart lock", "lockbox": "Self check-in with a key lockbox", "caretaker": "The caretaker meets you with the keys",
+        "simulated": "Self check-in with a keypad",
+        "igloohome": "Self check-in with a smart lock",
+        "ttlock": "Self check-in with a smart lock",
+        "nuki": "Self check-in with a smart lock",
+        "lockbox": "Self check-in with a key lockbox",
+        "caretaker": "The caretaker meets you with the keys",
     }
 
     name = models.CharField(max_length=80)
@@ -112,7 +132,9 @@ class Unit(models.Model):
     smoking_allowed = models.BooleanField(default=False)
     events_allowed = models.BooleanField(default=False)
     quiet_hours = models.CharField(max_length=40, default="22:00–07:00")
-    safety_features = models.JSONField(default=list, blank=True, help_text="Smoke alarm, guard, generator, camera disclosures…")
+    safety_features = models.JSONField(
+        default=list, blank=True, help_text="Smoke alarm, guard, generator, camera disclosures…"
+    )
     house_manual = models.TextField(blank=True, help_text="Appliances, AC, water, trash — shown to booked guests")
     local_tips = models.TextField(blank=True)
 
@@ -122,7 +144,9 @@ class Unit(models.Model):
     breakfast_available = models.BooleanField(default=True)
 
     status = models.CharField(max_length=8, choices=STATUS, default="active", db_index=True)
-    tra_licence_number = models.CharField(max_length=40, blank=True, help_text="TRA licence for this address (blank = business licence)")
+    tra_licence_number = models.CharField(
+        max_length=40, blank=True, help_text="TRA licence for this address (blank = business licence)"
+    )
     housekeeping = models.CharField(max_length=10, choices=HOUSEKEEPING, default="clean")
     is_featured = models.BooleanField(default=False)
     sort_order = models.PositiveSmallIntegerField(default=0)
@@ -181,7 +205,10 @@ class Unit(models.Model):
 
 
 class UnitPhoto(models.Model):
-    ROOMS = [(r, r.capitalize()) for r in ("exterior", "living", "bedroom", "kitchen", "bathroom", "view", "pool", "dining", "other")]
+    ROOMS = [
+        (r, r.capitalize())
+        for r in ("exterior", "living", "bedroom", "kitchen", "bathroom", "view", "pool", "dining", "other")
+    ]
     unit = models.ForeignKey(Unit, on_delete=models.CASCADE, related_name="photos")
     url = models.URLField(max_length=500, blank=True)
     image = models.FileField(upload_to="units/", blank=True)
@@ -203,15 +230,24 @@ class UnitPhoto(models.Model):
 class PriceRule(models.Model):
     """Rule-based pricing: seasons, weekdays and last-minute deals (coast seasonality matters)."""
 
-    KINDS = [("season", "Season / event"), ("weekday", "Day of week"), ("last_minute", "Last-minute"), ("early_bird", "Early bird")]
+    KINDS = [
+        ("season", "Season / event"),
+        ("weekday", "Day of week"),
+        ("last_minute", "Last-minute"),
+        ("early_bird", "Early bird"),
+    ]
     ADJUST = [("percent", "Percent"), ("amount", "KES amount"), ("fixed", "Fixed nightly price")]
-    unit = models.ForeignKey(Unit, null=True, blank=True, on_delete=models.CASCADE, related_name="price_rules", help_text="Blank = all units")
+    unit = models.ForeignKey(
+        Unit, null=True, blank=True, on_delete=models.CASCADE, related_name="price_rules", help_text="Blank = all units"
+    )
     name = models.CharField(max_length=60)
     kind = models.CharField(max_length=12, choices=KINDS, default="season")
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True, help_text="Inclusive")
     weekdays = models.JSONField(default=list, blank=True, help_text="0=Mon … 6=Sun (nights)")
-    days_before = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Last-minute: within N days; early bird: at least N days")
+    days_before = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Last-minute: within N days; early bird: at least N days"
+    )
     adjust_type = models.CharField(max_length=8, choices=ADJUST, default="percent")
     value = models.DecimalField(max_digits=10, decimal_places=2, help_text="+20 = 20% more; -15 = 15% off")
     priority = models.PositiveSmallIntegerField(default=10)
@@ -252,7 +288,12 @@ class ICalFeed(models.Model):
 
 
 class CalendarBlock(models.Model):
-    REASONS = [("owner", "Owner use"), ("maintenance", "Maintenance"), ("external", "Booked elsewhere"), ("other", "Other")]
+    REASONS = [
+        ("owner", "Owner use"),
+        ("maintenance", "Maintenance"),
+        ("external", "Booked elsewhere"),
+        ("other", "Other"),
+    ]
     unit = models.ForeignKey(Unit, on_delete=models.CASCADE, related_name="blocks")
     start_date = models.DateField()
     end_date = models.DateField(help_text="Exclusive (the morning the unit is free again)")
@@ -260,7 +301,9 @@ class CalendarBlock(models.Model):
     note = models.CharField(max_length=160, blank=True)
     feed = models.ForeignKey(ICalFeed, null=True, blank=True, on_delete=models.CASCADE, related_name="blocks")
     external_uid = models.CharField(max_length=255, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

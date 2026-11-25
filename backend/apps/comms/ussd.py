@@ -28,43 +28,131 @@ LIMIT = 160
 
 S = {
     "en": {
-        "welcome": "Karibu Amina Stays", "back": "Karibu tena {name}!",
-        "main": ["Book a stay", "Prices & homes", "My booking", "Breakfast", "Report problem", "Talk to Amina", "Check out", "Language", "EMERGENCY"],
-        "where": "Where?", "anywhere": "Anywhere", "when": "Check-in:", "when_opts": ["Tonight", "Tomorrow", "This weekend", "Next weekend", "Enter date"],
-        "ddmm": "Enter check-in date as DDMM, e.g. 0512", "nights": "How many nights? (1-14)", "guests": "How many guests? (1-8)",
-        "pick": "Pick a home ({dates}):", "more": "98. More", "none": "Nothing free then. We'll SMS you if something opens up.",
-        "bf_q": "Add breakfast? ({price}/person/day)", "bf_opts": ["Swahili", "Continental", "Full English", "Vegetarian", "No thanks"],
-        "pay_q": "Total {total}", "pay_full": "Pay all now", "pay_dep": "Pay {pct}% now ({dep})", "confirm": "Confirm & pay",
-        "held": "Holding {unit} ({ref}). {pay}", "invalid": "Invalid choice.", "no_booking": "No active booking for this number. Dial again and choose 1 to book.",
-        "mine": "{ref} {unit}\n{dates}\n{status}. Paid {paid} of {total}", "mine_opts": ["Resend check-in info", "Pay balance", "Late checkout", "Cancel booking"],
-        "sent": "Sent to you by SMS.", "cancel_q": "{text}", "cancel_opts": ["Yes, cancel", "No, keep it"], "kept": "Your booking is kept. See you soon!",
-        "bf_menu": "Breakfast ({price}/person/day):", "bf_people": "For how many people? (1-{max})", "bf_saved": "Breakfast saved: {summary}. Kitchen told.",
-        "issue_q": "What's wrong?", "issue_opts": ["No water", "Power/lights", "Wi-Fi", "AC/fan", "Cleanliness", "Lock/keys", "Noise/security", "Other"],
+        "welcome": "Karibu Amina Stays",
+        "back": "Karibu tena {name}!",
+        "main": [
+            "Book a stay",
+            "Prices & homes",
+            "My booking",
+            "Breakfast",
+            "Report problem",
+            "Talk to Amina",
+            "Check out",
+            "Language",
+            "EMERGENCY",
+        ],
+        "where": "Where?",
+        "anywhere": "Anywhere",
+        "when": "Check-in:",
+        "when_opts": ["Tonight", "Tomorrow", "This weekend", "Next weekend", "Enter date"],
+        "ddmm": "Enter check-in date as DDMM, e.g. 0512",
+        "nights": "How many nights? (1-14)",
+        "guests": "How many guests? (1-8)",
+        "pick": "Pick a home ({dates}):",
+        "more": "98. More",
+        "none": "Nothing free then. We'll SMS you if something opens up.",
+        "bf_q": "Add breakfast? ({price}/person/day)",
+        "bf_opts": ["Swahili", "Continental", "Full English", "Vegetarian", "No thanks"],
+        "pay_q": "Total {total}",
+        "pay_full": "Pay all now",
+        "pay_dep": "Pay {pct}% now ({dep})",
+        "confirm": "Confirm & pay",
+        "held": "Holding {unit} ({ref}). {pay}",
+        "invalid": "Invalid choice.",
+        "no_booking": "No active booking for this number. Dial again and choose 1 to book.",
+        "mine": "{ref} {unit}\n{dates}\n{status}. Paid {paid} of {total}",
+        "mine_opts": ["Resend check-in info", "Pay balance", "Late checkout", "Cancel booking"],
+        "sent": "Sent to you by SMS.",
+        "cancel_q": "{text}",
+        "cancel_opts": ["Yes, cancel", "No, keep it"],
+        "kept": "Your booking is kept. See you soon!",
+        "bf_menu": "Breakfast ({price}/person/day):",
+        "bf_people": "For how many people? (1-{max})",
+        "bf_saved": "Breakfast saved: {summary}. Kitchen told.",
+        "issue_q": "What's wrong?",
+        "issue_opts": [
+            "No water",
+            "Power/lights",
+            "Wi-Fi",
+            "AC/fan",
+            "Cleanliness",
+            "Lock/keys",
+            "Noise/security",
+            "Other",
+        ],
         "issue_ok": "Logged #{task}. {who} has been told and will sort it. Reply HELP by SMS if urgent.",
-        "talk_opts": ["Call me back", "I'll text a question"], "callback": "Amina will call you back shortly.",
-        "text_us": "Text your question to {number} and Amina will reply.", "co_q": "Check out of {unit} now? Your door code will stop working.",
-        "yes_no": ["Yes", "No"], "co_done": "Checked out. Asante, safe travels!", "lang_set": "Language saved.",
+        "talk_opts": ["Call me back", "I'll text a question"],
+        "callback": "Amina will call you back shortly.",
+        "text_us": "Text your question to {number} and Amina will reply.",
+        "co_q": "Check out of {unit} now? Your door code will stop working.",
+        "yes_no": ["Yes", "No"],
+        "co_done": "Checked out. Asante, safe travels!",
+        "lang_set": "Language saved.",
         "sos": "Amina is being alerted and called now. If you are in danger call 999 or 112.",
         "unit_info": "{name}, {area}: {beds} bed, sleeps {guests}. From {price}/night.{bf} Details sent by SMS.",
         "late_q": "Late checkout ({price}) is requested from Amina. You'll get an SMS.",
     },
     "sw": {
-        "welcome": "Karibu Amina Stays", "back": "Karibu tena {name}!",
-        "main": ["Weka nafasi", "Bei na nyumba", "Nafasi yangu", "Kifungua kinywa", "Ripoti tatizo", "Ongea na Amina", "Toka", "Lugha", "DHARURA"],
-        "where": "Wapi?", "anywhere": "Popote", "when": "Kuingia:", "when_opts": ["Leo usiku", "Kesho", "Wikendi hii", "Wikendi ijayo", "Andika tarehe"],
-        "ddmm": "Andika tarehe kama SSMM, mf. 0512", "nights": "Usiku ngapi? (1-14)", "guests": "Wageni wangapi? (1-8)",
-        "pick": "Chagua nyumba ({dates}):", "more": "98. Zaidi", "none": "Hakuna nafasi. Tutakutumia SMS nafasi ikipatikana.",
-        "bf_q": "Ongeza kifungua kinywa? ({price}/mtu/siku)", "bf_opts": ["Cha Kiswahili", "Continental", "Kiingereza", "Mboga", "Hapana"],
-        "pay_q": "Jumla {total}", "pay_full": "Lipa yote sasa", "pay_dep": "Lipa {pct}% sasa ({dep})", "confirm": "Thibitisha & lipa",
-        "held": "Tumekuwekea {unit} ({ref}). {pay}", "invalid": "Chaguo si sahihi.", "no_booking": "Hakuna nafasi kwa nambari hii. Piga tena uchague 1.",
-        "mine": "{ref} {unit}\n{dates}\n{status}. Umelipa {paid} kati ya {total}", "mine_opts": ["Tuma maelezo tena", "Lipa salio", "Kutoka baadaye", "Ghairi"],
-        "sent": "Tumekutumia kwa SMS.", "cancel_q": "{text}", "cancel_opts": ["Ndiyo, ghairi", "Hapana, iweke"], "kept": "Nafasi yako iko. Karibu!",
-        "bf_menu": "Kifungua kinywa ({price}/mtu/siku):", "bf_people": "Kwa watu wangapi? (1-{max})", "bf_saved": "Kimehifadhiwa: {summary}.",
-        "issue_q": "Tatizo ni nini?", "issue_opts": ["Hakuna maji", "Stima", "Wi-Fi", "AC/feni", "Usafi", "Kufuli/funguo", "Kelele/usalama", "Nyingine"],
+        "welcome": "Karibu Amina Stays",
+        "back": "Karibu tena {name}!",
+        "main": [
+            "Weka nafasi",
+            "Bei na nyumba",
+            "Nafasi yangu",
+            "Kifungua kinywa",
+            "Ripoti tatizo",
+            "Ongea na Amina",
+            "Toka",
+            "Lugha",
+            "DHARURA",
+        ],
+        "where": "Wapi?",
+        "anywhere": "Popote",
+        "when": "Kuingia:",
+        "when_opts": ["Leo usiku", "Kesho", "Wikendi hii", "Wikendi ijayo", "Andika tarehe"],
+        "ddmm": "Andika tarehe kama SSMM, mf. 0512",
+        "nights": "Usiku ngapi? (1-14)",
+        "guests": "Wageni wangapi? (1-8)",
+        "pick": "Chagua nyumba ({dates}):",
+        "more": "98. Zaidi",
+        "none": "Hakuna nafasi. Tutakutumia SMS nafasi ikipatikana.",
+        "bf_q": "Ongeza kifungua kinywa? ({price}/mtu/siku)",
+        "bf_opts": ["Cha Kiswahili", "Continental", "Kiingereza", "Mboga", "Hapana"],
+        "pay_q": "Jumla {total}",
+        "pay_full": "Lipa yote sasa",
+        "pay_dep": "Lipa {pct}% sasa ({dep})",
+        "confirm": "Thibitisha & lipa",
+        "held": "Tumekuwekea {unit} ({ref}). {pay}",
+        "invalid": "Chaguo si sahihi.",
+        "no_booking": "Hakuna nafasi kwa nambari hii. Piga tena uchague 1.",
+        "mine": "{ref} {unit}\n{dates}\n{status}. Umelipa {paid} kati ya {total}",
+        "mine_opts": ["Tuma maelezo tena", "Lipa salio", "Kutoka baadaye", "Ghairi"],
+        "sent": "Tumekutumia kwa SMS.",
+        "cancel_q": "{text}",
+        "cancel_opts": ["Ndiyo, ghairi", "Hapana, iweke"],
+        "kept": "Nafasi yako iko. Karibu!",
+        "bf_menu": "Kifungua kinywa ({price}/mtu/siku):",
+        "bf_people": "Kwa watu wangapi? (1-{max})",
+        "bf_saved": "Kimehifadhiwa: {summary}.",
+        "issue_q": "Tatizo ni nini?",
+        "issue_opts": [
+            "Hakuna maji",
+            "Stima",
+            "Wi-Fi",
+            "AC/feni",
+            "Usafi",
+            "Kufuli/funguo",
+            "Kelele/usalama",
+            "Nyingine",
+        ],
         "issue_ok": "Tumeandika #{task}. {who} ameambiwa. Tuma MSAADA kwa SMS kama ni dharura.",
-        "talk_opts": ["Nipigie", "Nitatuma swali"], "callback": "Amina atakupigia hivi karibuni.",
-        "text_us": "Tuma swali lako kwa {number} na Amina atakujibu.", "co_q": "Toka {unit} sasa? Nambari ya mlango itazimwa.",
-        "yes_no": ["Ndiyo", "Hapana"], "co_done": "Umetoka. Asante, safari njema!", "lang_set": "Lugha imehifadhiwa.",
+        "talk_opts": ["Nipigie", "Nitatuma swali"],
+        "callback": "Amina atakupigia hivi karibuni.",
+        "text_us": "Tuma swali lako kwa {number} na Amina atakujibu.",
+        "co_q": "Toka {unit} sasa? Nambari ya mlango itazimwa.",
+        "yes_no": ["Ndiyo", "Hapana"],
+        "co_done": "Umetoka. Asante, safari njema!",
+        "lang_set": "Lugha imehifadhiwa.",
         "sos": "Amina anaarifiwa na kupigiwa sasa. Ukiwa hatarini piga 999 au 112.",
         "unit_info": "{name}, {area}: vyumba {beds}, wageni {guests}. Kuanzia {price}/usiku.{bf} Maelezo kwa SMS.",
         "late_q": "Ombi la kutoka baadaye ({price}) limetumwa kwa Amina. Utapata SMS.",
@@ -126,7 +214,7 @@ class Ussd:
         per_page = per_page or len(options)
         page = 0
         while True:
-            chunk = options[page * per_page:(page + 1) * per_page]
+            chunk = options[page * per_page : (page + 1) * per_page]
             more = (page + 1) * per_page < len(options)
             screen = menu(title, chunk, start=page * per_page + 1) + (f"\n{self.t['more']}" if more else "")
             tok = self.c.take()
@@ -173,7 +261,17 @@ class Ussd:
         name = first_name(self.user.name)[:10]
         title = self.t["back"].format(name=name) if last and name else self.t["welcome"]
         choice = self.choose(title, self.t["main"])
-        return [self.book, self.prices, self.my_booking, self.breakfast, self.problem, self.talk, self.checkout, self.language, self.sos][choice]()
+        return [
+            self.book,
+            self.prices,
+            self.my_booking,
+            self.breakfast,
+            self.problem,
+            self.talk,
+            self.checkout,
+            self.language,
+            self.sos,
+        ][choice]()
 
     # ---------- guest flows ----------
     def book(self):
@@ -195,7 +293,11 @@ class Ussd:
             self.end(self.t["none"])
         dates = f"{ci:%d/%m}-{co:%d/%m}"
         quotes = {u.pk: price_quote(u, ci, co, guests=guests) for u in units}
-        idx = self.choose(self.t["pick"].format(dates=dates), [f"{u.name[:18]} {kes(quotes[u.pk]['total'])}" for u in units], per_page=3)
+        idx = self.choose(
+            self.t["pick"].format(dates=dates),
+            [f"{u.name[:18]} {kes(quotes[u.pk]['total'])}" for u in units],
+            per_page=3,
+        )
         unit = units[idx]
         addons = []
         bf = Addon.objects.filter(code="breakfast", active=True).first()
@@ -203,16 +305,36 @@ class Ussd:
             b_idx = self.choose(self.t["bf_q"].format(price=kes(bf.price)), self.t["bf_opts"])
             if b_idx < 4:
                 addons.append({"code": "breakfast", "quantity": guests, "details": {"style": BF_STYLES[b_idx]}})
-        q = price_quote(unit, ci, co, guests=guests, addons=[{"addon": bf, "quantity": guests}] if addons else None, payment_plan="deposit")
+        q = price_quote(
+            unit,
+            ci,
+            co,
+            guests=guests,
+            addons=[{"addon": bf, "quantity": guests}] if addons else None,
+            payment_plan="deposit",
+        )
         s = SiteSettings.load()
         if q["deposit_available"]:
-            plan = ["full", "deposit"][self.choose(self.t["pay_q"].format(total=kes(q["total"])),
-                                                   [self.t["pay_full"], self.t["pay_dep"].format(pct=s.deposit_percent, dep=kes(q["deposit"]))])]
+            plan = ["full", "deposit"][
+                self.choose(
+                    self.t["pay_q"].format(total=kes(q["total"])),
+                    [self.t["pay_full"], self.t["pay_dep"].format(pct=s.deposit_percent, dep=kes(q["deposit"]))],
+                )
+            ]
         else:
             self.choose(self.t["pay_q"].format(total=kes(q["total"])), [self.t["confirm"]])
             plan = "full"
         try:
-            b = bookings.create_hold(unit=unit, guest=self.user, check_in=ci, check_out=co, channel="ussd", adults=guests, addons=addons, payment_plan=plan)
+            b = bookings.create_hold(
+                unit=unit,
+                guest=self.user,
+                check_in=ci,
+                check_out=co,
+                channel="ussd",
+                adults=guests,
+                addons=addons,
+                payment_plan=plan,
+            )
         except bookings.BookingError as e:
             self.end(str(e))
         from apps.payments.services import start_remote_payment
@@ -233,34 +355,61 @@ class Ussd:
 
     def prices(self):
         units = list(Unit.objects.filter(status="active").select_related("area"))
-        idx = self.choose(self.t["pick"].format(dates="/night"), [f"{u.name[:18]} {kes(from_price(u))}" for u in units], per_page=4)
+        idx = self.choose(
+            self.t["pick"].format(dates="/night"), [f"{u.name[:18]} {kes(from_price(u))}" for u in units], per_page=4
+        )
         u = units[idx]
         bf = Addon.objects.filter(code="breakfast", active=True).first()
         bf_text = f" Breakfast {kes(bf.price)}." if bf and u.breakfast_available else ""
         from django.conf import settings
 
-        messaging.send(self.phone, f"{u.name} ({u.area.name}): {u.summary} Photos & booking: {settings.FRONTEND_URL}/stays/{u.slug}", kind="ussd_info")
-        self.end(self.t["unit_info"].format(name=u.name, area=u.area.name, beds=u.bedrooms, guests=u.max_guests, price=kes(from_price(u)), bf=bf_text))
+        messaging.send(
+            self.phone,
+            f"{u.name} ({u.area.name}): {u.summary} Photos & booking: {settings.FRONTEND_URL}/stays/{u.slug}",
+            kind="ussd_info",
+        )
+        self.end(
+            self.t["unit_info"].format(
+                name=u.name,
+                area=u.area.name,
+                beds=u.bedrooms,
+                guests=u.max_guests,
+                price=kes(from_price(u)),
+                bf=bf_text,
+            )
+        )
 
     def my_booking(self):
         b = bookings.current_booking(self.phone)
         if not b:
             self.end(self.t["no_booking"])
-        head = self.t["mine"].format(ref=b.ref, unit=b.unit.name[:18], dates=f"{nice_date(b.check_in, self.lang)}-{nice_date(b.check_out, self.lang)}",
-                                     status=b.get_status_display()[:14], paid=kes(b.amount_paid), total=kes(b.total))
+        head = self.t["mine"].format(
+            ref=b.ref,
+            unit=b.unit.name[:18],
+            dates=f"{nice_date(b.check_in, self.lang)}-{nice_date(b.check_out, self.lang)}",
+            status=b.get_status_display()[:14],
+            paid=kes(b.amount_paid),
+            total=kes(b.total),
+        )
         choice = self.choose(head, self.t["mine_opts"])
         if choice == 0:
             if b.status == "checked_in":
                 bookings.send_guest(b, "checkin_code")
             elif b.status == "confirmed":
-                bookings.send_guest(b, "directions" if (b.check_in - today()).days <= 2 else "booking_confirmed", balance_note="")
+                bookings.send_guest(
+                    b, "directions" if (b.check_in - today()).days <= 2 else "booking_confirmed", balance_note=""
+                )
             else:
                 bookings.send_guest(b, "status")
             self.end(self.t["sent"])
         if choice == 1:
             from apps.payments.services import start_remote_payment
 
-            self.end(start_remote_payment(b)["text"] if (b.balance_due or b.status == "held") else "You're fully paid - asante!")
+            self.end(
+                start_remote_payment(b)["text"]
+                if (b.balance_due or b.status == "held")
+                else "You're fully paid - asante!"
+            )
         if choice == 2:
             late = Addon.objects.filter(code="late_checkout", active=True).first()
             try:
@@ -297,8 +446,13 @@ class Ussd:
         if not b:
             self.end(self.t["no_booking"])
         idx = self.choose(self.t["issue_q"], self.t["issue_opts"])
-        task = report_issue(b, f"{self.t['issue_opts'][idx]} (reported by USSD)", category=ISSUE_CATEGORIES[idx], channel="ussd")
-        bookings.notify_host(f"Issue #{task.pk} at {b.unit.name} via USSD: {self.t['issue_opts'][idx]} ({self.user.display_name})", booking=b)
+        task = report_issue(
+            b, f"{self.t['issue_opts'][idx]} (reported by USSD)", category=ISSUE_CATEGORIES[idx], channel="ussd"
+        )
+        bookings.notify_host(
+            f"Issue #{task.pk} at {b.unit.name} via USSD: {self.t['issue_opts'][idx]} ({self.user.display_name})",
+            booking=b,
+        )
         who = first_name(task.assignee.name) if task.assignee and task.assignee.name else "Our caretaker"
         self.end(self.t["issue_ok"].format(task=task.pk, who=who))
 
@@ -310,9 +464,14 @@ class Ussd:
         if self.choose(self.t["main"][5], self.t["talk_opts"]) == 0:
             b = bookings.current_booking(self.phone)
             thread = messaging.get_thread(self.phone, self.user)
-            messaging.record_inbound(self.phone, "[USSD] Please call me back", channel="ussd", booking=b, handled="relayed")
+            messaging.record_inbound(
+                self.phone, "[USSD] Please call me back", channel="ussd", booking=b, handled="relayed"
+            )
             Thread.objects.filter(pk=thread.pk).update(needs_reply=True, waiting_since=timezone.now())
-            bookings.notify_host(f"CALL BACK: {self.user.display_name} {self.phone}{' (' + b.ref + ' ' + b.unit.name + ')' if b else ''} asked by USSD.", booking=b)
+            bookings.notify_host(
+                f"CALL BACK: {self.user.display_name} {self.phone}{' (' + b.ref + ' ' + b.unit.name + ')' if b else ''} asked by USSD.",
+                booking=b,
+            )
             self.end(self.t["callback"])
         self.end(self.t["text_us"].format(number=settings.AT_SMS_NUMBER or "this number"))
 
@@ -343,11 +502,16 @@ class Ussd:
         from apps.operations import services as ops
 
         t = today()
-        choice = self.choose("Amina ops", ["Today", "Free tonight", "Arrivals/departures", "Requests", "Message guests", "Last-minute deal", "Tasks"])
+        choice = self.choose(
+            "Amina ops",
+            ["Today", "Free tonight", "Arrivals/departures", "Requests", "Message guests", "Last-minute deal", "Tasks"],
+        )
         if choice == 0:
             n = ops.digest_numbers()
-            self.end(f"Today: {n['arrivals']} in, {n['departures']} out, {n['in_house']} staying, {n['breakfasts']} breakfasts, "
-                     f"{n['tasks']} tasks, {n['unread']} chats, {n['alerts']} alerts. Week {n['occ']}%.")
+            self.end(
+                f"Today: {n['arrivals']} in, {n['departures']} out, {n['in_house']} staying, {n['breakfasts']} breakfasts, "
+                f"{n['tasks']} tasks, {n['unread']} chats, {n['alerts']} alerts. Week {n['occ']}%."
+            )
         if choice == 1:
             free = list(available_units(t, t + timedelta(days=1)))
             self.end("Free tonight: " + ("; ".join(f"{u.name} {kes(u.base_price)}" for u in free) or "none"))
@@ -356,7 +520,9 @@ class Ussd:
 
             ins = Booking.objects.filter(check_in=t, status__in=("confirmed", "checked_in")).select_related("unit")
             outs = Booking.objects.filter(check_out=t, status__in=("checked_in", "completed")).select_related("unit")
-            self.end(f"IN: {', '.join(b.unit.name for b in ins) or '-'}. OUT: {', '.join(b.unit.name for b in outs) or '-'}")
+            self.end(
+                f"IN: {', '.join(b.unit.name for b in ins) or '-'}. OUT: {', '.join(b.unit.name for b in outs) or '-'}"
+            )
         if choice == 3:
             reqs = list(BookingAddon.objects.filter(status="requested").select_related("addon", "booking")[:6])
             if not reqs:
@@ -366,11 +532,19 @@ class Ussd:
             bookings.decide_addon(r, ok, actor=self.user)
             self.end(f"{'Approved' if ok else 'Declined'}. Guest told by SMS.")
         if choice == 4:
-            aud = ["in_house", "arriving", "waitlist"][self.choose("Message who?", ["Guests staying now", "Arriving in 7 days", "Waitlist"])]
+            aud = ["in_house", "arriving", "waitlist"][
+                self.choose("Message who?", ["Guests staying now", "Arriving in 7 days", "Waitlist"])
+            ]
             body = self.text("Type your message:")
             phones = messaging.audience_phones(aud)
             for p in phones:
-                messaging.send(p, f"{SiteSettings.load().business_name}: {body[:300]}", kind="broadcast", sender="host", user=self.user)
+                messaging.send(
+                    p,
+                    f"{SiteSettings.load().business_name}: {body[:300]}",
+                    kind="broadcast",
+                    sender="host",
+                    user=self.user,
+                )
             record("broadcast", f"USSD broadcast to {len(phones)} ({aud})", actor=self.user)
             self.end(f"Sent to {len(phones)} guest(s).")
         if choice == 5:
@@ -380,7 +554,9 @@ class Ussd:
             u = free[self.choose("Discount which?", [f"{x.name[:20]} {kes(x.base_price)}" for x in free])]
             pct = self.number("Discount %? (10-50)", 10, 50)
             price = round(u.base_price * (100 - pct) / 100)
-            PriceOverride.objects.update_or_create(unit=u, date=t, defaults={"price": price, "note": f"Last-minute -{pct}%"})
+            PriceOverride.objects.update_or_create(
+                unit=u, date=t, defaults={"price": price, "note": f"Last-minute -{pct}%"}
+            )
             offered = bookings.notify_waitlist(u)
             record("pricing", f"Last-minute deal: {u.name} tonight {kes(price)} (-{pct}%)", actor=self.user)
             self.end(f"{u.name} tonight now {kes(price)}. {offered} waitlisted guest(s) told.")

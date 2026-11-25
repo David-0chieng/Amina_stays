@@ -25,19 +25,39 @@ def health(request):
 @api_view(["GET"])
 def config(request):
     s = SiteSettings.load()
-    return Response({
-        "business": {"name": s.business_name, "host_name": s.host_name, "tagline": s.tagline, "email": s.support_email,
-                     "tra_licence": s.tra_licence_number, "checkin_time": s.default_checkin_time, "checkout_time": s.default_checkout_time},
-        "channels": {"ussd_code": settings.AT_USSD_CODE, "sms_number": settings.AT_SMS_NUMBER, "voice_number": settings.AT_VOICE_NUMBER,
-                     "whatsapp": settings.AT_WHATSAPP_NUMBER},
-        "payments": {"mpesa": settings.MPESA_PROVIDER, "card": settings.CARD_PROVIDER,
-                     "simulated": settings.MPESA_PROVIDER == "simulate" or settings.CARD_PROVIDER == "simulate"},
-        "currencies": {"USD": float(s.usd_rate), "EUR": float(s.eur_rate), "GBP": float(s.gbp_rate)},
-        "deposit_percent": s.deposit_percent, "hold_minutes": s.hold_minutes, "levy_percent": float(s.tourism_levy_percent),
-        "require_id": s.require_id_before_code, "demo": settings.DEMO, "sandbox": settings.AT_SANDBOX,
-        "emergency": {"police_ambulance": "999 / 112", "red_cross": "1199", "e_plus": "1514"},
-        **({"demo_lab": _demo_lab(s)} if settings.DEMO else {}),
-    })
+    return Response(
+        {
+            "business": {
+                "name": s.business_name,
+                "host_name": s.host_name,
+                "tagline": s.tagline,
+                "email": s.support_email,
+                "tra_licence": s.tra_licence_number,
+                "checkin_time": s.default_checkin_time,
+                "checkout_time": s.default_checkout_time,
+            },
+            "channels": {
+                "ussd_code": settings.AT_USSD_CODE,
+                "sms_number": settings.AT_SMS_NUMBER,
+                "voice_number": settings.AT_VOICE_NUMBER,
+                "whatsapp": settings.AT_WHATSAPP_NUMBER,
+            },
+            "payments": {
+                "mpesa": settings.MPESA_PROVIDER,
+                "card": settings.CARD_PROVIDER,
+                "simulated": settings.MPESA_PROVIDER == "simulate" or settings.CARD_PROVIDER == "simulate",
+            },
+            "currencies": {"USD": float(s.usd_rate), "EUR": float(s.eur_rate), "GBP": float(s.gbp_rate)},
+            "deposit_percent": s.deposit_percent,
+            "hold_minutes": s.hold_minutes,
+            "levy_percent": float(s.tourism_levy_percent),
+            "require_id": s.require_id_before_code,
+            "demo": settings.DEMO,
+            "sandbox": settings.AT_SANDBOX,
+            "emergency": {"police_ambulance": "999 / 112", "red_cross": "1199", "e_plus": "1514"},
+            **({"demo_lab": _demo_lab(s)} if settings.DEMO else {}),
+        }
+    )
 
 
 def _demo_lab(s):
@@ -47,14 +67,23 @@ def _demo_lab(s):
     from apps.core.api import STAFF_ROLES
 
     guests = [
-        {"phone": b.guest.phone, "name": b.guest.name, "role": "guest", "lang": b.guest.lang, "ref": b.ref,
-         "note": f"{b.get_status_display()} · {b.unit.name}"}
+        {
+            "phone": b.guest.phone,
+            "name": b.guest.name,
+            "role": "guest",
+            "lang": b.guest.lang,
+            "ref": b.ref,
+            "note": f"{b.get_status_display()} · {b.unit.name}",
+        }
         for b in Booking.objects.filter(status__in=("held", "confirmed", "checked_in"), guest__tags__contains=["seed"])
-        .select_related("guest", "unit").order_by("check_in")[:8]
+        .select_related("guest", "unit")
+        .order_by("check_in")[:8]
     ]
     staff = [
         {"phone": u.phone, "name": u.name, "role": u.role, "lang": u.lang, "ref": None, "note": u.get_role_display()}
-        for u in User.objects.filter(role__in=STAFF_ROLES, tags__contains=["seed"]).exclude(phone=s.host_contact).order_by("role")
+        for u in User.objects.filter(role__in=STAFF_ROLES, tags__contains=["seed"])
+        .exclude(phone=s.host_contact)
+        .order_by("role")
     ]
     return {"host_phone": s.host_contact, "host_name": s.host_name, "guests": guests, "staff": staff}
 
@@ -87,33 +116,91 @@ def channels(request):
 
     base = settings.PUBLIC_URL.rstrip("/")
     prefix = f"{base}/at/{settings.AT_WEBHOOK_SECRET}" if settings.AT_WEBHOOK_SECRET else f"{base}/at"
-    last = {k: Activity.objects.filter(kind=k).values_list("created_at", flat=True).first() for k in ("sms", "ussd", "voice", "payment")}
-    return Response({
-        "username": settings.AT_USERNAME, "sandbox": settings.AT_SANDBOX, "configured": at.configured(),
-        "balance": at.balance() if request.query_params.get("balance") else None, "webhook_secret": bool(settings.AT_WEBHOOK_SECRET),
-        "products": [
-            {"key": "sms", "name": "SMS (two-way) - Ask Amina", "ready": at.configured(), "detail": settings.AT_SMS_NUMBER or "no shortcode set",
-             "callbacks": {"Incoming messages": f"{prefix}/sms/incoming", "Delivery reports": f"{prefix}/sms/delivery", "Opt-out": f"{prefix}/sms/optout"}},
-            {"key": "ussd", "name": "USSD", "ready": bool(settings.AT_USSD_CODE), "detail": settings.AT_USSD_CODE or "no code set",
-             "callbacks": {"Callback URL": f"{prefix}/ussd", "Events URL": f"{prefix}/ussd/events"}},
-            {"key": "voice", "name": "Voice - Call Amina", "ready": bool(settings.AT_VOICE_NUMBER) and not settings.AT_SANDBOX,
-             "detail": settings.AT_VOICE_NUMBER or "needs a live voice number (no sandbox)", "callbacks": {"Callback URL": f"{prefix}/voice"}},
-            {"key": "airtime", "name": "Airtime (goodwill)", "ready": at.configured(), "detail": "apology credit when Amina cancels",
-             "callbacks": {"Status": f"{prefix}/airtime/status"}},
-            {"key": "data", "name": "Mobile Data (welcome bundle)", "ready": bool(settings.AT_DATA_PRODUCT), "detail": settings.AT_DATA_PRODUCT or "no product set",
-             "callbacks": {"Status": f"{prefix}/data/status"}},
-            {"key": "insights", "name": "Insights - SIM swap check", "ready": at.configured(), "detail": "before door codes are released",
-             "callbacks": {"Status": f"{prefix}/insights/simswap"}},
-            {"key": "whatsapp", "name": "WhatsApp (AT Chat, preview)", "ready": bool(settings.AT_WHATSAPP_NUMBER), "detail": settings.AT_WHATSAPP_NUMBER or "optional",
-             "callbacks": {}},
-            {"key": "payments", "name": f"M-Pesa ({settings.MPESA_PROVIDER})", "ready": settings.MPESA_PROVIDER != "simulate",
-             "detail": "simulated for the demo" if settings.MPESA_PROVIDER == "simulate" else settings.MPESA_PROVIDER,
-             "callbacks": {"AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
-                           "Daraja": f"{base}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}"}},
-        ],
-        "last_seen": last,
-        "jobs": [{"key": j.key, "last_run_at": j.last_run_at, "ok": j.last_ok, "runs": j.run_count} for j in JobRun.objects.order_by("key")],
-    })
+    last = {
+        k: Activity.objects.filter(kind=k).values_list("created_at", flat=True).first()
+        for k in ("sms", "ussd", "voice", "payment")
+    }
+    return Response(
+        {
+            "username": settings.AT_USERNAME,
+            "sandbox": settings.AT_SANDBOX,
+            "configured": at.configured(),
+            "balance": at.balance() if request.query_params.get("balance") else None,
+            "webhook_secret": bool(settings.AT_WEBHOOK_SECRET),
+            "products": [
+                {
+                    "key": "sms",
+                    "name": "SMS (two-way) - Ask Amina",
+                    "ready": at.configured(),
+                    "detail": settings.AT_SMS_NUMBER or "no shortcode set",
+                    "callbacks": {
+                        "Incoming messages": f"{prefix}/sms/incoming",
+                        "Delivery reports": f"{prefix}/sms/delivery",
+                        "Opt-out": f"{prefix}/sms/optout",
+                    },
+                },
+                {
+                    "key": "ussd",
+                    "name": "USSD",
+                    "ready": bool(settings.AT_USSD_CODE),
+                    "detail": settings.AT_USSD_CODE or "no code set",
+                    "callbacks": {"Callback URL": f"{prefix}/ussd", "Events URL": f"{prefix}/ussd/events"},
+                },
+                {
+                    "key": "voice",
+                    "name": "Voice - Call Amina",
+                    "ready": bool(settings.AT_VOICE_NUMBER) and not settings.AT_SANDBOX,
+                    "detail": settings.AT_VOICE_NUMBER or "needs a live voice number (no sandbox)",
+                    "callbacks": {"Callback URL": f"{prefix}/voice"},
+                },
+                {
+                    "key": "airtime",
+                    "name": "Airtime (goodwill)",
+                    "ready": at.configured(),
+                    "detail": "apology credit when Amina cancels",
+                    "callbacks": {"Status": f"{prefix}/airtime/status"},
+                },
+                {
+                    "key": "data",
+                    "name": "Mobile Data (welcome bundle)",
+                    "ready": bool(settings.AT_DATA_PRODUCT),
+                    "detail": settings.AT_DATA_PRODUCT or "no product set",
+                    "callbacks": {"Status": f"{prefix}/data/status"},
+                },
+                {
+                    "key": "insights",
+                    "name": "Insights - SIM swap check",
+                    "ready": at.configured(),
+                    "detail": "before door codes are released",
+                    "callbacks": {"Status": f"{prefix}/insights/simswap"},
+                },
+                {
+                    "key": "whatsapp",
+                    "name": "WhatsApp (AT Chat, preview)",
+                    "ready": bool(settings.AT_WHATSAPP_NUMBER),
+                    "detail": settings.AT_WHATSAPP_NUMBER or "optional",
+                    "callbacks": {},
+                },
+                {
+                    "key": "payments",
+                    "name": f"M-Pesa ({settings.MPESA_PROVIDER})",
+                    "ready": settings.MPESA_PROVIDER != "simulate",
+                    "detail": "simulated for the demo"
+                    if settings.MPESA_PROVIDER == "simulate"
+                    else settings.MPESA_PROVIDER,
+                    "callbacks": {
+                        "AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+                        "Daraja": f"{base}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+                    },
+                },
+            ],
+            "last_seen": last,
+            "jobs": [
+                {"key": j.key, "last_run_at": j.last_run_at, "ok": j.last_ok, "runs": j.run_count}
+                for j in JobRun.objects.order_by("key")
+            ],
+        }
+    )
 
 
 @api_view(["GET"])
@@ -125,11 +212,22 @@ def activity(request):
     after = int(request.query_params.get("after") or 0)
     if after:
         qs = qs.filter(pk__gt=after)
-    return Response([
-        {"id": a.pk, "kind": a.kind, "channel": a.channel, "title": a.title, "detail": a.detail, "booking_ref": a.booking_ref, "phone": a.phone,
-         "actor": a.actor.display_name if a.actor_id else None, "created_at": a.created_at}
-        for a in qs[: int(request.query_params.get("limit") or 100)]
-    ])
+    return Response(
+        [
+            {
+                "id": a.pk,
+                "kind": a.kind,
+                "channel": a.channel,
+                "title": a.title,
+                "detail": a.detail,
+                "booking_ref": a.booking_ref,
+                "phone": a.phone,
+                "actor": a.actor.display_name if a.actor_id else None,
+                "created_at": a.created_at,
+            }
+            for a in qs[: int(request.query_params.get("limit") or 100)]
+        ]
+    )
 
 
 @api_view(["GET", "POST"])
@@ -143,8 +241,14 @@ def locks(request):
     if request.method == "POST":
         unit = get_object_or_404(Unit, pk=request.data.get("unit"))
         code = (request.data.get("code") or "").strip()
-        ok = AccessCode.objects.filter(booking__unit=unit, code=code, revoked_at__isnull=True, sent_at__isnull=False,
-                                       valid_from__lte=now, valid_until__gte=now).first()
+        ok = AccessCode.objects.filter(
+            booking__unit=unit,
+            code=code,
+            revoked_at__isnull=True,
+            sent_at__isnull=False,
+            valid_from__lte=now,
+            valid_until__gte=now,
+        ).first()
         if ok:
             ok.last_used_at = now
             ok.save(update_fields=["last_used_at"])
@@ -154,15 +258,39 @@ def locks(request):
         return Response({"unlocked": bool(ok), "ref": ok.booking.ref if ok else None})
     out = []
     for u in Unit.objects.select_related("area").order_by("sort_order", "id"):
-        c = AccessCode.objects.filter(booking__unit=u, revoked_at__isnull=True, booking__status="checked_in").select_related("booking", "booking__guest").first()
-        nxt = AccessCode.objects.filter(booking__unit=u, revoked_at__isnull=True, booking__status="confirmed").select_related("booking").order_by("valid_from").first()
-        out.append({
-            "unit": {"id": u.pk, "name": u.name, "area": u.area.name, "housekeeping": u.housekeeping, "provider": u.get_access_method_display()},
-            "state": "occupied" if c else "vacant",
-            "active": {"code": c.code, "ref": c.booking.ref, "guest": c.booking.guest.display_name, "valid_until": c.valid_until,
-                       "last_used_at": c.last_used_at} if c else None,
-            "next": {"ref": nxt.booking.ref, "valid_from": nxt.valid_from} if nxt else None,
-        })
+        c = (
+            AccessCode.objects.filter(booking__unit=u, revoked_at__isnull=True, booking__status="checked_in")
+            .select_related("booking", "booking__guest")
+            .first()
+        )
+        nxt = (
+            AccessCode.objects.filter(booking__unit=u, revoked_at__isnull=True, booking__status="confirmed")
+            .select_related("booking")
+            .order_by("valid_from")
+            .first()
+        )
+        out.append(
+            {
+                "unit": {
+                    "id": u.pk,
+                    "name": u.name,
+                    "area": u.area.name,
+                    "housekeeping": u.housekeeping,
+                    "provider": u.get_access_method_display(),
+                },
+                "state": "occupied" if c else "vacant",
+                "active": {
+                    "code": c.code,
+                    "ref": c.booking.ref,
+                    "guest": c.booking.guest.display_name,
+                    "valid_until": c.valid_until,
+                    "last_used_at": c.last_used_at,
+                }
+                if c
+                else None,
+                "next": {"ref": nxt.booking.ref, "valid_from": nxt.valid_from} if nxt else None,
+            }
+        )
     return Response(out)
 
 

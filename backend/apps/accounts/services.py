@@ -55,7 +55,9 @@ def request_otp(raw_phone):
         raise AuthError("Too many codes requested for this number. Please try again in an hour.")
     cache.incr(hour_key)
     code = f"{secrets.randbelow(900000) + 100000}"
-    OTPCode.objects.update_or_create(phone=phone, defaults={"code_hash": _hash(code), "expires_at": now + OTP_TTL, "attempts": 0, "sent_at": now})
+    OTPCode.objects.update_or_create(
+        phone=phone, defaults={"code_hash": _hash(code), "expires_at": now + OTP_TTL, "attempts": 0, "sent_at": now}
+    )
     user = User.objects.filter(phone=phone).first()
     messaging.send(phone, messaging.render("otp", user.lang if user else "en", code=code), kind="otp", sync=True)
     if settings.AT_SANDBOX or not settings.AT_API_KEY or settings.DEMO:
@@ -81,7 +83,11 @@ def verify_otp(raw_phone, code):
     user, _ = get_or_create_user(phone, channel="web")
     if not user.is_active:
         raise AuthError("This account is disabled.")
-    record("auth", f"Login: {user.display_name}{' (' + user.get_role_display() + ')' if user.role != 'guest' else ''}", phone=phone)
+    record(
+        "auth",
+        f"Login: {user.display_name}{' (' + user.get_role_display() + ')' if user.role != 'guest' else ''}",
+        phone=phone,
+    )
     return user
 
 
@@ -100,11 +106,20 @@ def set_identity(user, *, id_type, id_number, nationality="", consent=True, name
     user.nationality = (nationality or user.nationality or ("KE" if user.id_type == "national_id" else "")).upper()[:2]
     user.id_submitted_at = user.consent_at = timezone.now()
     user.save()
-    BookingGuest.objects.filter(booking__guest=user, is_lead=True, booking__status__in=("held", "confirmed", "checked_in")).update(
-        full_name=user.name or user.phone, id_type=user.id_type, id_number_enc=user.id_number_enc, id_last4=user.id_last4,
+    BookingGuest.objects.filter(
+        booking__guest=user, is_lead=True, booking__status__in=("held", "confirmed", "checked_in")
+    ).update(
+        full_name=user.name or user.phone,
+        id_type=user.id_type,
+        id_number_enc=user.id_number_enc,
+        id_last4=user.id_last4,
         nationality=user.nationality,
     )
-    record("guest", f"ID registered for {user.display_name} ({user.get_id_type_display()} {user.id_last4})", phone=user.phone)
+    record(
+        "guest",
+        f"ID registered for {user.display_name} ({user.get_id_type_display()} {user.id_last4})",
+        phone=user.phone,
+    )
     return user
 
 
@@ -114,20 +129,36 @@ def export_data(user):
 
     return {
         "profile": {
-            "phone": user.phone, "name": user.name, "email": user.email, "language": user.lang, "nationality": user.nationality,
+            "phone": user.phone,
+            "name": user.name,
+            "email": user.email,
+            "language": user.lang,
+            "nationality": user.nationality,
             "id_document": f"{user.get_id_type_display()} ending {user.id_last4}" if user.id_last4 else None,
-            "marketing_opt_in": user.marketing_opt_in, "joined": user.date_joined.isoformat(),
+            "marketing_opt_in": user.marketing_opt_in,
+            "joined": user.date_joined.isoformat(),
         },
         "bookings": [
-            {"ref": b.ref, "home": b.unit.name, "check_in": b.check_in.isoformat(), "check_out": b.check_out.isoformat(),
-             "status": b.status, "total": b.total, "paid": b.amount_paid, "channel": b.channel}
+            {
+                "ref": b.ref,
+                "home": b.unit.name,
+                "check_in": b.check_in.isoformat(),
+                "check_out": b.check_out.isoformat(),
+                "status": b.status,
+                "total": b.total,
+                "paid": b.amount_paid,
+                "channel": b.channel,
+            }
             for b in user.bookings.select_related("unit")
         ],
         "messages": [
             {"at": m.created_at.isoformat(), "direction": m.direction, "channel": m.channel, "text": m.body}
             for m in Message.objects.filter(phone=user.phone).order_by("id")
         ],
-        "reviews": [{"ref": r.booking.ref, "rating": r.rating, "comment": r.comment} for r in user.reviews.select_related("booking")],
+        "reviews": [
+            {"ref": r.booking.ref, "rating": r.rating, "comment": r.comment}
+            for r in user.reviews.select_related("booking")
+        ],
     }
 
 
@@ -163,7 +194,11 @@ def purge_expired_ids():
     stale = BookingGuest.objects.filter(booking__check_out__lt=cutoff).exclude(id_number_enc="")
     n = stale.update(id_number_enc="", id_last4="")
     cutoff_dt = timezone.now() - timedelta(days=days)
-    for u in User.objects.exclude(id_number_enc="").filter(id_submitted_at__lt=cutoff_dt).exclude(bookings__check_out__gte=cutoff):
+    for u in (
+        User.objects.exclude(id_number_enc="")
+        .filter(id_submitted_at__lt=cutoff_dt)
+        .exclude(bookings__check_out__gte=cutoff)
+    ):
         u.id_number_enc, u.id_last4 = "", ""
         u.save(update_fields=["id_number_enc", "id_last4"])
         n += 1

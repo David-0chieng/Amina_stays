@@ -15,7 +15,9 @@ from .conftest import days
 def test_otp_login_flow(api):
     r = api.post("/api/auth/otp/request", {"phone": "0712 345 678"}, format="json")
     assert r.status_code == 200 and r.data["phone"] == "+254712345678"
-    assert api.post("/api/auth/otp/verify", {"phone": "+254712345678", "code": "000000"}, format="json").status_code == 400
+    assert (
+        api.post("/api/auth/otp/verify", {"phone": "+254712345678", "code": "000000"}, format="json").status_code == 400
+    )
     r = api.post("/api/auth/otp/verify", {"phone": "+254712345678", "code": r.data["debug_code"]}, format="json")
     assert r.status_code == 200 and r.data["authenticated"]
     assert api.get("/api/auth/me").data["phone"] == "+254712345678"
@@ -68,15 +70,29 @@ def test_check_in_details_are_disclosed_in_stages(unit, guest, guest_api):
 
 @pytest.mark.django_db
 def test_web_booking_end_to_end(unit, guest, guest_api):
-    r = guest_api.post("/api/bookings", {"listing": unit.slug, "check_in": days(9).isoformat(), "check_out": days(11).isoformat(),
-                                         "adults": 2, "payment_method": "mpesa", "name": "Wanjiru Test"}, format="json")
+    r = guest_api.post(
+        "/api/bookings",
+        {
+            "listing": unit.slug,
+            "check_in": days(9).isoformat(),
+            "check_out": days(11).isoformat(),
+            "adults": 2,
+            "payment_method": "mpesa",
+            "name": "Wanjiru Test",
+        },
+        format="json",
+    )
     assert r.status_code == 201, r.data
     ref = r.data["booking"]["ref"]
     assert r.data["payment"]["method"] == "mpesa"
     payments.on_success(Payment.objects.get(booking__ref=ref), transaction_id="QWEB1")
     trip = guest_api.get(f"/api/bookings/{ref}").data
     assert trip["status"] == "confirmed" and trip["price"]["balance_due"] == 0
-    clash = guest_api.post("/api/bookings", {"listing": unit.slug, "check_in": days(10).isoformat(), "check_out": days(12).isoformat()}, format="json")
+    clash = guest_api.post(
+        "/api/bookings",
+        {"listing": unit.slug, "check_in": days(10).isoformat(), "check_out": days(12).isoformat()},
+        format="json",
+    )
     assert clash.status_code == 409
 
 

@@ -37,7 +37,9 @@ def test_every_ussd_screen_fits_160_characters(unit, other_unit, breakfast):
         out = ussd(chain)
         assert len(out[4:]) <= 160, f"{chain!r} is {len(out[4:])} chars:\n{out}"
         if out.startswith("CON") and chain.count("*") < 3:
-            queue += [f"{chain}*{n}" if chain else n for n in _options(out) if n != "9"]  # 9 = emergency: tested separately
+            queue += [
+                f"{chain}*{n}" if chain else n for n in _options(out) if n != "9"
+            ]  # 9 = emergency: tested separately
     assert len(seen) > 20
 
 
@@ -65,7 +67,11 @@ def test_ussd_emergency_raises_an_alert(unit, host):
 
 def sms(text, phone=PHONE):
     inbound = process_incoming_sms(phone, text, provider_id=f"t-{text}")
-    return list(Message.objects.filter(phone=phone, direction="out", id__gt=inbound.id).order_by("id").values_list("body", flat=True))
+    return list(
+        Message.objects.filter(phone=phone, direction="out", id__gt=inbound.id)
+        .order_by("id")
+        .values_list("body", flat=True)
+    )
 
 
 @pytest.mark.django_db
@@ -98,8 +104,16 @@ def test_sms_stop_opts_out_of_marketing(unit):
 
 
 def voice(digits="", session="v-test", phone=PHONE):
-    xml = process_voice({"sessionId": session, "isActive": "1", "direction": "Inbound", "callerNumber": phone,
-                         "destinationNumber": "+254711082000", "dtmfDigits": digits})
+    xml = process_voice(
+        {
+            "sessionId": session,
+            "isActive": "1",
+            "direction": "Inbound",
+            "callerNumber": phone,
+            "destinationNumber": "+254711082000",
+            "dtmfDigits": digits,
+        }
+    )
     return ET.fromstring(xml)
 
 
@@ -135,7 +149,9 @@ def test_at_delivery_report_updates_the_message(client, guest):
     from apps.messaging.models import Thread
 
     thread = Thread.objects.create(phone=guest.phone, guest=guest)
-    m = Message.objects.create(thread=thread, phone=guest.phone, direction="out", body="hi", status="sent", provider_id="ATXid_9")
+    m = Message.objects.create(
+        thread=thread, phone=guest.phone, direction="out", body="hi", status="sent", provider_id="ATXid_9"
+    )
     client.post("/at/sms/delivery", {"id": "ATXid_9", "status": "Success"})
     m.refresh_from_db()
     assert m.status == "delivered"
@@ -156,9 +172,19 @@ def _confirmed_stay(unit, guest, check_in, check_out):
 def test_wifi_asked_any_way_gets_this_guests_wifi(unit, guest):
     from apps.messaging.models import FAQ
 
-    FAQ.objects.create(category="wifi", question="Is there Wi-Fi?", keywords="wifi,wi-fi,internet", answer_en="Yes - fast fibre in every home.")
-    FAQ.objects.create(category="wifi", question="What is the Wi-Fi password?", keywords="wifi,wi-fi,password", answer_en="Wi-Fi at {unit}: {wifi}",
-                       sort_order=5)
+    FAQ.objects.create(
+        category="wifi",
+        question="Is there Wi-Fi?",
+        keywords="wifi,wi-fi,internet",
+        answer_en="Yes - fast fibre in every home.",
+    )
+    FAQ.objects.create(
+        category="wifi",
+        question="What is the Wi-Fi password?",
+        keywords="wifi,wi-fi,password",
+        answer_en="Wi-Fi at {unit}: {wifi}",
+        sort_order=5,
+    )
     _confirmed_stay(unit, guest, days(0), days(2))
     for text in ("Wi-Fi", "wi fi?", "WiFi password"):
         assert "PalmWifi" in sms(text, phone=guest.phone)[-1], text
@@ -168,7 +194,12 @@ def test_wifi_asked_any_way_gets_this_guests_wifi(unit, guest):
 def test_web_chat_is_answered_in_the_web_chat_not_by_sms(unit, guest, guest_api):
     from apps.messaging.models import FAQ
 
-    FAQ.objects.create(category="amenities", question="Is there parking?", keywords="parking,car", answer_en="Yes - free secure parking.")
+    FAQ.objects.create(
+        category="amenities",
+        question="Is there parking?",
+        keywords="parking,car",
+        answer_en="Yes - free secure parking.",
+    )
     guest_api.post("/api/messages", {"body": "Is there parking?"}, format="json")
     reply = Message.objects.filter(phone=guest.phone, direction="out").latest("id")
     assert reply.body.startswith("Yes - free secure parking") and reply.channel == "web" and reply.status == "sent"

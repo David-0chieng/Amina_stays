@@ -24,23 +24,32 @@ def today_view(request):
     t = today()
     week = services.kpis(t - timedelta(days=t.weekday()), t - timedelta(days=t.weekday()) + timedelta(days=7))
     month = services.kpis(t.replace(day=1), t + timedelta(days=1))
-    return Response({
-        "date": d["date"],
-        "arrivals": [reservation_row(b) for b in d["arrivals"]],
-        "departures": [reservation_row(b) for b in d["departures"]],
-        "in_house": [reservation_row(b) for b in d["in_house"]],
-        "upcoming": [reservation_row(b) for b in d["upcoming"]],
-        "holds": [reservation_row(b) for b in d["holds"]],
-        "tasks": TaskSerializer(d["tasks"], many=True).data,
-        "alerts": [alert_dict(a) for a in d["alerts"]],
-        "threads": [thread_dict(x) for x in d["threads"]],
-        "breakfasts": d["breakfasts"],
-        "kpis": {"week": week, "month": month},
-        "activity": [
-            {"id": a.pk, "kind": a.kind, "channel": a.channel, "title": a.title, "booking_ref": a.booking_ref, "created_at": a.created_at}
-            for a in Activity.objects.all()[:25]
-        ],
-    })
+    return Response(
+        {
+            "date": d["date"],
+            "arrivals": [reservation_row(b) for b in d["arrivals"]],
+            "departures": [reservation_row(b) for b in d["departures"]],
+            "in_house": [reservation_row(b) for b in d["in_house"]],
+            "upcoming": [reservation_row(b) for b in d["upcoming"]],
+            "holds": [reservation_row(b) for b in d["holds"]],
+            "tasks": TaskSerializer(d["tasks"], many=True).data,
+            "alerts": [alert_dict(a) for a in d["alerts"]],
+            "threads": [thread_dict(x) for x in d["threads"]],
+            "breakfasts": d["breakfasts"],
+            "kpis": {"week": week, "month": month},
+            "activity": [
+                {
+                    "id": a.pk,
+                    "kind": a.kind,
+                    "channel": a.channel,
+                    "title": a.title,
+                    "booking_ref": a.booking_ref,
+                    "created_at": a.created_at,
+                }
+                for a in Activity.objects.all()[:25]
+            ],
+        }
+    )
 
 
 @api_view(["GET"])
@@ -50,10 +59,15 @@ def insights(request):
     end = today() + timedelta(days=1)
     start = end - timedelta(days=days)
     prev = services.kpis(start - timedelta(days=days), start)
-    return Response({
-        "kpis": services.kpis(start, end), "previous": prev, "series": services.daily_series(start, end),
-        "forward": services.forward_bookings(56), "days": days,
-    })
+    return Response(
+        {
+            "kpis": services.kpis(start, end),
+            "previous": prev,
+            "series": services.daily_series(start, end),
+            "forward": services.forward_bookings(56),
+            "days": days,
+        }
+    )
 
 
 @api_view(["GET"])
@@ -67,7 +81,16 @@ def tra_return(request):
         resp["Content-Disposition"] = f'attachment; filename="tra-return-{month}.csv"'
         w = csv.writer(resp)
         w.writerow(["Month", r["month"]])
-        for key in ("units", "occupancy", "room_nights_sold", "room_nights_available", "guest_nights", "arrivals", "room_revenue", "tourism_levy"):
+        for key in (
+            "units",
+            "occupancy",
+            "room_nights_sold",
+            "room_nights_available",
+            "guest_nights",
+            "arrivals",
+            "room_revenue",
+            "tourism_levy",
+        ):
             w.writerow([key.replace("_", " ").capitalize(), r[key]])
         w.writerow([])
         w.writerow(["Country of origin", "Guests"])

@@ -12,16 +12,28 @@ from .models import CATEGORIES, Review
 @permission_classes([IsHost])
 def host_reviews(request):
     rows = Review.objects.select_related("unit", "guest", "booking")[:200]
-    return Response({
-        "summary": services.unit_stats(),
-        "by_unit": [{"unit": u.name, **services.unit_stats(u)} for u in {r.unit for r in rows}],
-        "reviews": [
-            {"id": r.pk, "ref": r.booking.ref, "unit": r.unit.name, "guest": r.guest.display_name, "nationality": r.guest.nationality,
-             "rating": r.rating, "comment": r.comment, "categories": {c: getattr(r, c) for c in CATEGORIES if getattr(r, c)},
-             "host_response": r.host_response, "channel": r.channel, "created_at": r.created_at}
-            for r in rows
-        ],
-    })
+    return Response(
+        {
+            "summary": services.unit_stats(),
+            "by_unit": [{"unit": u.name, **services.unit_stats(u)} for u in {r.unit for r in rows}],
+            "reviews": [
+                {
+                    "id": r.pk,
+                    "ref": r.booking.ref,
+                    "unit": r.unit.name,
+                    "guest": r.guest.display_name,
+                    "nationality": r.guest.nationality,
+                    "rating": r.rating,
+                    "comment": r.comment,
+                    "categories": {c: getattr(r, c) for c in CATEGORIES if getattr(r, c)},
+                    "host_response": r.host_response,
+                    "channel": r.channel,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ],
+        }
+    )
 
 
 @api_view(["POST"])

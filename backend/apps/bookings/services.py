@@ -49,7 +49,12 @@ class BookingError(Exception):
 
 def event(booking, kind, text, channel="", actor=None, **data):
     BookingEvent.objects.create(
-        booking=booking, kind=kind, text=text[:300], channel=channel or "", actor=actor if getattr(actor, "pk", None) else None, data=data
+        booking=booking,
+        kind=kind,
+        text=text[:300],
+        channel=channel or "",
+        actor=actor if getattr(actor, "pk", None) else None,
+        data=data,
     )
 
 
@@ -174,7 +179,9 @@ def screen(unit, guest, check_in, check_out, guests):
         score += 10
     from apps.safety.models import Alert
 
-    if Alert.objects.filter(guest=guest, kind__in=("security", "sos")).exclude(source="sos").exists() or "incident" in (guest.tags or []):
+    if Alert.objects.filter(guest=guest, kind__in=("security", "sos")).exclude(source="sos").exists() or "incident" in (
+        guest.tags or []
+    ):
         flags.append("previous_incident")
         score += 30
     if "vip" in [t.lower() for t in (guest.tags or [])]:
@@ -194,8 +201,17 @@ def _resolve_addons(unit, items, guests):
             continue
         if addon.category == "breakfast" and not unit.breakfast_available:
             continue
-        qty = int((item.get("quantity") if isinstance(item, dict) else 0) or (guests if addon.pricing in ("per_guest_night", "per_guest") else 1))
-        resolved.append({"addon": addon, "quantity": max(1, min(qty, 20)), "details": (item.get("details") if isinstance(item, dict) else None) or {}})
+        qty = int(
+            (item.get("quantity") if isinstance(item, dict) else 0)
+            or (guests if addon.pricing in ("per_guest_night", "per_guest") else 1)
+        )
+        resolved.append(
+            {
+                "addon": addon,
+                "quantity": max(1, min(qty, 20)),
+                "details": (item.get("details") if isinstance(item, dict) else None) or {},
+            }
+        )
     return resolved
 
 
@@ -221,8 +237,25 @@ def expire_stale_holds():
 
 
 def create_hold(
-    *, unit, guest, check_in, check_out, channel, adults=1, children=0, infants=0, addons=None, payment_plan="full",
-    lang=None, arrival_eta="", arrival_mode="", special_requests="", purpose="", vehicle_plate="", occupants=None, actor=None,
+    *,
+    unit,
+    guest,
+    check_in,
+    check_out,
+    channel,
+    adults=1,
+    children=0,
+    infants=0,
+    addons=None,
+    payment_plan="full",
+    lang=None,
+    arrival_eta="",
+    arrival_mode="",
+    special_requests="",
+    purpose="",
+    vehicle_plate="",
+    occupants=None,
+    actor=None,
 ):
     s = SiteSettings.load()
     if not check_in or not check_out or check_out <= check_in:
@@ -255,35 +288,77 @@ def create_hold(
             plan = "deposit" if payment_plan == "deposit" and q["deposit_available"] else "full"
             score, flags = screen(unit, guest, check_in, check_out, guests)
             booking = Booking.objects.create(
-                ref=Booking.new_ref(), unit=unit, guest=guest, check_in=check_in, check_out=check_out,
-                adults=max(1, adults), children=children, infants=infants, status="held", channel=channel,
-                lang=lang or guest.lang, hold_expires_at=timezone.now() + timedelta(minutes=s.hold_minutes),
-                nightly=q["nightly"], accommodation_amount=q["accommodation"], discount_amount=q["discount"],
-                cleaning_fee=q["cleaning_fee"], addons_amount=q["addons"], levy_amount=q["levy"], vat_amount=q["vat"],
-                total=q["total"], payment_plan=plan, amount_due_now=q["due_now"] if plan == "deposit" else q["total"],
-                cancellation_policy=unit.cancellation_policy, arrival_eta=arrival_eta[:40], arrival_mode=arrival_mode[:10],
-                special_requests=special_requests[:1000], purpose=purpose[:20], vehicle_plate=vehicle_plate.upper()[:12],
-                risk_score=score, risk_flags=flags,
+                ref=Booking.new_ref(),
+                unit=unit,
+                guest=guest,
+                check_in=check_in,
+                check_out=check_out,
+                adults=max(1, adults),
+                children=children,
+                infants=infants,
+                status="held",
+                channel=channel,
+                lang=lang or guest.lang,
+                hold_expires_at=timezone.now() + timedelta(minutes=s.hold_minutes),
+                nightly=q["nightly"],
+                accommodation_amount=q["accommodation"],
+                discount_amount=q["discount"],
+                cleaning_fee=q["cleaning_fee"],
+                addons_amount=q["addons"],
+                levy_amount=q["levy"],
+                vat_amount=q["vat"],
+                total=q["total"],
+                payment_plan=plan,
+                amount_due_now=q["due_now"] if plan == "deposit" else q["total"],
+                cancellation_policy=unit.cancellation_policy,
+                arrival_eta=arrival_eta[:40],
+                arrival_mode=arrival_mode[:10],
+                special_requests=special_requests[:1000],
+                purpose=purpose[:20],
+                vehicle_plate=vehicle_plate.upper()[:12],
+                risk_score=score,
+                risk_flags=flags,
             )
             for item in resolved:
                 a, qty = item["addon"], item["quantity"]
                 BookingAddon.objects.create(
-                    booking=booking, addon=a, quantity=qty, unit_price=a.price, total=a.price_for(n, guests, qty),
-                    status="requested" if a.requires_approval else "confirmed", details=item["details"],
+                    booking=booking,
+                    addon=a,
+                    quantity=qty,
+                    unit_price=a.price,
+                    total=a.price_for(n, guests, qty),
+                    status="requested" if a.requires_approval else "confirmed",
+                    details=item["details"],
                 )
             BookingGuest.objects.create(
-                booking=booking, full_name=guest.name or guest.phone, id_type=guest.id_type, id_number_enc=guest.id_number_enc,
-                id_last4=guest.id_last4, nationality=guest.nationality, is_lead=True,
+                booking=booking,
+                full_name=guest.name or guest.phone,
+                id_type=guest.id_type,
+                id_number_enc=guest.id_number_enc,
+                id_last4=guest.id_last4,
+                nationality=guest.nationality,
+                is_lead=True,
             )
             for o in occupants or []:
                 if not o.get("full_name"):
                     continue
-                bg = BookingGuest(booking=booking, full_name=o["full_name"][:80], id_type=o.get("id_type", "")[:20],
-                                  nationality=(o.get("nationality") or "")[:2].upper(), is_minor=bool(o.get("is_minor")))
+                bg = BookingGuest(
+                    booking=booking,
+                    full_name=o["full_name"][:80],
+                    id_type=o.get("id_type", "")[:20],
+                    nationality=(o.get("nationality") or "")[:2].upper(),
+                    is_minor=bool(o.get("is_minor")),
+                )
                 if o.get("id_number"):
                     bg.set_id_number(o["id_number"])
                 bg.save()
-            event(booking, "held", f"Held via {CHANNEL_LABEL.get(channel, channel)} for {s.hold_minutes} minutes", channel, actor)
+            event(
+                booking,
+                "held",
+                f"Held via {CHANNEL_LABEL.get(channel, channel)} for {s.hold_minutes} minutes",
+                channel,
+                actor,
+            )
     except IntegrityError as e:  # the exclusion constraint caught a race between two channels
         log.info("overlap rejected by database: %s", e)
         raise BookingError("Sorry - those dates were just taken.") from e
@@ -295,8 +370,12 @@ def create_hold(
     guest.last_area, guest.last_guests = unit.area.name, guests
     guest.save(update_fields=changed + ["last_area", "last_guests"])
     record(
-        "booking", f"Hold {booking.ref}: {unit.name}, {check_in:%d %b}-{check_out:%d %b} via {CHANNEL_LABEL.get(channel, channel)}",
-        channel=channel, booking=booking, actor=actor, total=booking.total,
+        "booking",
+        f"Hold {booking.ref}: {unit.name}, {check_in:%d %b}-{check_out:%d %b} via {CHANNEL_LABEL.get(channel, channel)}",
+        channel=channel,
+        booking=booking,
+        actor=actor,
+        total=booking.total,
     )
     return booking
 
@@ -321,12 +400,24 @@ def confirm(booking, *, actor=None):
         f"{kes(b.total)} ({kes(b.amount_paid)} paid). Guest {b.guest.name or ''} {b.guest.phone}.{risk}",
         booking=b,
     )
-    record("booking", f"Confirmed {b.ref}: {b.unit.name} for {b.guest.display_name}", channel=b.channel, booking=b, actor=actor, total=b.total)
+    record(
+        "booking",
+        f"Confirmed {b.ref}: {b.unit.name} for {b.guest.display_name}",
+        channel=b.channel,
+        booking=b,
+        actor=actor,
+        total=b.total,
+    )
     if b.risk_score >= 60:
         from apps.safety.services import raise_alert
 
-        raise_alert("security", f"High-risk reservation {b.ref} ({', '.join(RISK_LABELS.get(f, f) for f in b.risk_flags)})",
-                    severity="medium", booking=b, dedupe=f"risk:{b.ref}")
+        raise_alert(
+            "security",
+            f"High-risk reservation {b.ref} ({', '.join(RISK_LABELS.get(f, f) for f in b.risk_flags)})",
+            severity="medium",
+            booking=b,
+            dedupe=f"risk:{b.ref}",
+        )
     return b
 
 
@@ -377,7 +468,13 @@ def refund_quote(b, at=None):
     now = at or timezone.now()
     paid = b.amount_paid - b.amount_refunded
     if paid <= 0:
-        return {"refund": 0, "percent": 0, "paid": 0, "policy": b.cancellation_policy, "text": "Nothing has been charged, so there's nothing to refund."}
+        return {
+            "refund": 0,
+            "percent": 0,
+            "paid": 0,
+            "policy": b.cancellation_policy,
+            "text": "Nothing has been charged, so there's nothing to refund.",
+        }
     hours = (at_local(b.check_in, effective_checkin_time(b)) - now).total_seconds() / 3600
     policy = b.cancellation_policy
     if policy == "flexible":
@@ -389,8 +486,19 @@ def refund_quote(b, at=None):
     else:
         pct = 50 if hours >= 7 * 24 else 0
     refund = round(paid * pct / 100)
-    text = f"You'll get {kes(refund)} back ({pct}% of what you paid)." if refund else "Under the cancellation policy this booking is no longer refundable."
-    return {"refund": refund, "percent": pct, "paid": paid, "policy": policy, "policy_text": POLICY_TEXT.get(policy, ""), "text": text}
+    text = (
+        f"You'll get {kes(refund)} back ({pct}% of what you paid)."
+        if refund
+        else "Under the cancellation policy this booking is no longer refundable."
+    )
+    return {
+        "refund": refund,
+        "percent": pct,
+        "paid": paid,
+        "policy": policy,
+        "policy_text": POLICY_TEXT.get(policy, ""),
+        "text": text,
+    }
 
 
 def cancel(booking, *, by, reason="", actor=None, refund_amount=None, notify=True):
@@ -421,9 +529,17 @@ def cancel(booking, *, by, reason="", actor=None, refund_amount=None, notify=Tru
         refund_line = messaging.render("refund_line", lang, amount=kes(refund)) if refund else ""
         goodwill_line = messaging.render("goodwill_line", lang, airtime=airtime) if airtime else ""
         key = "cancelled_by_host" if by == "host" else "cancelled_by_guest"
-        send_guest(b, key, refund_line=" " + refund_line if refund_line else "", goodwill_line=" " + goodwill_line if goodwill_line else "")
+        send_guest(
+            b,
+            key,
+            refund_line=" " + refund_line if refund_line else "",
+            goodwill_line=" " + goodwill_line if goodwill_line else "",
+        )
         if by != "host":
-            notify_host(f"{b.ref} ({b.unit.name}, {dates_text(b.check_in, b.check_out)}) was cancelled by the guest. Refund {kes(refund)}.", booking=b)
+            notify_host(
+                f"{b.ref} ({b.unit.name}, {dates_text(b.check_in, b.check_out)}) was cancelled by the guest. Refund {kes(refund)}.",
+                booking=b,
+            )
     record("booking", f"Cancelled {b.ref} by {by} (refund {kes(refund)})", booking=b, actor=actor)
     notify_waitlist(b.unit)
     return {"cancelled": b.ref, "refund": refund, "goodwill_airtime": airtime}
@@ -479,8 +595,13 @@ def release_code(booking, *, force=False, actor=None):
                 from apps.safety.services import raise_alert
 
                 send_guest(b, "code_security_hold")
-                raise_alert("security", f"SIM swap detected on {b.guest.phone} before releasing the door code for {b.ref}. Call the guest to verify.",
-                            severity="high", booking=b, dedupe=f"simswap:{b.ref}")
+                raise_alert(
+                    "security",
+                    f"SIM swap detected on {b.guest.phone} before releasing the door code for {b.ref}. Call the guest to verify.",
+                    severity="high",
+                    booking=b,
+                    dedupe=f"simswap:{b.ref}",
+                )
             return "security_hold"
 
     code = locks.create_code(b)
@@ -509,7 +630,9 @@ def _welcome_data(b, s):
     if not s.welcome_data_mb or not is_kenyan(b.guest.phone) or not OnceMarker.mark(f"data:{b.ref}"):
         return
     try:
-        at.send_mobile_data(b.guest.phone, s.welcome_data_mb, metadata={"ref": b.ref}, idempotency_key=f"welcome-{b.ref}")
+        at.send_mobile_data(
+            b.guest.phone, s.welcome_data_mb, metadata={"ref": b.ref}, idempotency_key=f"welcome-{b.ref}"
+        )
         event(b, "data", f"Welcome data bundle {s.welcome_data_mb}MB sent")
     except Exception as e:
         log.error("mobile data failed: %s", e)
@@ -526,17 +649,34 @@ def check_out(booking, *, by="guest", channel="", auto=False, actor=None):
         b.save(update_fields=["status", "checked_out_at", "updated_at"])
         locks.revoke_all(b, "checked_out")
         Unit.objects.filter(pk=b.unit_id).update(housekeeping="dirty")
-        event(b, "checked_out", "Auto check-out at checkout time - code deactivated" if auto else f"Checked out via {channel or by} - code deactivated", channel, actor)
+        event(
+            b,
+            "checked_out",
+            "Auto check-out at checkout time - code deactivated"
+            if auto
+            else f"Checked out via {channel or by} - code deactivated",
+            channel,
+            actor,
+        )
     create_turnover_task(b)
     send_guest(b, "auto_checkout" if auto else "checkout_thanks")
-    record("booking", f"{'Auto ' if auto else ''}check-out {b.ref} from {b.unit.name}", channel=channel, booking=b, actor=actor)
+    record(
+        "booking",
+        f"{'Auto ' if auto else ''}check-out {b.ref} from {b.unit.name}",
+        channel=channel,
+        booking=b,
+        actor=actor,
+    )
     notify_waitlist(b.unit)
     return b
 
 
 def active_stay(phone):
     return (
-        Booking.objects.filter(guest__phone=phone, status="checked_in").select_related("unit", "guest", "unit__area").order_by("check_in").first()
+        Booking.objects.filter(guest__phone=phone, status="checked_in")
+        .select_related("unit", "guest", "unit__area")
+        .order_by("check_in")
+        .first()
     )
 
 
@@ -555,10 +695,19 @@ def current_booking(phone):
 
 def add_to_waitlist(guest, check_in, check_out, *, area=None, unit=None, guests=0, channel="sms"):
     w, _ = Waitlist.objects.get_or_create(
-        guest=guest, check_in=check_in, check_out=check_out, area=area, unit=unit, status="waiting",
+        guest=guest,
+        check_in=check_in,
+        check_out=check_out,
+        area=area,
+        unit=unit,
+        status="waiting",
         defaults={"guests": guests or 0, "channel": channel},
     )
-    record("booking", f"Waitlist: {guest.phone} for {check_in:%d %b}-{check_out:%d %b}{' in ' + area.name if area else ''}", channel=channel)
+    record(
+        "booking",
+        f"Waitlist: {guest.phone} for {check_in:%d %b}-{check_out:%d %b}{' in ' + area.name if area else ''}",
+        channel=channel,
+    )
     return w
 
 
@@ -566,12 +715,20 @@ def notify_waitlist(unit):
     from apps.messaging.models import Conversation
 
     offered = 0
-    for w in Waitlist.objects.filter(status="waiting", check_out__gt=today()).select_related("guest", "area").order_by("created_at"):
+    for w in (
+        Waitlist.objects.filter(status="waiting", check_out__gt=today())
+        .select_related("guest", "area")
+        .order_by("created_at")
+    ):
         if w.check_in < today():
             w.status = "expired"
             w.save(update_fields=["status"])
             continue
-        if (w.unit_id and w.unit_id != unit.pk) or (w.area_id and w.area_id != unit.area_id) or (w.guests and unit.max_guests < w.guests):
+        if (
+            (w.unit_id and w.unit_id != unit.pk)
+            or (w.area_id and w.area_id != unit.area_id)
+            or (w.guests and unit.max_guests < w.guests)
+        ):
             continue
         if not is_available(unit, w.check_in, w.check_out):
             continue
@@ -579,11 +736,25 @@ def notify_waitlist(unit):
         w.save(update_fields=["status", "offered_unit", "offered_at"])
         Conversation.objects.update_or_create(
             phone=w.guest.phone,
-            defaults={"state": "offer", "data": {"unit_id": unit.pk, "check_in": w.check_in.isoformat(), "check_out": w.check_out.isoformat(), "guests": w.guests}},
+            defaults={
+                "state": "offer",
+                "data": {
+                    "unit_id": unit.pk,
+                    "check_in": w.check_in.isoformat(),
+                    "check_out": w.check_out.isoformat(),
+                    "guests": w.guests,
+                },
+            },
         )
         messaging.send(
             w.guest.phone,
-            messaging.render("waitlist_offer", w.guest.lang, unit=unit.name, price=kes(unit.base_price), dates=dates_text(w.check_in, w.check_out, w.guest.lang)),
+            messaging.render(
+                "waitlist_offer",
+                w.guest.lang,
+                unit=unit.name,
+                price=kes(unit.base_price),
+                dates=dates_text(w.check_in, w.check_out, w.guest.lang),
+            ),
             kind="waitlist_offer",
         )
         offered += 1
@@ -609,18 +780,36 @@ def add_addon(booking, code, *, quantity=None, details=None, channel="web", acto
         raise BookingError(f"{addon.name} is already on this booking.")
     qty = max(1, int(quantity or (b.guests_count if addon.pricing in ("per_guest_night", "per_guest") else 1)))
     ba = BookingAddon.objects.create(
-        booking=b, addon=addon, quantity=qty, unit_price=addon.price, total=addon.price_for(b.nights, b.guests_count, qty),
-        status="requested" if addon.requires_approval else "confirmed", details=details or {},
+        booking=b,
+        addon=addon,
+        quantity=qty,
+        unit_price=addon.price,
+        total=addon.price_for(b.nights, b.guests_count, qty),
+        status="requested" if addon.requires_approval else "confirmed",
+        details=details or {},
     )
     recalc(b)
-    event(b, "addon", f"{addon.name} {'requested' if addon.requires_approval else 'added'} ({kes(ba.total)})", channel, actor)
+    event(
+        b,
+        "addon",
+        f"{addon.name} {'requested' if addon.requires_approval else 'added'} ({kes(ba.total)})",
+        channel,
+        actor,
+    )
     if addon.requires_approval:
         notify_host(
             f"REQUEST #{ba.pk}: {b.guest.display_name} ({b.ref}, {b.unit.name}) asks for {addon.name}"
             f"{' at ' + ba.details['time'] if ba.details.get('time') else ''}. Reply YES {ba.pk} or NO {ba.pk}.",
-            booking=b, kind="addon_request",
+            booking=b,
+            kind="addon_request",
         )
-    record("booking", f"{addon.name} {'requested' if addon.requires_approval else 'added'} on {b.ref}", channel=channel, booking=b, actor=actor)
+    record(
+        "booking",
+        f"{addon.name} {'requested' if addon.requires_approval else 'added'} on {b.ref}",
+        channel=channel,
+        booking=b,
+        actor=actor,
+    )
     return ba
 
 
@@ -662,7 +851,12 @@ def set_breakfast(booking, style, *, people=None, dietary="", time="", notes="",
     if not addon or not b.unit.breakfast_available:
         raise BookingError("Breakfast isn't available at this home.")
     qty = max(1, min(int(people or b.guests_count), b.unit.max_guests))
-    details = {"style": style, "dietary": dietary[:120], "time": time[:10] or addon.options.get("default_time", "08:00"), "notes": notes[:200]}
+    details = {
+        "style": style,
+        "dietary": dietary[:120],
+        "time": time[:10] or addon.options.get("default_time", "08:00"),
+        "notes": notes[:200],
+    }
     if current:
         current.quantity, current.details, current.unit_price = qty, details, addon.price
         current.total = addon.price_for(b.nights, b.guests_count, qty)
@@ -670,8 +864,13 @@ def set_breakfast(booking, style, *, people=None, dietary="", time="", notes="",
         ba = current
     else:
         ba = BookingAddon.objects.create(
-            booking=b, addon=addon, quantity=qty, unit_price=addon.price, total=addon.price_for(b.nights, b.guests_count, qty),
-            status="confirmed", details=details,
+            booking=b,
+            addon=addon,
+            quantity=qty,
+            unit_price=addon.price,
+            total=addon.price_for(b.nights, b.guests_count, qty),
+            status="confirmed",
+            details=details,
         )
     recalc(b)
     event(b, "breakfast", f"Breakfast: {breakfast_summary(ba)}", channel, actor)

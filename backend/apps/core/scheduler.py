@@ -59,7 +59,9 @@ def _reviews():
         return 0
     now = timezone.now()
     due = Booking.objects.filter(
-        status="completed", review__isnull=True, checked_out_at__lte=now - timedelta(minutes=s.review_delay_minutes),
+        status="completed",
+        review__isnull=True,
+        checked_out_at__lte=now - timedelta(minutes=s.review_delay_minutes),
         checked_out_at__gte=now - timedelta(days=7),
     ).exclude(channel__in=("airbnb", "booking_com"))
     return sum(request_review(b) for b in due.select_related("guest", "unit"))
@@ -127,9 +129,11 @@ def _levy_reminder():
     t = today()
     if t.day != 5:
         return 0
-    prev = (t.replace(day=1) - timedelta(days=1))
+    prev = t.replace(day=1) - timedelta(days=1)
     r = tra_return(prev.year, prev.month)
-    notify_host(f"Reminder: Tourism Levy for {prev:%B} ({kes(r['tourism_levy'])}) and the TRA monthly return are due by the 10th. Both are ready in the console under Compliance.")
+    notify_host(
+        f"Reminder: Tourism Levy for {prev:%B} ({kes(r['tourism_levy'])}) and the TRA monthly return are due by the 10th. Both are ready in the console under Compliance."
+    )
     return 1
 
 
@@ -191,7 +195,11 @@ def _run_due(only=None):
             continue
         if not only and not _due(key, schedule, now):
             continue
-        if isinstance(schedule, str) and not only and not OnceMarker.mark(f"daily:{key}:{timezone.localtime(now).date()}"):
+        if (
+            isinstance(schedule, str)
+            and not only
+            and not OnceMarker.mark(f"daily:{key}:{timezone.localtime(now).date()}")
+        ):
             continue
         run, _ = JobRun.objects.get_or_create(key=key)
         try:

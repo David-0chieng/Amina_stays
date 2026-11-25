@@ -45,20 +45,38 @@ def area(db):
 @pytest.fixture
 def unit(area):
     return Unit.objects.create(
-        name="Palm Suite", area=area, base_price=10_000, cleaning_fee=2_000, max_guests=4, min_nights=1, cancellation_policy="flexible",
-        address="Plot 7, Beach Road", wifi_name="PalmWifi", wifi_password="coconut-7", directions="Past the baobab", breakfast_available=True,
+        name="Palm Suite",
+        area=area,
+        base_price=10_000,
+        cleaning_fee=2_000,
+        max_guests=4,
+        min_nights=1,
+        cancellation_policy="flexible",
+        address="Plot 7, Beach Road",
+        wifi_name="PalmWifi",
+        wifi_password="coconut-7",
+        directions="Past the baobab",
+        breakfast_available=True,
     )
 
 
 @pytest.fixture
 def other_unit(area):
-    return Unit.objects.create(name="Reef Studio", area=area, base_price=5_000, max_guests=2, cancellation_policy="moderate")
+    return Unit.objects.create(
+        name="Reef Studio", area=area, base_price=5_000, max_guests=2, cancellation_policy="moderate"
+    )
 
 
 @pytest.fixture
 def breakfast(db):
-    return Addon.objects.create(code="breakfast", name="Breakfast", category="breakfast", price=650, pricing="per_guest_night",
-                                options={"styles": ["swahili", "continental", "english", "vegetarian"], "default_time": "08:00"})
+    return Addon.objects.create(
+        code="breakfast",
+        name="Breakfast",
+        category="breakfast",
+        price=650,
+        pricing="per_guest_night",
+        options={"styles": ["swahili", "continental", "english", "vegetarian"], "default_time": "08:00"},
+    )
 
 
 @pytest.fixture

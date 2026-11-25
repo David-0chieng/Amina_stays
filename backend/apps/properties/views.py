@@ -47,7 +47,9 @@ def _wished(request):
 
 @api_view(["GET"])
 def areas(request):
-    qs = Area.objects.annotate(units_count=Count("units", filter=Q(units__status="active"))).order_by("sort_order", "name")
+    qs = Area.objects.annotate(units_count=Count("units", filter=Q(units__status="active"))).order_by(
+        "sort_order", "name"
+    )
     return Response([area_dict(a) for a in qs])
 
 
@@ -93,12 +95,22 @@ def listings(request):
         cards.sort(key=lambda c: -(c["rating"] or 0))
     else:
         cards.sort(key=lambda c: (not c["is_featured"], -(c["rating"] or 0)))
-    return Response({"results": cards, "count": len(cards), "check_in": ci, "check_out": co, "nights": (co - ci).days if ci else None})
+    return Response(
+        {
+            "results": cards,
+            "count": len(cards),
+            "check_in": ci,
+            "check_out": co,
+            "nights": (co - ci).days if ci else None,
+        }
+    )
 
 
 @api_view(["GET"])
 def listing(request, slug):
-    unit = get_object_or_404(Unit.objects.select_related("area").prefetch_related("photos", "amenities"), slug=slug, status="active")
+    unit = get_object_or_404(
+        Unit.objects.select_related("area").prefetch_related("photos", "amenities"), slug=slug, status="active"
+    )
     return Response(listing_detail(unit, stats=review_stats(), wished=unit.pk in _wished(request)))
 
 
@@ -110,10 +122,16 @@ def calendar(request, slug):
     end = min(end, start + timedelta(days=400))
     blocked = services.unavailable_nights(unit, start, end)
     prices = {d.isoformat(): p for d, p, _ in services.nightly_rates(unit, start, end)}
-    return Response({
-        "start": start, "end": end, "unavailable": sorted(d.isoformat() for d in blocked), "prices": prices,
-        "min_nights": unit.min_nights, "max_nights": unit.max_nights,
-    })
+    return Response(
+        {
+            "start": start,
+            "end": end,
+            "unavailable": sorted(d.isoformat() for d in blocked),
+            "prices": prices,
+            "min_nights": unit.min_nights,
+            "max_nights": unit.max_nights,
+        }
+    )
 
 
 @api_view(["POST"])
@@ -131,7 +149,14 @@ def quote(request, slug):
     for a in d.get("addons") or []:
         addon = Addon.objects.filter(code=a.get("code"), active=True).first()
         if addon:
-            items.append({"addon": addon, "quantity": int(a.get("quantity") or (guests if addon.pricing in ("per_guest_night", "per_guest") else 1))})
+            items.append(
+                {
+                    "addon": addon,
+                    "quantity": int(
+                        a.get("quantity") or (guests if addon.pricing in ("per_guest_night", "per_guest") else 1)
+                    ),
+                }
+            )
     q = services.quote(unit, ci, co, guests=guests, addons=items, payment_plan=d.get("payment_plan", "full"))
     problems = []
     if ci < today():
@@ -152,12 +177,25 @@ def listing_reviews(request, slug):
 
     unit = get_object_or_404(Unit, slug=slug)
     rows = Review.objects.filter(unit=unit, is_public=True).select_related("guest")[:50]
-    return Response([
-        {"id": r.pk, "rating": r.rating, "comment": r.comment, "guest": (r.guest.name or "Guest").split(" ")[0],
-         "country": r.guest.nationality, "date": r.created_at.date(), "host_response": r.host_response,
-         "categories": {c: getattr(r, c) for c in ("cleanliness", "accuracy", "check_in", "communication", "location", "value") if getattr(r, c)}}
-        for r in rows
-    ])
+    return Response(
+        [
+            {
+                "id": r.pk,
+                "rating": r.rating,
+                "comment": r.comment,
+                "guest": (r.guest.name or "Guest").split(" ")[0],
+                "country": r.guest.nationality,
+                "date": r.created_at.date(),
+                "host_response": r.host_response,
+                "categories": {
+                    c: getattr(r, c)
+                    for c in ("cleanliness", "accuracy", "check_in", "communication", "location", "value")
+                    if getattr(r, c)
+                },
+            }
+            for r in rows
+        ]
+    )
 
 
 @api_view(["GET"])
@@ -167,7 +205,9 @@ def addons(request):
     qs = Addon.objects.filter(active=True).prefetch_related("units")
     slug = request.query_params.get("listing")
     unit = Unit.objects.filter(slug=slug).first() if slug else None
-    return Response([addon_dict(a) for a in qs if not unit or not a.units.exists() or a.units.filter(pk=unit.pk).exists()])
+    return Response(
+        [addon_dict(a) for a in qs if not unit or not a.units.exists() or a.units.filter(pk=unit.pk).exists()]
+    )
 
 
 def ical_export(request, token):
@@ -240,7 +280,11 @@ class BlockViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         b = serializer.save(created_by=self.request.user)
-        record("listing", f"Blocked {b.unit.name} {b.start_date}→{b.end_date} ({b.get_reason_display()})", actor=self.request.user)
+        record(
+            "listing",
+            f"Blocked {b.unit.name} {b.start_date}→{b.end_date} ({b.get_reason_display()})",
+            actor=self.request.user,
+        )
 
 
 class ICalFeedViewSet(viewsets.ModelViewSet):
@@ -269,34 +313,66 @@ def host_calendar(request):
     days = max(7, min(int(request.query_params.get("days") or 21), 62))
     end = start + timedelta(days=days)
     units = Unit.objects.exclude(status="draft").select_related("area").order_by("sort_order", "id")
-    bookings_qs = (
-        Booking.objects.filter(check_in__lt=end, check_out__gt=start, status__in=("held", "confirmed", "checked_in", "completed"))
-        .select_related("guest")
-    )
+    bookings_qs = Booking.objects.filter(
+        check_in__lt=end, check_out__gt=start, status__in=("held", "confirmed", "checked_in", "completed")
+    ).select_related("guest")
     by_unit = {}
     for b in bookings_qs:
         if b.status == "held" and not b.hold_active:
             continue
-        by_unit.setdefault(b.unit_id, []).append({
-            "ref": b.ref, "guest": b.guest.name or b.guest.phone, "check_in": b.check_in, "check_out": b.check_out, "status": b.status,
-            "channel": b.channel, "nights": b.nights, "total": b.total, "balance_due": b.balance_due,
-        })
+        by_unit.setdefault(b.unit_id, []).append(
+            {
+                "ref": b.ref,
+                "guest": b.guest.name or b.guest.phone,
+                "check_in": b.check_in,
+                "check_out": b.check_out,
+                "status": b.status,
+                "channel": b.channel,
+                "nights": b.nights,
+                "total": b.total,
+                "balance_due": b.balance_due,
+            }
+        )
     blocks = {}
     for blk in CalendarBlock.objects.filter(start_date__lt=end, end_date__gt=start):
-        blocks.setdefault(blk.unit_id, []).append({"id": blk.pk, "start_date": blk.start_date, "end_date": blk.end_date, "reason": blk.reason,
-                                                   "reason_label": blk.get_reason_display(), "note": blk.note, "external": blk.feed_id is not None})
+        blocks.setdefault(blk.unit_id, []).append(
+            {
+                "id": blk.pk,
+                "start_date": blk.start_date,
+                "end_date": blk.end_date,
+                "reason": blk.reason,
+                "reason_label": blk.get_reason_display(),
+                "note": blk.note,
+                "external": blk.feed_id is not None,
+            }
+        )
     overrides = {}
     for o in PriceOverride.objects.filter(date__gte=start, date__lt=end):
         overrides.setdefault(o.unit_id, []).append(o.date.isoformat())
-    return Response({
-        "start": start, "end": end, "days": [d.isoformat() for d in daterange(start, end)], "today": today(),
-        "units": [
-            {"id": u.pk, "name": u.name, "area": u.area.name, "status": u.status, "housekeeping": u.housekeeping, "base_price": u.base_price,
-             "cover": u.cover_photo, "bookings": by_unit.get(u.pk, []), "blocks": blocks.get(u.pk, []),
-             "prices": {d.isoformat(): p for d, p, _ in services.nightly_rates(u, start, end)}, "overrides": overrides.get(u.pk, [])}
-            for u in units
-        ],
-    })
+    return Response(
+        {
+            "start": start,
+            "end": end,
+            "days": [d.isoformat() for d in daterange(start, end)],
+            "today": today(),
+            "units": [
+                {
+                    "id": u.pk,
+                    "name": u.name,
+                    "area": u.area.name,
+                    "status": u.status,
+                    "housekeeping": u.housekeeping,
+                    "base_price": u.base_price,
+                    "cover": u.cover_photo,
+                    "bookings": by_unit.get(u.pk, []),
+                    "blocks": blocks.get(u.pk, []),
+                    "prices": {d.isoformat(): p for d, p, _ in services.nightly_rates(u, start, end)},
+                    "overrides": overrides.get(u.pk, []),
+                }
+                for u in units
+            ],
+        }
+    )
 
 
 @api_view(["PUT"])
@@ -313,6 +389,12 @@ def set_prices(request):
         PriceOverride.objects.filter(unit=unit, date__in=dates).delete()
     else:
         for d in dates:
-            PriceOverride.objects.update_or_create(unit=unit, date=d, defaults={"price": int(price), "note": request.data.get("note", "")[:80]})
-    record("pricing", f"{unit.name}: {'cleared' if price in (None, '') else f'KES {int(price):,}'} for {len(dates)} night(s)", actor=request.user)
+            PriceOverride.objects.update_or_create(
+                unit=unit, date=d, defaults={"price": int(price), "note": request.data.get("note", "")[:80]}
+            )
+    record(
+        "pricing",
+        f"{unit.name}: {'cleared' if price in (None, '') else f'KES {int(price):,}'} for {len(dates)} night(s)",
+        actor=request.user,
+    )
     return Response({"updated": len(dates)}, status=status.HTTP_200_OK)

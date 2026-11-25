@@ -37,9 +37,13 @@ class _Safe(dict):
 def render(key, lang="en", **ctx):
     """Template text in the guest's language: console override → built-in → English override → English built-in."""
     lang = lang if lang in ("en", "sw", "it", "de", "fr") else "en"
-    body = Template.objects.filter(key=key, lang=lang).values_list("body", flat=True).first() or DEFAULTS.get(key, {}).get(lang)
+    body = Template.objects.filter(key=key, lang=lang).values_list("body", flat=True).first() or DEFAULTS.get(
+        key, {}
+    ).get(lang)
     if body is None:
-        body = Template.objects.filter(key=key, lang="en").values_list("body", flat=True).first() or DEFAULTS.get(key, {}).get("en", key)
+        body = Template.objects.filter(key=key, lang="en").values_list("body", flat=True).first() or DEFAULTS.get(
+            key, {}
+        ).get("en", key)
     s = SiteSettings.load()
     ctx.setdefault("business", s.business_name)
     ctx.setdefault("host", s.host_name)
@@ -53,7 +57,19 @@ _GSM_BASIC = set(
     "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
 )
 _GSM_EXT = set("^{}\\[~]|€")
-_REPLACE = {"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", "…": "...", "•": "-", "→": "->", "★": "*", "\u00a0": " "}
+_REPLACE = {
+    "‘": "'",
+    "’": "'",
+    "“": '"',
+    "”": '"',
+    "–": "-",
+    "—": "-",
+    "…": "...",
+    "•": "-",
+    "→": "->",
+    "★": "*",
+    "\u00a0": " ",
+}
 
 
 def to_gsm(text):
@@ -96,8 +112,16 @@ def record_inbound(phone, body, *, channel="sms", booking=None, provider_id="", 
     guest = _guest(phone)
     thread = get_thread(phone, guest)
     msg = Message.objects.create(
-        thread=thread, phone=phone, booking=booking, direction="in", channel=channel, sender=sender,
-        body=body or "", status="received", handled=handled, provider_id=provider_id,
+        thread=thread,
+        phone=phone,
+        booking=booking,
+        direction="in",
+        channel=channel,
+        sender=sender,
+        body=body or "",
+        status="received",
+        handled=handled,
+        provider_id=provider_id,
     )
     Thread.objects.filter(pk=thread.pk).update(
         unread=F("unread") + 1, last_message_at=msg.created_at, last_preview=(body or "")[:160], status="open"
@@ -118,7 +142,10 @@ def mark(msg, handled, kind=""):
         thread.needs_reply = True
         thread.waiting_since = thread.waiting_since or msg.created_at
         thread.save(update_fields=["needs_reply", "waiting_since"])
-    elif handled in ("auto", "answered") and not Message.objects.filter(thread=thread, direction="in", handled="relayed").exists():
+    elif (
+        handled in ("auto", "answered")
+        and not Message.objects.filter(thread=thread, direction="in", handled="relayed").exists()
+    ):
         thread.needs_reply = False
         thread.waiting_since = None
         thread.save(update_fields=["needs_reply", "waiting_since"])
@@ -137,13 +164,24 @@ def send(phone, body, *, booking=None, kind="", sender="system", user=None, chan
     if marketing and guest and guest.sms_opt_out_at:
         return None
     if channel is None:
-        channel = "whatsapp" if (guest and guest.preferred_channel == "whatsapp" and settings.AT_WHATSAPP_NUMBER) else "sms"
+        channel = (
+            "whatsapp" if (guest and guest.preferred_channel == "whatsapp" and settings.AT_WHATSAPP_NUMBER) else "sms"
+        )
     if channel in ("sms", "whatsapp"):
         body = to_gsm(body) if channel == "sms" else body
     thread = get_thread(phone, guest)
     msg = Message.objects.create(
-        thread=thread, phone=phone, booking=booking, direction="out", channel=channel, sender=sender, body=body,
-        kind=kind[:40], status="queued" if channel in ("sms", "whatsapp") else "sent", sent_by=user, is_marketing=marketing,
+        thread=thread,
+        phone=phone,
+        booking=booking,
+        direction="out",
+        channel=channel,
+        sender=sender,
+        body=body,
+        kind=kind[:40],
+        status="queued" if channel in ("sms", "whatsapp") else "sent",
+        sent_by=user,
+        is_marketing=marketing,
     )
     updates = {"last_message_at": msg.created_at, "last_preview": body[:160]}
     if sender in ("host", "staff"):
@@ -224,17 +262,25 @@ def dispatch(message_id):
 
 def dispatch_pending():
     stale = timezone.now() - timezone.timedelta(seconds=20)
-    ids = list(Message.objects.filter(status="queued", created_at__lt=stale, attempts__lt=3).values_list("id", flat=True)[:50])
+    ids = list(
+        Message.objects.filter(status="queued", created_at__lt=stale, attempts__lt=3).values_list("id", flat=True)[:50]
+    )
     for mid in ids:
         dispatch(mid)
     # a 'sending' row older than 2 minutes means a worker died mid-flight
-    Message.objects.filter(status="sending", created_at__lt=timezone.now() - timezone.timedelta(minutes=2), attempts__lt=3).update(
-        status="queued"
-    )
+    Message.objects.filter(
+        status="sending", created_at__lt=timezone.now() - timezone.timedelta(minutes=2), attempts__lt=3
+    ).update(status="queued")
     return len(ids)
 
 
-DELIVERY_MAP = {"Success": "delivered", "Failed": "failed", "Rejected": "failed", "AbsentSubscriber": "failed", "Expired": "failed"}
+DELIVERY_MAP = {
+    "Success": "delivered",
+    "Failed": "failed",
+    "Rejected": "failed",
+    "AbsentSubscriber": "failed",
+    "Expired": "failed",
+}
 
 
 def on_delivery_report(provider_id, status, failure_reason=""):
@@ -255,7 +301,30 @@ def on_delivery_report(provider_id, status, failure_reason=""):
 
 # ---------- knowledge base ----------
 
-_STOP = {"the", "a", "an", "is", "are", "what", "do", "you", "i", "me", "my", "to", "of", "and", "for", "in", "at", "it", "there", "can", "how", "please"}
+_STOP = {
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "what",
+    "do",
+    "you",
+    "i",
+    "me",
+    "my",
+    "to",
+    "of",
+    "and",
+    "for",
+    "in",
+    "at",
+    "it",
+    "there",
+    "can",
+    "how",
+    "please",
+}
 
 
 def _tokens(text):
@@ -269,9 +338,15 @@ def faq_context(phone, booking=None):
 
     s = SiteSettings.load()
     ctx = {
-        "business": s.business_name, "host": s.host_name, "prices": price_list_text(), "checkin_time": _t(s.default_checkin_time),
-        "checkout_time": _t(s.default_checkout_time), "ussd_code": settings.AT_USSD_CODE, "sms_number": settings.AT_SMS_NUMBER,
-        "website": settings.FRONTEND_URL, "deposit_percent": s.deposit_percent,
+        "business": s.business_name,
+        "host": s.host_name,
+        "prices": price_list_text(),
+        "checkin_time": _t(s.default_checkin_time),
+        "checkout_time": _t(s.default_checkout_time),
+        "ussd_code": settings.AT_USSD_CODE,
+        "sms_number": settings.AT_SMS_NUMBER,
+        "website": settings.FRONTEND_URL,
+        "deposit_percent": s.deposit_percent,
     }
     if booking is not None:
         ctx.update(guest_context(booking))
@@ -363,9 +438,13 @@ def audience_phones(audience, unit=None):
     if audience == "in_house":
         phones = qs.filter(status="checked_in").values_list("guest__phone", flat=True)
     elif audience == "arriving":
-        phones = qs.filter(status="confirmed", check_in__gte=t, check_in__lte=t + timezone.timedelta(days=7)).values_list("guest__phone", flat=True)
+        phones = qs.filter(
+            status="confirmed", check_in__gte=t, check_in__lte=t + timezone.timedelta(days=7)
+        ).values_list("guest__phone", flat=True)
     elif audience == "upcoming":
-        phones = qs.filter(status__in=("confirmed", "checked_in"), check_out__gte=t).values_list("guest__phone", flat=True)
+        phones = qs.filter(status__in=("confirmed", "checked_in"), check_out__gte=t).values_list(
+            "guest__phone", flat=True
+        )
     elif audience == "past":
         phones = (
             qs.filter(status="completed", guest__marketing_opt_in=True, guest__sms_opt_out_at__isnull=True)
@@ -375,9 +454,9 @@ def audience_phones(audience, unit=None):
     elif audience == "waitlist":
         phones = Waitlist.objects.filter(status="waiting", check_out__gt=t).values_list("guest__phone", flat=True)
     elif audience == "staff":
-        phones = User.objects.filter(role__in=("manager", "cleaner", "cook", "caretaker", "security", "driver"), is_active=True).values_list(
-            "phone", flat=True
-        )
+        phones = User.objects.filter(
+            role__in=("manager", "cleaner", "cook", "caretaker", "security", "driver"), is_active=True
+        ).values_list("phone", flat=True)
     else:
         phones = []
     return sorted(set(phones))

@@ -16,9 +16,19 @@ from .templates_default import DEFAULTS, DESCRIPTIONS, PLACEHOLDERS
 
 def message_dict(m):
     return {
-        "id": m.pk, "direction": m.direction, "channel": m.channel, "sender": m.sender, "body": m.body, "kind": m.kind, "handled": m.handled,
-        "status": m.status, "created_at": m.created_at, "delivered_at": m.delivered_at, "booking": m.booking.ref if m.booking_id else None,
-        "sent_by": m.sent_by.display_name if m.sent_by_id else None, "failure_reason": m.failure_reason,
+        "id": m.pk,
+        "direction": m.direction,
+        "channel": m.channel,
+        "sender": m.sender,
+        "body": m.body,
+        "kind": m.kind,
+        "handled": m.handled,
+        "status": m.status,
+        "created_at": m.created_at,
+        "delivered_at": m.delivered_at,
+        "booking": m.booking.ref if m.booking_id else None,
+        "sent_by": m.sent_by.display_name if m.sent_by_id else None,
+        "failure_reason": m.failure_reason,
     }
 
 
@@ -37,7 +47,12 @@ def my_messages(request):
 
         inbound = services.record_inbound(phone, body, channel="web")
         GuestBot(request.user, body, inbound).run()
-    msgs = Message.objects.filter(phone=phone).exclude(kind__in=("otp",)).select_related("booking", "sent_by").order_by("id")
+    msgs = (
+        Message.objects.filter(phone=phone)
+        .exclude(kind__in=("otp",))
+        .select_related("booking", "sent_by")
+        .order_by("id")
+    )
     if request.method == "GET":
         Thread.objects.filter(phone=phone).update(unread=0)
     return Response({"messages": [message_dict(m) for m in msgs[:300]], "host": SiteSettings.load().host_name})
@@ -52,10 +67,26 @@ def thread_dict(t):
     b = current_booking(t.phone)
     g = t.guest
     return {
-        "id": t.pk, "phone": t.phone, "status": t.status, "needs_reply": t.needs_reply, "unread": t.unread, "waiting_since": t.waiting_since,
-        "last_message_at": t.last_message_at, "last_preview": t.last_preview,
-        "guest": {"id": g.pk, "name": g.name, "lang": g.lang, "nationality": g.nationality, "role": g.role} if g else None,
-        "booking": {"ref": b.ref, "unit": b.unit.name, "status": b.status, "check_in": b.check_in, "check_out": b.check_out} if b else None,
+        "id": t.pk,
+        "phone": t.phone,
+        "status": t.status,
+        "needs_reply": t.needs_reply,
+        "unread": t.unread,
+        "waiting_since": t.waiting_since,
+        "last_message_at": t.last_message_at,
+        "last_preview": t.last_preview,
+        "guest": {"id": g.pk, "name": g.name, "lang": g.lang, "nationality": g.nationality, "role": g.role}
+        if g
+        else None,
+        "booking": {
+            "ref": b.ref,
+            "unit": b.unit.name,
+            "status": b.status,
+            "check_in": b.check_in,
+            "check_out": b.check_out,
+        }
+        if b
+        else None,
     }
 
 
@@ -92,9 +123,16 @@ def _thread_payload(t):
 
     t.refresh_from_db()
     msgs = Message.objects.filter(thread=t).select_related("booking", "sent_by").order_by("id")
-    bookings = Booking.objects.filter(guest__phone=t.phone).exclude(status="expired").select_related("unit", "unit__area").order_by("-check_in")[:10]
+    bookings = (
+        Booking.objects.filter(guest__phone=t.phone)
+        .exclude(status="expired")
+        .select_related("unit", "unit__area")
+        .order_by("-check_in")[:10]
+    )
     return {
-        "thread": thread_dict(t), "messages": [message_dict(m) for m in msgs[:500]], "bookings": [trip_card(b) for b in bookings],
+        "thread": thread_dict(t),
+        "messages": [message_dict(m) for m in msgs[:500]],
+        "bookings": [trip_card(b) for b in bookings],
         "quick_replies": quick_replies(t),
     }
 
@@ -111,7 +149,9 @@ def quick_replies(t):
     if ctx.get("wifi"):
         replies.append(f"The Wi-Fi at {ctx['unit']} is {ctx['wifi']}.")
     if ctx.get("checkin_time"):
-        replies.append(f"Check-in is from {ctx['checkin_time']} and checkout by {ctx['checkout_time']}. Early check-in depends on the previous guest - I'll confirm the day before.")
+        replies.append(
+            f"Check-in is from {ctx['checkin_time']} and checkout by {ctx['checkout_time']}. Early check-in depends on the previous guest - I'll confirm the day before."
+        )
     replies.append("Breakfast is served 7:30-10:00. Reply BREAKFAST any time to choose or change it.")
     return replies
 
@@ -200,7 +240,10 @@ def automation_preview(request, pk):
     from apps.bookings.models import Booking
 
     auto = get_object_or_404(Automation, pk=pk)
-    b = Booking.objects.filter(ref=(request.data.get("ref") or "").upper()).first() or Booking.objects.filter(status__in=("confirmed", "checked_in")).order_by("check_in").first()
+    b = (
+        Booking.objects.filter(ref=(request.data.get("ref") or "").upper()).first()
+        or Booking.objects.filter(status__in=("confirmed", "checked_in")).order_by("check_in").first()
+    )
     if not b:
         return Response({"text": "Make a booking first to preview with real data."})
     text = preview(auto, b)
@@ -229,7 +272,9 @@ def faq_test(request):
     """Try a guest question against the knowledge base (as a guest with no booking)."""
     text = request.data.get("text", "")
     hit = services.match_faq(text, request.data.get("lang", "en"), ctx=services.faq_context(""))
-    return Response({"matched": bool(hit), "question": hit[0].question if hit else None, "answer": hit[1] if hit else None})
+    return Response(
+        {"matched": bool(hit), "question": hit[0].question if hit else None, "answer": hit[1] if hit else None}
+    )
 
 
 @api_view(["GET"])
@@ -244,7 +289,14 @@ def public_faqs(request):
         answer = f.answer(lang)
         fields = {name for _, name, _, _ in string.Formatter().parse(answer) if name}
         if all(ctx.get(name) not in (None, "") for name in fields):
-            out.append({"id": f.pk, "category": f.category, "question": f.question, "answer": answer.format(**ctx) if fields else answer})
+            out.append(
+                {
+                    "id": f.pk,
+                    "category": f.category,
+                    "question": f.question,
+                    "answer": answer.format(**ctx) if fields else answer,
+                }
+            )
     return Response(out)
 
 
@@ -257,11 +309,21 @@ def broadcasts(request):
     from apps.properties.models import Unit
 
     if request.method == "GET":
-        return Response([
-            {"id": b.pk, "audience": b.audience, "audience_label": b.get_audience_display(), "body": b.body, "recipients": b.recipients,
-             "is_marketing": b.is_marketing, "created_at": b.created_at, "unit": b.unit.name if b.unit_id else None}
-            for b in Broadcast.objects.select_related("unit")[:50]
-        ])
+        return Response(
+            [
+                {
+                    "id": b.pk,
+                    "audience": b.audience,
+                    "audience_label": b.get_audience_display(),
+                    "body": b.body,
+                    "recipients": b.recipients,
+                    "is_marketing": b.is_marketing,
+                    "created_at": b.created_at,
+                    "unit": b.unit.name if b.unit_id else None,
+                }
+                for b in Broadcast.objects.select_related("unit")[:50]
+            ]
+        )
     d = request.data
     audience = d.get("audience")
     unit = Unit.objects.filter(pk=d.get("unit")).first() if d.get("unit") else None
@@ -274,10 +336,21 @@ def broadcasts(request):
     marketing = bool(d.get("is_marketing")) or audience == "past"
     if not services.broadcast_window_ok(marketing):
         s = SiteSettings.load()
-        return Response({"error": f"Promotional SMS can only go out between {s.promo_window_start}:00 and {s.promo_window_end}:00."}, status=400)
+        return Response(
+            {
+                "error": f"Promotional SMS can only go out between {s.promo_window_start}:00 and {s.promo_window_end}:00."
+            },
+            status=400,
+        )
     if marketing and "stop" not in body.lower():
         body += " Reply STOP to opt out."
-    sent = sum(1 for p in phones if services.send(p, body, kind="broadcast", sender="host", user=request.user, marketing=marketing))
-    bc = Broadcast.objects.create(audience=audience, unit=unit, body=body, is_marketing=marketing, recipients=sent, created_by=request.user)
+    sent = sum(
+        1
+        for p in phones
+        if services.send(p, body, kind="broadcast", sender="host", user=request.user, marketing=marketing)
+    )
+    bc = Broadcast.objects.create(
+        audience=audience, unit=unit, body=body, is_marketing=marketing, recipients=sent, created_by=request.user
+    )
     record("broadcast", f"Broadcast to {sent} ({bc.get_audience_display()})", actor=request.user)
     return Response({"id": bc.pk, "recipients": sent}, status=201)

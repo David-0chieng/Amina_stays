@@ -92,7 +92,12 @@ def create_code(booking):
     provider = provider_for(booking.unit)
     code, external_id = provider.issue(booking, valid_from, valid_until)
     return AccessCode.objects.create(
-        booking=booking, code=code, provider=provider.name, external_id=external_id, valid_from=valid_from, valid_until=valid_until
+        booking=booking,
+        code=code,
+        provider=provider.name,
+        external_id=external_id,
+        valid_from=valid_from,
+        valid_until=valid_until,
     )
 
 

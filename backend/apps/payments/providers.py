@@ -54,7 +54,11 @@ def _simulate_success(payment_id):
 
         p = Payment.objects.filter(pk=payment_id, status="pending").first()
         if p:
-            on_success(p, transaction_id=f"SIM{secrets.token_hex(4).upper()}", provider_ref=f"SIM{secrets.token_hex(4).upper()}")
+            on_success(
+                p,
+                transaction_id=f"SIM{secrets.token_hex(4).upper()}",
+                provider_ref=f"SIM{secrets.token_hex(4).upper()}",
+            )
     except Exception:
         log.exception("simulated payment failed")
     finally:
@@ -68,7 +72,9 @@ class DarajaMpesa:
 
     @property
     def base(self):
-        return "https://api.safaricom.co.ke" if settings.DARAJA_ENV == "production" else "https://sandbox.safaricom.co.ke"
+        return (
+            "https://api.safaricom.co.ke" if settings.DARAJA_ENV == "production" else "https://sandbox.safaricom.co.ke"
+        )
 
     def _token(self):
         token = cache.get("daraja_token")
@@ -77,8 +83,11 @@ class DarajaMpesa:
         if not (settings.DARAJA_CONSUMER_KEY and settings.DARAJA_CONSUMER_SECRET):
             raise PaymentError("Daraja credentials are not configured")
         with httpx.Client(timeout=15) as c:
-            r = c.get(f"{self.base}/oauth/v1/generate", params={"grant_type": "client_credentials"},
-                      auth=(settings.DARAJA_CONSUMER_KEY, settings.DARAJA_CONSUMER_SECRET))
+            r = c.get(
+                f"{self.base}/oauth/v1/generate",
+                params={"grant_type": "client_credentials"},
+                auth=(settings.DARAJA_CONSUMER_KEY, settings.DARAJA_CONSUMER_SECRET),
+            )
         if r.status_code != 200:
             raise PaymentError(f"Daraja auth failed (HTTP {r.status_code})")
         data = r.json()
@@ -93,15 +102,25 @@ class DarajaMpesa:
     def request(self, payment):
         password, ts = self._password()
         body = {
-            "BusinessShortCode": settings.DARAJA_SHORTCODE, "Password": password, "Timestamp": ts,
-            "TransactionType": "CustomerPayBillOnline", "Amount": int(payment.amount),
-            "PartyA": payment.phone.lstrip("+"), "PartyB": settings.DARAJA_SHORTCODE, "PhoneNumber": payment.phone.lstrip("+"),
+            "BusinessShortCode": settings.DARAJA_SHORTCODE,
+            "Password": password,
+            "Timestamp": ts,
+            "TransactionType": "CustomerPayBillOnline",
+            "Amount": int(payment.amount),
+            "PartyA": payment.phone.lstrip("+"),
+            "PartyB": settings.DARAJA_SHORTCODE,
+            "PhoneNumber": payment.phone.lstrip("+"),
             "CallBackURL": f"{_callback_base()}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
-            "AccountReference": payment.booking.ref[:12], "TransactionDesc": "Amina Stays",
+            "AccountReference": payment.booking.ref[:12],
+            "TransactionDesc": "Amina Stays",
         }
         try:
             with httpx.Client(timeout=20) as c:
-                r = c.post(f"{self.base}/mpesa/stkpush/v1/processrequest", json=body, headers={"Authorization": f"Bearer {self._token()}"})
+                r = c.post(
+                    f"{self.base}/mpesa/stkpush/v1/processrequest",
+                    json=body,
+                    headers={"Authorization": f"Bearer {self._token()}"},
+                )
             data = r.json()
         except (httpx.HTTPError, ValueError) as e:
             raise PaymentError(f"M-Pesa is unreachable ({e})") from e
@@ -116,9 +135,16 @@ class DarajaMpesa:
         password, ts = self._password()
         try:
             with httpx.Client(timeout=15) as c:
-                r = c.post(f"{self.base}/mpesa/stkpushquery/v1/query", headers={"Authorization": f"Bearer {self._token()}"},
-                           json={"BusinessShortCode": settings.DARAJA_SHORTCODE, "Password": password, "Timestamp": ts,
-                                 "CheckoutRequestID": payment.transaction_id})
+                r = c.post(
+                    f"{self.base}/mpesa/stkpushquery/v1/query",
+                    headers={"Authorization": f"Bearer {self._token()}"},
+                    json={
+                        "BusinessShortCode": settings.DARAJA_SHORTCODE,
+                        "Password": password,
+                        "Timestamp": ts,
+                        "CheckoutRequestID": payment.transaction_id,
+                    },
+                )
             return r.json()
         except Exception as e:
             log.warning("Daraja query failed: %s", e)
@@ -133,8 +159,12 @@ class ATMobileCheckout:
     def request(self, payment):
         url = "https://payments.africastalking.com/mobile/checkout/request"
         body = {
-            "username": settings.AT_USERNAME, "productName": settings.AT_PAYMENT_PRODUCT, "phoneNumber": payment.phone,
-            "currencyCode": "KES", "amount": int(payment.amount), "metadata": {"ref": payment.booking.ref, "paymentId": str(payment.pk)},
+            "username": settings.AT_USERNAME,
+            "productName": settings.AT_PAYMENT_PRODUCT,
+            "phoneNumber": payment.phone,
+            "currencyCode": "KES",
+            "amount": int(payment.amount),
+            "metadata": {"ref": payment.booking.ref, "paymentId": str(payment.pk)},
         }
         try:
             with httpx.Client(timeout=20) as c:
@@ -179,14 +209,20 @@ class PaystackCard:
         guest = payment.booking.guest
         email = guest.email or f"guest{payment.phone.lstrip('+')}@aminastays.co.ke"
         body = {
-            "email": email, "amount": int(payment.amount) * 100, "currency": "KES", "reference": payment.checkout_token,
+            "email": email,
+            "amount": int(payment.amount) * 100,
+            "currency": "KES",
+            "reference": payment.checkout_token,
             "callback_url": f"{settings.FRONTEND_URL}/trips/{payment.booking.ref}?paid=1",
             "metadata": {"ref": payment.booking.ref, "payment_id": payment.pk},
         }
         try:
             with httpx.Client(timeout=20) as c:
-                r = c.post("https://api.paystack.co/transaction/initialize", json=body,
-                           headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"})
+                r = c.post(
+                    "https://api.paystack.co/transaction/initialize",
+                    json=body,
+                    headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
+                )
             data = r.json()
         except (httpx.HTTPError, ValueError) as e:
             raise PaymentError(f"Card service unreachable ({e})") from e

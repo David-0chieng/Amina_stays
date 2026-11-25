@@ -112,7 +112,9 @@ class Booking(models.Model):
                 ],
                 condition=Q(status__in=ACTIVE_STATUSES),
             ),
-            models.CheckConstraint(condition=Q(check_out__gt=models.F("check_in")), name="booking_checkout_after_checkin"),
+            models.CheckConstraint(
+                condition=Q(check_out__gt=models.F("check_in")), name="booking_checkout_after_checkin"
+            ),
         ]
 
     def __str__(self):
@@ -178,7 +180,9 @@ class BookingEvent(models.Model):
     kind = models.CharField(max_length=30)
     text = models.CharField(max_length=300)
     channel = models.CharField(max_length=12, blank=True)
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -196,7 +200,9 @@ class Addon(models.Model):
         ("per_guest", "per guest"),
         ("per_item", "per item"),
     ]
-    CATEGORIES = [(c, c.capitalize()) for c in ("breakfast", "transport", "flexibility", "cleaning", "experience", "comfort")]
+    CATEGORIES = [
+        (c, c.capitalize()) for c in ("breakfast", "transport", "flexibility", "cleaning", "experience", "comfort")
+    ]
     code = models.SlugField(max_length=40, unique=True)
     name = models.CharField(max_length=60)
     short = models.CharField(max_length=120, blank=True)
@@ -205,7 +211,9 @@ class Addon(models.Model):
     icon = models.CharField(max_length=40, default="sparkles")
     price = models.PositiveIntegerField(default=0)
     pricing = models.CharField(max_length=16, choices=PRICING, default="per_stay")
-    requires_approval = models.BooleanField(default=False, help_text="e.g. early check-in depends on the previous guest")
+    requires_approval = models.BooleanField(
+        default=False, help_text="e.g. early check-in depends on the previous guest"
+    )
     options = models.JSONField(default=dict, blank=True)
     lead_hours = models.PositiveSmallIntegerField(default=0)
     units = models.ManyToManyField("properties.Unit", blank=True, related_name="addons", help_text="Blank = all units")
@@ -285,7 +293,9 @@ class Waitlist(models.Model):
     guests = models.PositiveSmallIntegerField(default=0)
     channel = models.CharField(max_length=10, default="sms")
     status = models.CharField(max_length=8, choices=STATUS, default="waiting")
-    offered_unit = models.ForeignKey("properties.Unit", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    offered_unit = models.ForeignKey(
+        "properties.Unit", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     offered_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

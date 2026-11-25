@@ -15,7 +15,9 @@ def request_review(booking):
 
     if Review.objects.filter(booking=booking).exists() or not OnceMarker.mark(f"review-request:{booking.ref}"):
         return False
-    Conversation.objects.update_or_create(phone=booking.guest.phone, defaults={"state": "review", "data": {"ref": booking.ref}})
+    Conversation.objects.update_or_create(
+        phone=booking.guest.phone, defaults={"state": "review", "data": {"ref": booking.ref}}
+    )
     send_guest(booking, "review_request")
     return True
 
@@ -25,7 +27,14 @@ def record_rating(booking, rating, *, channel="sms", comment="", categories=None
 
     rating = max(1, min(5, int(rating)))
     review, created = Review.objects.get_or_create(
-        booking=booking, defaults={"unit": booking.unit, "guest": booking.guest, "rating": rating, "channel": channel, "comment": comment}
+        booking=booking,
+        defaults={
+            "unit": booking.unit,
+            "guest": booking.guest,
+            "rating": rating,
+            "channel": channel,
+            "comment": comment,
+        },
     )
     if not created:
         review.rating = rating
@@ -37,11 +46,20 @@ def record_rating(booking, rating, *, channel="sms", comment="", categories=None
     review.save()
     record("review", f"{rating}/5 review for {booking.unit.name} ({booking.ref})", booking=booking)
     if rating <= 2:
-        raise_alert("low_review", f"Low review ({rating}/5) from {booking.guest.display_name} for {booking.ref} at {booking.unit.name} - worth a call.",
-                    severity="medium", booking=booking, dedupe=f"low-review:{booking.ref}", notify=False)
+        raise_alert(
+            "low_review",
+            f"Low review ({rating}/5) from {booking.guest.display_name} for {booking.ref} at {booking.unit.name} - worth a call.",
+            severity="medium",
+            booking=booking,
+            dedupe=f"low-review:{booking.ref}",
+            notify=False,
+        )
         from apps.bookings.services import notify_host
 
-        notify_host(f"Low review ({rating}/5) from {booking.guest.display_name} ({booking.guest.phone}) for {booking.ref}. Worth a call.", booking=booking)
+        notify_host(
+            f"Low review ({rating}/5) from {booking.guest.display_name} ({booking.guest.phone}) for {booking.ref}. Worth a call.",
+            booking=booking,
+        )
     return review
 
 

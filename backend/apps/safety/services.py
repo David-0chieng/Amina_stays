@@ -35,19 +35,29 @@ def describe(phone):
     return guest, booking, who, where
 
 
-def raise_alert(kind, summary, *, severity="high", booking=None, phone="", source="system", details="", dedupe=None, notify=True):
+def raise_alert(
+    kind, summary, *, severity="high", booking=None, phone="", source="system", details="", dedupe=None, notify=True
+):
     if dedupe and not OnceMarker.mark(f"alert:{dedupe}"):
         return None
     guest = booking.guest if booking is not None else None
     alert = Alert.objects.create(
-        kind=kind, severity=severity, source=source, phone=phone or (guest.phone if guest else ""), guest=guest, booking=booking,
-        summary=summary[:300], details=details,
+        kind=kind,
+        severity=severity,
+        source=source,
+        phone=phone or (guest.phone if guest else ""),
+        guest=guest,
+        booking=booking,
+        summary=summary[:300],
+        details=details,
     )
     record("alert", summary, booking=booking, phone=alert.phone, severity=severity, alert_id=alert.pk)
     if notify and severity in ("critical", "high"):
         from apps.messaging import services as messaging
 
-        messaging.send(SiteSettings.load().host_contact, f"ALERT: {summary} Reply OK when handled.", booking=booking, kind="alert")
+        messaging.send(
+            SiteSettings.load().host_contact, f"ALERT: {summary} Reply OK when handled.", booking=booking, kind="alert"
+        )
     return alert
 
 
@@ -72,24 +82,58 @@ def escalate(phone, source, *, text="", call=True):
     s = SiteSettings.load()
     guest, booking, who, where = describe(phone)
     alert = Alert.objects.create(
-        kind="sos", severity="critical", source=source, phone=phone, guest=guest, booking=booking,
-        summary=f"SOS from {who}, {where}"[:300], details=text, call_status="pending",
+        kind="sos",
+        severity="critical",
+        source=source,
+        phone=phone,
+        guest=guest,
+        booking=booking,
+        summary=f"SOS from {who}, {where}"[:300],
+        details=text,
+        call_status="pending",
     )
     status = _call(s.host_contact, alert) if call else "bridged"
     alert.call_status, alert.calls_made, alert.last_call_at = status, 1 if call else 0, timezone.now()
     alert.save(update_fields=["call_status", "calls_made", "last_call_at"])
-    lead = "Calling you now." if status in ("Queued", "dry_run") else "Connecting the caller to you now." if status == "bridged" else "Please call them now."
+    lead = (
+        "Calling you now."
+        if status in ("Queued", "dry_run")
+        else "Connecting the caller to you now."
+        if status == "bridged"
+        else "Please call them now."
+    )
     note = f' They said: "{text[:80]}"' if text else ""
-    messaging.send(s.host_contact, f"URGENT HELP ({source}): {who}, {where}.{note} {lead} Reply OK when handled.", booking=booking, kind="sos")
+    messaging.send(
+        s.host_contact,
+        f"URGENT HELP ({source}): {who}, {where}.{note} {lead} Reply OK when handled.",
+        booking=booking,
+        kind="sos",
+    )
     if s.backup_phone:
-        messaging.send(s.backup_phone, f"URGENT for {s.host_name}: guest {who}, {where} needs help ({source}). Please check in with {s.host_name}.", kind="sos")
-    record("alert", f"SOS via {source}: {who}", channel=source, booking=booking, phone=phone, alert_id=alert.pk, call=status)
+        messaging.send(
+            s.backup_phone,
+            f"URGENT for {s.host_name}: guest {who}, {where} needs help ({source}). Please check in with {s.host_name}.",
+            kind="sos",
+        )
+    record(
+        "alert",
+        f"SOS via {source}: {who}",
+        channel=source,
+        booking=booking,
+        phone=phone,
+        alert_id=alert.pk,
+        call=status,
+    )
     return alert
 
 
 def acknowledge(alert, user=None):
     if alert.status == "open":
-        alert.status, alert.acknowledged_at, alert.acknowledged_by = "acknowledged", timezone.now(), user if getattr(user, "pk", None) else None
+        alert.status, alert.acknowledged_at, alert.acknowledged_by = (
+            "acknowledged",
+            timezone.now(),
+            user if getattr(user, "pk", None) else None,
+        )
         alert.save(update_fields=["status", "acknowledged_at", "acknowledged_by"])
         record("alert", f"Alert #{alert.pk} acknowledged", actor=user)
     return alert
@@ -122,4 +166,8 @@ def followups():
         alert.calls_made += 1
         alert.last_call_at, alert.call_status = timezone.now(), status
         alert.save(update_fields=["calls_made", "last_call_at", "call_status"])
-        record("alert", f"SOS #{alert.pk} still open - calling {mask_phone(number)} (attempt {alert.calls_made})", alert_id=alert.pk)
+        record(
+            "alert",
+            f"SOS #{alert.pk} still open - calling {mask_phone(number)} (attempt {alert.calls_made})",
+            alert_id=alert.pk,
+        )

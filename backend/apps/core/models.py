@@ -7,25 +7,35 @@ class SiteSettings(models.Model):
 
     business_name = models.CharField(max_length=80, default="Amina Stays")
     host_name = models.CharField(max_length=60, default="Amina")
-    host_phone = models.CharField(max_length=20, blank=True, help_text="Receives relayed questions, alerts and the daily digest")
+    host_phone = models.CharField(
+        max_length=20, blank=True, help_text="Receives relayed questions, alerts and the daily digest"
+    )
     backup_phone = models.CharField(max_length=20, blank=True, help_text="Called if Amina doesn't answer an emergency")
     support_email = models.EmailField(blank=True)
     tagline = models.CharField(max_length=140, default="Thoughtfully hosted homes on the Kenyan coast")
 
     default_checkin_time = models.CharField(max_length=5, default="14:00")
     default_checkout_time = models.CharField(max_length=5, default="11:00")
-    code_release_time = models.CharField(max_length=5, default="08:00", help_text="When door codes go out on arrival day")
+    code_release_time = models.CharField(
+        max_length=5, default="08:00", help_text="When door codes go out on arrival day"
+    )
 
     hold_minutes = models.PositiveIntegerField(default=10, help_text="How long a unit is held while the guest pays")
     deposit_percent = models.PositiveIntegerField(default=30, help_text="Deposit for 'pay part now' bookings")
-    balance_due_days = models.PositiveIntegerField(default=1, help_text="Balance is requested this many days before arrival")
+    balance_due_days = models.PositiveIntegerField(
+        default=1, help_text="Balance is requested this many days before arrival"
+    )
     tourism_levy_percent = models.DecimalField(max_digits=4, decimal_places=2, default=2)
     vat_percent = models.DecimalField(max_digits=4, decimal_places=2, default=0)
 
-    vat_registered = models.BooleanField(default=False, help_text="VAT applies once taxable supplies pass KES 5m / 12 months")
+    vat_registered = models.BooleanField(
+        default=False, help_text="VAT applies once taxable supplies pass KES 5m / 12 months"
+    )
 
     # Compliance (Tourism Act 2011 + Tourism Enterprises Regulations 2025, Data Protection Act 2019)
-    tra_licence_number = models.CharField(max_length=40, blank=True, help_text="Shown on every listing and booking page (r.19)")
+    tra_licence_number = models.CharField(
+        max_length=40, blank=True, help_text="Shown on every listing and booking page (r.19)"
+    )
     tra_licence_expiry = models.DateField(null=True, blank=True)
     odpc_registration = models.CharField(max_length=40, blank=True, help_text="Data controller registration number")
     kra_pin = models.CharField(max_length=20, blank=True)
@@ -36,17 +46,27 @@ class SiteSettings(models.Model):
     id_retention_days = models.PositiveIntegerField(
         default=1825, help_text="Guest register records are kept 5 years (r.26), then ID numbers are erased"
     )
-    sim_swap_check = models.BooleanField(default=True, help_text="Check for a recent SIM swap before releasing a door code")
+    sim_swap_check = models.BooleanField(
+        default=True, help_text="Check for a recent SIM swap before releasing a door code"
+    )
     promo_window_start = models.PositiveIntegerField(default=8, help_text="Promotional SMS only from this hour…")
     promo_window_end = models.PositiveIntegerField(default=18, help_text="…until this hour (Kenya time)")
-    welcome_data_mb = models.PositiveIntegerField(default=0, help_text="Africa's Talking Mobile Data gift on check-in (0 = off)")
-    voice_welcome_call = models.BooleanField(default=False, help_text="Call Kenyan guests on arrival day with a spoken walkthrough")
-    goodwill_airtime_kes = models.PositiveIntegerField(default=50, help_text="Airtime apology when Amina cancels a paid stay (0 = off)")
+    welcome_data_mb = models.PositiveIntegerField(
+        default=0, help_text="Africa's Talking Mobile Data gift on check-in (0 = off)"
+    )
+    voice_welcome_call = models.BooleanField(
+        default=False, help_text="Call Kenyan guests on arrival day with a spoken walkthrough"
+    )
+    goodwill_airtime_kes = models.PositiveIntegerField(
+        default=50, help_text="Airtime apology when Amina cancels a paid stay (0 = off)"
+    )
 
     review_delay_minutes = models.PositiveIntegerField(default=60)
     quiet_hours_start = models.PositiveIntegerField(default=21)
     quiet_hours_end = models.PositiveIntegerField(default=8)
-    auto_answer = models.BooleanField(default=True, help_text="Answer common questions automatically from the knowledge base")
+    auto_answer = models.BooleanField(
+        default=True, help_text="Answer common questions automatically from the knowledge base"
+    )
 
     usd_rate = models.DecimalField(max_digits=8, decimal_places=2, default=129, help_text="KES per USD (display only)")
     eur_rate = models.DecimalField(max_digits=8, decimal_places=2, default=150, help_text="KES per EUR (display only)")
@@ -77,8 +97,22 @@ class Activity(models.Model):
     KINDS = [
         (k, k)
         for k in (
-            "booking", "payment", "message", "sms", "ussd", "voice", "task", "alert", "review",
-            "lock", "pricing", "listing", "guest", "broadcast", "system", "auth",
+            "booking",
+            "payment",
+            "message",
+            "sms",
+            "ussd",
+            "voice",
+            "task",
+            "alert",
+            "review",
+            "lock",
+            "pricing",
+            "listing",
+            "guest",
+            "broadcast",
+            "system",
+            "auth",
         )
     ]
     kind = models.CharField(max_length=20, choices=KINDS)
@@ -87,7 +121,9 @@ class Activity(models.Model):
     detail = models.TextField(blank=True)
     booking_ref = models.CharField(max_length=20, blank=True, db_index=True)
     phone = models.CharField(max_length=20, blank=True)
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

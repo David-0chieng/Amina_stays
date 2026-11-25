@@ -29,7 +29,9 @@ def occupancy(start, end, unit_ids=None):
     days = (end - start).days
     available = len(ids) * days
     booked = 0
-    for b in Booking.objects.filter(unit_id__in=ids, status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start).only("check_in", "check_out"):
+    for b in Booking.objects.filter(
+        unit_id__in=ids, status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start
+    ).only("check_in", "check_out"):
         booked += _overlap(b.check_in, b.check_out, start, end)
     for blk in CalendarBlock.objects.filter(unit_id__in=ids, start_date__lt=end, end_date__gt=start):
         n = _overlap(blk.start_date, blk.end_date, start, end)
@@ -37,7 +39,11 @@ def occupancy(start, end, unit_ids=None):
             booked += n
         else:
             available -= n
-    return {"occupancy": round(100 * booked / available) if available > 0 else 0, "booked_nights": booked, "available_nights": max(available, 0)}
+    return {
+        "occupancy": round(100 * booked / available) if available > 0 else 0,
+        "booked_nights": booked,
+        "available_nights": max(available, 0),
+    }
 
 
 def room_revenue(start, end, unit_ids=None):
@@ -74,23 +80,43 @@ def kpis(start, end):
     cancelled = created.filter(status__in=("cancelled", "refund_due")).count()
     ota = live.filter(channel__in=("airbnb", "booking_com")).count()
 
-    collected = Payment.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end).aggregate(s=Sum("amount"))["s"] or 0
-    refunded = Refund.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end).aggregate(s=Sum("amount"))["s"] or 0
+    collected = (
+        Payment.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end).aggregate(
+            s=Sum("amount")
+        )["s"]
+        or 0
+    )
+    refunded = (
+        Refund.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end).aggregate(
+            s=Sum("amount")
+        )["s"]
+        or 0
+    )
     by_method = {
         r["method"]: r["s"]
-        for r in Payment.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end).values("method").annotate(s=Sum("amount"))
+        for r in Payment.objects.filter(status="success", completed_at__date__gte=start, completed_at__date__lt=end)
+        .values("method")
+        .annotate(s=Sum("amount"))
     }
     stays_in_period = Booking.objects.filter(status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start)
     addons = stays_in_period.aggregate(s=Sum("addons_amount"))["s"] or 0
     levy = stays_in_period.aggregate(s=Sum("levy_amount"))["s"] or 0
 
     # responsiveness: how fast a relayed question got a human answer, and how much the bot handled alone
-    inbound = Message.objects.filter(direction="in", sender="guest", created_at__date__gte=start, created_at__date__lt=end)
+    inbound = Message.objects.filter(
+        direction="in", sender="guest", created_at__date__gte=start, created_at__date__lt=end
+    )
     auto = inbound.filter(handled="auto").count()
     total_in = inbound.exclude(handled="na").count()
     waits = []
     for m in inbound.filter(handled__in=("answered", "relayed")).only("thread_id", "created_at")[:300]:
-        reply = Message.objects.filter(thread_id=m.thread_id, direction="out", sender__in=("host", "staff"), created_at__gt=m.created_at).order_by("id").first()
+        reply = (
+            Message.objects.filter(
+                thread_id=m.thread_id, direction="out", sender__in=("host", "staff"), created_at__gt=m.created_at
+            )
+            .order_by("id")
+            .first()
+        )
         if reply:
             waits.append((reply.created_at - m.created_at).total_seconds() / 60)
     reviews = Review.objects.filter(created_at__date__gte=start, created_at__date__lt=end)
@@ -139,7 +165,9 @@ def daily_series(start, end):
         for d in daterange(max(blk.start_date, start), min(blk.end_date, end)):
             occupied[d] += 1
     created = defaultdict(Counter)
-    for b in Booking.objects.filter(created_at__date__gte=start, created_at__date__lt=end, status__in=LIVE_STATUSES).only("created_at", "channel"):
+    for b in Booking.objects.filter(
+        created_at__date__gte=start, created_at__date__lt=end, status__in=LIVE_STATUSES
+    ).only("created_at", "channel"):
         created[timezone.localtime(b.created_at).date()][b.channel] += 1
     return [
         {
@@ -155,7 +183,13 @@ def daily_series(start, end):
 def forward_bookings(days=60):
     """On-the-books occupancy for the coming weeks (pace)."""
     t = today()
-    return [{"week_start": (t + timedelta(days=7 * i)).isoformat(), **occupancy(t + timedelta(days=7 * i), t + timedelta(days=7 * (i + 1)))} for i in range(days // 7)]
+    return [
+        {
+            "week_start": (t + timedelta(days=7 * i)).isoformat(),
+            **occupancy(t + timedelta(days=7 * i), t + timedelta(days=7 * (i + 1))),
+        }
+        for i in range(days // 7)
+    ]
 
 
 def tra_return(year, month):
@@ -165,7 +199,11 @@ def tra_return(year, month):
     end = date(year + (month == 12), month % 12 + 1, 1)
     occ = occupancy(start, end)
     revenue, _nights = room_revenue(start, end)
-    stays = Booking.objects.filter(status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start).select_related("guest").prefetch_related("occupants")
+    stays = (
+        Booking.objects.filter(status__in=LIVE_STATUSES, check_in__lt=end, check_out__gt=start)
+        .select_related("guest")
+        .prefetch_related("occupants")
+    )
     countries = Counter()
     guest_nights = 0
     for b in stays:
@@ -204,9 +242,15 @@ def host_today():
         "arrivals": list(base.filter(check_in=t, status__in=("confirmed", "checked_in")).order_by("unit__name")),
         "departures": list(base.filter(check_out=t, status__in=("checked_in", "completed")).order_by("unit__name")),
         "in_house": list(base.filter(status="checked_in").order_by("check_out")),
-        "upcoming": list(base.filter(status="confirmed", check_in__gt=t, check_in__lte=t + timedelta(days=7)).order_by("check_in")),
+        "upcoming": list(
+            base.filter(status="confirmed", check_in__gt=t, check_in__lte=t + timedelta(days=7)).order_by("check_in")
+        ),
         "holds": list(base.filter(status="held", hold_expires_at__gt=timezone.now()).order_by("-created_at")),
-        "tasks": list(Task.objects.filter(status__in=("open", "in_progress")).select_related("unit", "assignee").order_by("due_at")[:20]),
+        "tasks": list(
+            Task.objects.filter(status__in=("open", "in_progress"))
+            .select_related("unit", "assignee")
+            .order_by("due_at")[:20]
+        ),
         "alerts": list(Alert.objects.filter(~Q(status="resolved")).select_related("booking").order_by("-id")[:20]),
         "threads": list(Thread.objects.filter(needs_reply=True).select_related("guest").order_by("waiting_since")[:20]),
         "breakfasts": kitchen_sheet(t + timedelta(days=1 if timezone.localtime().hour >= 11 else 0)),

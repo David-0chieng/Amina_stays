@@ -16,21 +16,72 @@ from .models import Automation
 log = logging.getLogger("amina.automations")
 
 DEFAULT_AUTOMATIONS = [
-    ("pre_arrival", "Pre-arrival: breakfast, ETA & travel", "Asks breakfast preference, arrival time and how they're travelling", "check_in", -3, "10:00"),
-    ("id_request", "Guest-register ID reminder", "Only if the guest hasn't registered an ID yet", "check_in", -2, "11:00"),
-    ("balance_due", "Balance due (deposit bookings)", "Sends an M-Pesa prompt for the balance", "check_in", -1, "09:00"),
-    ("directions", "Directions, landmark & Wi-Fi", "Exact location is only shared once a booking is confirmed", "check_in", -1, "16:00"),
+    (
+        "pre_arrival",
+        "Pre-arrival: breakfast, ETA & travel",
+        "Asks breakfast preference, arrival time and how they're travelling",
+        "check_in",
+        -3,
+        "10:00",
+    ),
+    (
+        "id_request",
+        "Guest-register ID reminder",
+        "Only if the guest hasn't registered an ID yet",
+        "check_in",
+        -2,
+        "11:00",
+    ),
+    (
+        "balance_due",
+        "Balance due (deposit bookings)",
+        "Sends an M-Pesa prompt for the balance",
+        "check_in",
+        -1,
+        "09:00",
+    ),
+    (
+        "directions",
+        "Directions, landmark & Wi-Fi",
+        "Exact location is only shared once a booking is confirmed",
+        "check_in",
+        -1,
+        "16:00",
+    ),
     ("welcome_check", "Settled in?", "Evening of arrival", "check_in", 0, "19:00"),
     ("mid_stay", "Mid-stay check-in & clean offer", "Stays of 4+ nights only", "check_in", 2, "10:00"),
-    ("checkout_reminder", "Checkout reminder & late checkout offer", "Evening before departure", "check_out", -1, "19:00"),
-    ("rebook_offer", "Come-back offer", "Opted-in direct guests only, never Airbnb/Booking.com guests", "check_out", 21, "10:00"),
+    (
+        "checkout_reminder",
+        "Checkout reminder & late checkout offer",
+        "Evening before departure",
+        "check_out",
+        -1,
+        "19:00",
+    ),
+    (
+        "rebook_offer",
+        "Come-back offer",
+        "Opted-in direct guests only, never Airbnb/Booking.com guests",
+        "check_out",
+        21,
+        "10:00",
+    ),
 ]
 
 
 def ensure_defaults():
     for i, (key, name, desc, anchor, offset, at) in enumerate(DEFAULT_AUTOMATIONS):
         Automation.objects.get_or_create(
-            key=key, defaults={"name": name, "description": desc, "anchor": anchor, "offset_days": offset, "send_time": at, "template_key": key, "sort_order": i}
+            key=key,
+            defaults={
+                "name": name,
+                "description": desc,
+                "anchor": anchor,
+                "offset_days": offset,
+                "send_time": at,
+                "template_key": key,
+                "sort_order": i,
+            },
         )
 
 
@@ -40,7 +91,9 @@ def _quiet(s):
 
 
 def _due_at(auto, b):
-    anchor = {"check_in": b.check_in, "check_out": b.check_out}.get(auto.anchor) or timezone.localtime(b.created_at).date()
+    anchor = {"check_in": b.check_in, "check_out": b.check_out}.get(auto.anchor) or timezone.localtime(
+        b.created_at
+    ).date()
     day = anchor + timedelta(days=auto.offset_days)
     return at_local(day, auto.send_time or "00:00"), day
 
@@ -64,8 +117,12 @@ def _applies(key, b, s, due_day):
     if key == "rebook_offer":
         g = b.guest
         return (
-            b.status == "completed" and t <= due_day + timedelta(days=3) and g.marketing_opt_in and not g.sms_opt_out_at
-            and b.channel not in ("airbnb", "booking_com") and not b.guest.bookings.filter(created_at__gt=b.created_at).exists()
+            b.status == "completed"
+            and t <= due_day + timedelta(days=3)
+            and g.marketing_opt_in
+            and not g.sms_opt_out_at
+            and b.channel not in ("airbnb", "booking_com")
+            and not b.guest.bookings.filter(created_at__gt=b.created_at).exists()
         )
     return False
 
@@ -88,7 +145,13 @@ def _send(auto, b):
         extra["clean_price"] = kes(clean.price) if clean else "on request"
     if auto.key == "rebook_offer":
         extra["link"] = f"{_frontend()}/stays/{b.unit.slug}"
-        msg = messaging.send(b.guest.phone, messaging.render(auto.template_key, b.lang, **{**_ctx(b), **extra}), booking=b, kind=auto.key, marketing=True)
+        msg = messaging.send(
+            b.guest.phone,
+            messaging.render(auto.template_key, b.lang, **{**_ctx(b), **extra}),
+            booking=b,
+            kind=auto.key,
+            marketing=True,
+        )
         return msg is not None
     send_guest(b, auto.template_key, **extra)
     return True
@@ -113,10 +176,11 @@ def run_automations():
     if _quiet(s):
         return 0
     now, t = timezone.now(), today()
-    candidates = (
-        Booking.objects.filter(status__in=("confirmed", "checked_in", "completed"), check_out__gte=t - timedelta(days=30), check_in__lte=t + timedelta(days=4))
-        .select_related("unit", "unit__area", "guest")
-    )
+    candidates = Booking.objects.filter(
+        status__in=("confirmed", "checked_in", "completed"),
+        check_out__gte=t - timedelta(days=30),
+        check_in__lte=t + timedelta(days=4),
+    ).select_related("unit", "unit__area", "guest")
     sent = 0
     autos = list(Automation.objects.filter(enabled=True))
     for b in candidates:

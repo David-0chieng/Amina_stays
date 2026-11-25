@@ -10,18 +10,97 @@ from datetime import date, timedelta
 from apps.core.utils import today, weekend_start
 
 MONTHS = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
     # Kiswahili / Italian / German / French spellings that differ
-    "mac": 3, "mei": 5, "ago": 8, "okt": 10, "des": 12, "dis": 12, "januari": 1, "februari": 2, "machi": 3, "aprili": 4,
-    "juni": 6, "julai": 7, "agosti": 8, "septemba": 9, "oktoba": 10, "novemba": 11, "desemba": 12,
-    "gen": 1, "mag": 5, "giu": 6, "lug": 7, "set": 9, "ott": 10, "dic": 12, "mär": 3, "mai": 5, "dez": 12, "janv": 1, "févr": 2,
-    "fev": 2, "avr": 4, "juil": 7, "aoû": 8, "aou": 8, "déc": 12,
+    "mac": 3,
+    "mei": 5,
+    "ago": 8,
+    "okt": 10,
+    "des": 12,
+    "dis": 12,
+    "januari": 1,
+    "februari": 2,
+    "machi": 3,
+    "aprili": 4,
+    "juni": 6,
+    "julai": 7,
+    "agosti": 8,
+    "septemba": 9,
+    "oktoba": 10,
+    "novemba": 11,
+    "desemba": 12,
+    "gen": 1,
+    "mag": 5,
+    "giu": 6,
+    "lug": 7,
+    "set": 9,
+    "ott": 10,
+    "dic": 12,
+    "mär": 3,
+    "mai": 5,
+    "dez": 12,
+    "janv": 1,
+    "févr": 2,
+    "fev": 2,
+    "avr": 4,
+    "juil": 7,
+    "aoû": 8,
+    "aou": 8,
+    "déc": 12,
 }
-SW_NUMBERS = {"moja": 1, "mmoja": 1, "mbili": 2, "wawili": 2, "tatu": 3, "watatu": 3, "nne": 4, "wanne": 4, "tano": 5, "watano": 5, "sita": 6, "saba": 7}
+SW_NUMBERS = {
+    "moja": 1,
+    "mmoja": 1,
+    "mbili": 2,
+    "wawili": 2,
+    "tatu": 3,
+    "watatu": 3,
+    "nne": 4,
+    "wanne": 4,
+    "tano": 5,
+    "watano": 5,
+    "sita": 6,
+    "saba": 7,
+}
 EN_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "a couple": 2, "couple": 2}
 SWAHILI_HINTS = {
-    "habari", "nataka", "naomba", "chumba", "vyumba", "bei", "kesho", "leo", "usiku", "wikendi", "watu", "sisi", "nafasi",
-    "asante", "sawa", "ndiyo", "hapana", "mambo", "jambo", "tafadhali", "lini", "ngapi", "wapi", "kulala", "maji", "stima",
+    "habari",
+    "nataka",
+    "naomba",
+    "chumba",
+    "vyumba",
+    "bei",
+    "kesho",
+    "leo",
+    "usiku",
+    "wikendi",
+    "watu",
+    "sisi",
+    "nafasi",
+    "asante",
+    "sawa",
+    "ndiyo",
+    "hapana",
+    "mambo",
+    "jambo",
+    "tafadhali",
+    "lini",
+    "ngapi",
+    "wapi",
+    "kulala",
+    "maji",
+    "stima",
 }
 
 _WS = re.compile(r"\s+")
@@ -61,7 +140,9 @@ def parse_guests(text):
 
 def parse_nights(text):
     t = (text or "").lower()
-    m = re.search(r"(\d+|one|two|three|four|five|six|seven)\s*(nights?|n\b|nts|days?)", t) or re.search(r"\b(usiku|siku)\s*(\d+|\w+)", t)
+    m = re.search(r"(\d+|one|two|three|four|five|six|seven)\s*(nights?|n\b|nts|days?)", t) or re.search(
+        r"\b(usiku|siku)\s*(\d+|\w+)", t
+    )
     if not m:
         return None
     n = _num(m.group(2) if m.group(1) in ("usiku", "siku") else m.group(1))
@@ -95,7 +176,10 @@ def parse_dates(text, ref=None):
         if m[4]:
             co = _safe(int(m[4]), int(m[5]), int(m[6]))
     if not ci:  # "5-8 dec", "5 to 8 december", "from 5th to 8th dec"
-        m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|until|till|hadi|–)\s*(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})", t)
+        m = re.search(
+            r"(\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|until|till|hadi|–)\s*(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})",
+            t,
+        )
         if (m and m[3][:4] in MONTHS) or (m and m[3][:3] in MONTHS):
             month = MONTHS.get(m[3][:4]) or MONTHS.get(m[3][:3])
             ci, co = _date(int(m[1]), month, ref), _date(int(m[2]), month, ref)
@@ -114,7 +198,11 @@ def parse_dates(text, ref=None):
     if not ci:  # "5/12" or "05/12/2026" (day first, as in Kenya)
         m = re.search(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", t)
         if m and 1 <= int(m[2]) <= 12:
-            ci = _date(int(m[1]), int(m[2]), ref) if not m[3] else _safe(int(m[3]) + (2000 if len(m[3]) == 2 else 0), int(m[2]), int(m[1]))
+            ci = (
+                _date(int(m[1]), int(m[2]), ref)
+                if not m[3]
+                else _safe(int(m[3]) + (2000 if len(m[3]) == 2 else 0), int(m[2]), int(m[1]))
+            )
     if not ci:
         if re.search(r"\b(tonight|today|leo|usiku wa leo|stasera|heute|ce soir)\b", t):
             ci = ref

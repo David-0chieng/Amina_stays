@@ -46,9 +46,10 @@ def _block_overlap(unit_ref, check_in, check_out):
 
 
 def is_available(unit, check_in, check_out, exclude_booking_id=None):
-    return not _booking_overlap(unit, check_in, check_out, exclude_booking_id).exists() and not _block_overlap(
-        unit, check_in, check_out
-    ).exists()
+    return (
+        not _booking_overlap(unit, check_in, check_out, exclude_booking_id).exists()
+        and not _block_overlap(unit, check_in, check_out).exists()
+    )
 
 
 def available_units(check_in, check_out, *, area=None, guests=None, qs=None):
@@ -93,7 +94,11 @@ def _apply(price, rule):
 
 def nightly_rates(unit, check_in, check_out):
     """[(date, price, label)] for each night, before stay-level discounts."""
-    rules = [r for r in PriceRule.objects.filter(active=True).filter(Q(unit=unit) | Q(unit__isnull=True)) if r.kind in ("season", "weekday")]
+    rules = [
+        r
+        for r in PriceRule.objects.filter(active=True).filter(Q(unit=unit) | Q(unit__isnull=True))
+        if r.kind in ("season", "weekday")
+    ]
     overrides = {o.date: o for o in PriceOverride.objects.filter(unit=unit, date__gte=check_in, date__lt=check_out)}
     out = []
     for d in daterange(check_in, check_out):
@@ -122,15 +127,25 @@ def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, p
     lines = []
     if n:
         avg = round(accommodation / n)
-        lines.append({"label": f"{kes(avg)} x {n} night{'s' if n != 1 else ''}", "amount": accommodation, "kind": "nights"})
+        lines.append(
+            {"label": f"{kes(avg)} x {n} night{'s' if n != 1 else ''}", "amount": accommodation, "kind": "nights"}
+        )
 
     discount, discount_label = 0, ""
     if n >= 28 and unit.monthly_discount:
-        discount, discount_label = round(accommodation * unit.monthly_discount / 100), f"Monthly stay discount ({unit.monthly_discount}%)"
+        discount, discount_label = (
+            round(accommodation * unit.monthly_discount / 100),
+            f"Monthly stay discount ({unit.monthly_discount}%)",
+        )
     elif n >= 7 and unit.weekly_discount:
-        discount, discount_label = round(accommodation * unit.weekly_discount / 100), f"Weekly stay discount ({unit.weekly_discount}%)"
+        discount, discount_label = (
+            round(accommodation * unit.weekly_discount / 100),
+            f"Weekly stay discount ({unit.weekly_discount}%)",
+        )
     lead = (check_in - t).days
-    for r in PriceRule.objects.filter(active=True, kind__in=("last_minute", "early_bird")).filter(Q(unit=unit) | Q(unit__isnull=True)):
+    for r in PriceRule.objects.filter(active=True, kind__in=("last_minute", "early_bird")).filter(
+        Q(unit=unit) | Q(unit__isnull=True)
+    ):
         hit = (r.kind == "last_minute" and r.days_before is not None and 0 <= lead <= r.days_before) or (
             r.kind == "early_bird" and r.days_before is not None and lead >= r.days_before
         )
@@ -149,17 +164,27 @@ def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, p
         a, qty = item["addon"], max(1, int(item.get("quantity") or 1))
         amount = a.price_for(n, guests, qty)
         addons_total += amount
-        unit_word = {"per_guest_night": f"{qty} guest{'s' if qty != 1 else ''} x {n} morning{'s' if n != 1 else ''}", "per_night": f"{n} night{'s' if n != 1 else ''}"}.get(
-            a.pricing, f"x{qty}" if qty > 1 else ""
+        unit_word = {
+            "per_guest_night": f"{qty} guest{'s' if qty != 1 else ''} x {n} morning{'s' if n != 1 else ''}",
+            "per_night": f"{n} night{'s' if n != 1 else ''}",
+        }.get(a.pricing, f"x{qty}" if qty > 1 else "")
+        addon_lines.append(
+            {
+                "label": f"{a.name}{' (' + unit_word + ')' if unit_word else ''}",
+                "amount": amount,
+                "kind": "addon",
+                "code": a.code,
+            }
         )
-        addon_lines.append({"label": f"{a.name}{' (' + unit_word + ')' if unit_word else ''}", "amount": amount, "kind": "addon", "code": a.code})
     lines.extend(addon_lines)
 
     taxable = accommodation - discount + unit.cleaning_fee + addons_total
     levy = round(taxable * Decimal(s.tourism_levy_percent) / 100)
     vat = round(taxable * Decimal(s.vat_percent) / 100) if s.vat_registered and s.vat_percent else 0
     if levy:
-        lines.append({"label": f"Tourism levy ({Decimal(s.tourism_levy_percent).normalize()}%)", "amount": levy, "kind": "levy"})
+        lines.append(
+            {"label": f"Tourism levy ({Decimal(s.tourism_levy_percent).normalize()}%)", "amount": levy, "kind": "levy"}
+        )
     if vat:
         lines.append({"label": f"VAT ({Decimal(s.vat_percent).normalize()}%)", "amount": vat, "kind": "vat"})
     total = taxable + levy + vat
@@ -212,7 +237,11 @@ def export_ics(unit):
 
     stamp = timezone.now().strftime("%Y%m%dT%H%M%SZ")
     lines = [
-        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Amina Stays//Calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Amina Stays//Calendar//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
         f"X-WR-CALNAME:{unit.name} (Amina Stays)",
     ]
     t = today() - timedelta(days=30)
@@ -220,15 +249,23 @@ def export_ics(unit):
         if b.status == "held" and not b.hold_active:
             continue
         lines += [
-            "BEGIN:VEVENT", f"UID:{b.ref.lower()}@aminastays", f"DTSTAMP:{stamp}",
-            f"DTSTART;VALUE=DATE:{b.check_in:%Y%m%d}", f"DTEND;VALUE=DATE:{b.check_out:%Y%m%d}",
-            "SUMMARY:Reserved (Amina Stays)", "END:VEVENT",
+            "BEGIN:VEVENT",
+            f"UID:{b.ref.lower()}@aminastays",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{b.check_in:%Y%m%d}",
+            f"DTEND;VALUE=DATE:{b.check_out:%Y%m%d}",
+            "SUMMARY:Reserved (Amina Stays)",
+            "END:VEVENT",
         ]
     for blk in CalendarBlock.objects.filter(unit=unit, end_date__gte=t).exclude(reason="external"):
         lines += [
-            "BEGIN:VEVENT", f"UID:block-{blk.pk}@aminastays", f"DTSTAMP:{stamp}",
-            f"DTSTART;VALUE=DATE:{blk.start_date:%Y%m%d}", f"DTEND;VALUE=DATE:{blk.end_date:%Y%m%d}",
-            "SUMMARY:Not available", "END:VEVENT",
+            "BEGIN:VEVENT",
+            f"UID:block-{blk.pk}@aminastays",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{blk.start_date:%Y%m%d}",
+            f"DTEND;VALUE=DATE:{blk.end_date:%Y%m%d}",
+            "SUMMARY:Not available",
+            "END:VEVENT",
         ]
     lines.append("END:VCALENDAR")
     return "\r\n".join(lines) + "\r\n"
@@ -299,10 +336,19 @@ def sync_feed(feed, text=None):
             uid = e.get("uid") or f"{e['start']}-{e['end']}"
             seen.add(uid)
             blk, _ = CalendarBlock.objects.update_or_create(
-                feed=feed, external_uid=uid,
-                defaults={"unit": feed.unit, "start_date": e["start"], "end_date": e["end"], "reason": "external", "note": f"{feed.name}: {e.get('summary', 'Reserved')}"[:160]},
+                feed=feed,
+                external_uid=uid,
+                defaults={
+                    "unit": feed.unit,
+                    "start_date": e["start"],
+                    "end_date": e["end"],
+                    "reason": "external",
+                    "note": f"{feed.name}: {e.get('summary', 'Reserved')}"[:160],
+                },
             )
-            clash = _booking_overlap(feed.unit, e["start"], e["end"]).filter(status__in=("confirmed", "checked_in")).first()
+            clash = (
+                _booking_overlap(feed.unit, e["start"], e["end"]).filter(status__in=("confirmed", "checked_in")).first()
+            )
             if clash:
                 conflicts.append((blk, clash))
         CalendarBlock.objects.filter(feed=feed).exclude(external_uid__in=seen).delete()
@@ -315,9 +361,15 @@ def sync_feed(feed, text=None):
         raise_alert(
             "conflict",
             f"Double booking risk: {feed.name} blocks {feed.unit.name} {blk.start_date}→{blk.end_date}, overlapping direct booking {booking.ref}",
-            severity="critical", booking=booking, dedupe=f"conflict:{feed.pk}:{blk.external_uid}:{booking.ref}",
+            severity="critical",
+            booking=booking,
+            dedupe=f"conflict:{feed.pk}:{blk.external_uid}:{booking.ref}",
         )
-    record("listing", f"Calendar synced from {feed.name} for {feed.unit.name}: {len(events)} event(s)", conflicts=len(conflicts))
+    record(
+        "listing",
+        f"Calendar synced from {feed.name} for {feed.unit.name}: {len(events)} event(s)",
+        conflicts=len(conflicts),
+    )
     return {"ok": True, "events": len(events), "conflicts": len(conflicts)}
 
 

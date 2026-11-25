@@ -107,7 +107,10 @@ def process_ussd(phone, text, session_id=""):
 @at_webhook
 def ussd_callback(request):
     d = _data(request)
-    return HttpResponse(process_ussd(d.get("phoneNumber", ""), d.get("text", ""), d.get("sessionId", "")), content_type="text/plain; charset=utf-8")
+    return HttpResponse(
+        process_ussd(d.get("phoneNumber", ""), d.get("text", ""), d.get("sessionId", "")),
+        content_type="text/plain; charset=utf-8",
+    )
 
 
 @at_webhook
@@ -122,11 +125,20 @@ def ussd_events(request):
 
 def process_voice(data):
     try:
-        if data.get("isActive") == "1" and not data.get("dtmfDigits") and (data.get("direction") or "").lower() == "inbound":
+        if (
+            data.get("isActive") == "1"
+            and not data.get("dtmfDigits")
+            and (data.get("direction") or "").lower() == "inbound"
+        ):
             from apps.comms.models import VoiceSession
 
             if not VoiceSession.objects.filter(session_id=data.get("sessionId", "")).exists():
-                record("voice", f"Call from {data.get('callerNumber', '')}", channel="voice", phone=data.get("callerNumber", ""))
+                record(
+                    "voice",
+                    f"Call from {data.get('callerNumber', '')}",
+                    channel="voice",
+                    phone=data.get("callerNumber", ""),
+                )
         return voice.handle(data)
     except Exception:
         log.exception("voice callback failed")
@@ -145,7 +157,11 @@ def voice_callback(request):
 @at_webhook
 def airtime_status(request):
     d = _data(request)
-    record("system", f"Airtime {d.get('status', '')} to {d.get('phoneNumber', '')} ({d.get('value', '')})", phone=d.get("phoneNumber", ""))
+    record(
+        "system",
+        f"Airtime {d.get('status', '')} to {d.get('phoneNumber', '')} ({d.get('value', '')})",
+        phone=d.get("phoneNumber", ""),
+    )
     return HttpResponse("OK")
 
 
@@ -182,8 +198,15 @@ def _phone_messages(phone, after=0):
     # First load shows the latest messages; later polls fetch only what's new.
     rows = qs.filter(id__gt=after).order_by("id")[:200] if after else reversed(qs.order_by("-id")[:100])
     return [
-        {"id": m.id, "direction": m.direction, "channel": m.channel, "body": m.body, "status": m.status, "kind": m.kind,
-         "created_at": m.created_at.isoformat()}
+        {
+            "id": m.id,
+            "direction": m.direction,
+            "channel": m.channel,
+            "body": m.body,
+            "status": m.status,
+            "kind": m.kind,
+            "created_at": m.created_at.isoformat(),
+        }
         for m in rows
     ]
 
@@ -224,9 +247,14 @@ def demo_voice(request):
     d = json.loads(request.body or b"{}")
     phone = normalize_phone(d.get("phone"))
     payload = {
-        "sessionId": d.get("session") or "demo", "isActive": "0" if d.get("hangup") else "1", "direction": d.get("direction", "Inbound"),
-        "callerNumber": phone, "destinationNumber": d.get("destination", settings.AT_VOICE_NUMBER or "+254711000000"),
-        "dtmfDigits": d.get("digits", ""), "recordingUrl": d.get("recordingUrl", ""), "dialDurationInSeconds": d.get("dialDuration", "0"),
+        "sessionId": d.get("session") or "demo",
+        "isActive": "0" if d.get("hangup") else "1",
+        "direction": d.get("direction", "Inbound"),
+        "callerNumber": phone,
+        "destinationNumber": d.get("destination", settings.AT_VOICE_NUMBER or "+254711000000"),
+        "dtmfDigits": d.get("digits", ""),
+        "recordingUrl": d.get("recordingUrl", ""),
+        "dialDurationInSeconds": d.get("dialDuration", "0"),
     }
     if d.get("direction") == "Outbound":
         payload["destinationNumber"] = phone

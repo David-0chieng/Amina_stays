@@ -129,7 +129,9 @@ def end(text, lang="en"):
 
 def dial(prompt, numbers, lang="en"):
     nums = ",".join(n for n in numbers if n)
-    return xml(f'{say(prompt, lang)}<Dial phoneNumbers={quoteattr(nums)} sequential="true" record="false" maxDuration="900"/>')
+    return xml(
+        f'{say(prompt, lang)}<Dial phoneNumbers={quoteattr(nums)} sequential="true" record="false" maxDuration="900"/>'
+    )
 
 
 def record_msg(lang):
@@ -213,13 +215,21 @@ class Call:
             return ask(tr(self.lang, "nights"), self.lang)
         if self.d == "3":
             ci = weekend_start(t)
-            self.save(step="guests", check_in=ci.isoformat(), check_out=(ci + timedelta(days=2 if ci.weekday() == 4 else 1)).isoformat())
+            self.save(
+                step="guests",
+                check_in=ci.isoformat(),
+                check_out=(ci + timedelta(days=2 if ci.weekday() == 4 else 1)).isoformat(),
+            )
             return ask(tr(self.lang, "guests"), self.lang)
         if self.d == "4":
             from apps.messaging.models import Conversation
 
-            Conversation.objects.update_or_create(phone=self.phone, defaults={"state": "collecting", "data": {"via": "voice"}})
-            messaging.send(self.phone, messaging.render("ask_dates", self.lang, hello="Hi from Amina Stays! "), kind="ask_dates")
+            Conversation.objects.update_or_create(
+                phone=self.phone, defaults={"state": "collecting", "data": {"via": "voice"}}
+            )
+            messaging.send(
+                self.phone, messaging.render("ask_dates", self.lang, hello="Hi from Amina Stays! "), kind="ask_dates"
+            )
             return end(tr(self.lang, "by_text"), self.lang)
         return ask(tr(self.lang, "invalid") + " " + tr(self.lang, "when"), self.lang)
 
@@ -244,7 +254,17 @@ class Call:
             bookings.add_to_waitlist(user, ci, co, guests=guests, channel="voice")
             return end(tr(self.lang, "none"), self.lang)
         options = [{"id": u.pk, "name": u.name} for u in units]
-        prompt = " ".join(tr(self.lang, "option", i=i, name=u.name, area=u.area.name, total=price_quote(u, ci, co, guests=guests)["total"]) for i, u in enumerate(units, 1))
+        prompt = " ".join(
+            tr(
+                self.lang,
+                "option",
+                i=i,
+                name=u.name,
+                area=u.area.name,
+                total=price_quote(u, ci, co, guests=guests)["total"],
+            )
+            for i, u in enumerate(units, 1)
+        )
         self.save(step="pick", guests=guests, options=options, prompt=prompt)
         return ask(prompt, self.lang)
 
@@ -260,14 +280,24 @@ class Call:
         unit = Unit.objects.get(pk=opts[int(self.d) - 1]["id"])
         user, _ = get_or_create_user(self.phone, channel="voice")
         try:
-            b = bookings.create_hold(unit=unit, guest=user, check_in=date.fromisoformat(self.st["check_in"]),
-                                     check_out=date.fromisoformat(self.st["check_out"]), channel="voice", adults=self.st.get("guests", 1), lang=self.lang)
+            b = bookings.create_hold(
+                unit=unit,
+                guest=user,
+                check_in=date.fromisoformat(self.st["check_in"]),
+                check_out=date.fromisoformat(self.st["check_out"]),
+                channel="voice",
+                adults=self.st.get("guests", 1),
+                lang=self.lang,
+            )
         except bookings.BookingError as e:
             return end(str(e), self.lang)
         pay = start_remote_payment(b)
         self.save(step="done", ref=b.ref)
         pay_line = tr(self.lang, "pay_card" if pay.get("method") == "card" else "pay_mpesa")
-        return end(tr(self.lang, "held", name=unit.name, total=b.total, pay=pay_line if not pay.get("error") else pay["text"]), self.lang)
+        return end(
+            tr(self.lang, "held", name=unit.name, total=b.total, pay=pay_line if not pay.get("error") else pay["text"]),
+            self.lang,
+        )
 
     def prices(self):
         from apps.bookings.models import Addon
@@ -276,7 +306,9 @@ class Call:
 
         units = Unit.objects.filter(status="active").select_related("area")[:5]
         bf = Addon.objects.filter(code="breakfast", active=True).first()
-        items = "; ".join(tr(self.lang, "price_item", name=u.name, area=u.area.name, price=from_price(u)) for u in units)
+        items = "; ".join(
+            tr(self.lang, "price_item", name=u.name, area=u.area.name, price=from_price(u)) for u in units
+        )
         self.save(step="after_prices")
         return ask(tr(self.lang, "prices", list=items, bf=bf.price if bf else 0), self.lang)
 
@@ -292,8 +324,15 @@ class Call:
             self.save(step="after_prices")
             return ask(tr(self.lang, "no_booking"), self.lang)
         self.save(step="booking", ref=b.ref)
-        head = tr(self.lang, "booking", unit=b.unit.name, check_in=_speak_date(b.check_in, self.lang), check_out=_speak_date(b.check_out, self.lang),
-                  ref=spoken_digits(b.ref), status=b.get_status_display())
+        head = tr(
+            self.lang,
+            "booking",
+            unit=b.unit.name,
+            check_in=_speak_date(b.check_in, self.lang),
+            check_out=_speak_date(b.check_out, self.lang),
+            ref=spoken_digits(b.ref),
+            status=b.get_status_display(),
+        )
         if b.status in ("confirmed", "checked_in"):
             return ask(head + tr(self.lang, "booking_opts"), self.lang)
         return end(head, self.lang)
@@ -306,7 +345,16 @@ class Call:
             return self.main_menu()
         if self.d == "1":
             bookings.send_guest(b, "directions")
-            return end(tr(self.lang, "directions", unit=b.unit.name, directions=b.unit.directions, landmark=b.unit.landmark or b.unit.area.name), self.lang)
+            return end(
+                tr(
+                    self.lang,
+                    "directions",
+                    unit=b.unit.name,
+                    directions=b.unit.directions,
+                    landmark=b.unit.landmark or b.unit.area.name,
+                ),
+                self.lang,
+            )
         if self.d == "2":
             if b.status == "checked_in":
                 bookings.send_guest(b, "checkin_code")
@@ -329,7 +377,16 @@ class Call:
 
         b = Booking.objects.filter(ref=self.st.get("ref")).select_related("unit").first()
         if b and self.d == "1":
-            return end(tr(self.lang, "directions", unit=b.unit.name, directions=b.unit.directions, landmark=b.unit.landmark or b.unit.area.name), self.lang)
+            return end(
+                tr(
+                    self.lang,
+                    "directions",
+                    unit=b.unit.name,
+                    directions=b.unit.directions,
+                    landmark=b.unit.landmark or b.unit.area.name,
+                ),
+                self.lang,
+            )
         if self.d == "2":
             return self.step_ask_connect()
         return end(tr(self.lang, "recorded"), self.lang)
@@ -351,7 +408,10 @@ def alert_call(session, digits):
     from apps.safety.services import acknowledge, describe
 
     st = session.state
-    alert = Alert.objects.filter(pk=st.get("alert_id")).first() or Alert.objects.filter(status="open", kind="sos").order_by("-id").first()
+    alert = (
+        Alert.objects.filter(pk=st.get("alert_id")).first()
+        or Alert.objects.filter(status="open", kind="sos").order_by("-id").first()
+    )
     if not alert:
         return end(T["en"]["alert_none"])
     if digits == "1":
@@ -377,7 +437,11 @@ def place_welcome_call(booking):
         if entry.get("sessionId"):
             VoiceSession.objects.update_or_create(
                 session_id=entry["sessionId"],
-                defaults={"phone": booking.guest.phone, "direction": "outbound", "state": {"purpose": "welcome", "ref": booking.ref, "lang": booking.lang}},
+                defaults={
+                    "phone": booking.guest.phone,
+                    "direction": "outbound",
+                    "state": {"purpose": "welcome", "ref": booking.ref, "lang": booking.lang},
+                },
             )
     return res
 
@@ -386,7 +450,12 @@ def register_outbound(res, purpose, **state):
     for entry in (res or {}).get("entries") or []:
         if entry.get("sessionId"):
             VoiceSession.objects.update_or_create(
-                session_id=entry["sessionId"], defaults={"phone": entry.get("phoneNumber", ""), "direction": "outbound", "state": {"purpose": purpose, **state}}
+                session_id=entry["sessionId"],
+                defaults={
+                    "phone": entry.get("phoneNumber", ""),
+                    "direction": "outbound",
+                    "state": {"purpose": purpose, **state},
+                },
             )
 
 
@@ -409,12 +478,24 @@ def call_ended(session, data):
     s = SiteSettings.load()
     if st.get("step") == "help":
         escalate(phone, "voice-missed")  # Amina didn't pick up the bridged call: ring her phone now
-        messaging.send(phone, "Amina didn't answer yet - we're calling her again now. If you are in danger call 999 or 112." if lang != "sw"
-                       else "Amina hajajibu bado - tunampigia tena sasa. Ukiwa hatarini piga 999 au 112.", kind="sos")
+        messaging.send(
+            phone,
+            "Amina didn't answer yet - we're calling her again now. If you are in danger call 999 or 112."
+            if lang != "sw"
+            else "Amina hajajibu bado - tunampigia tena sasa. Ukiwa hatarini piga 999 au 112.",
+            kind="sos",
+        )
     else:
-        messaging.send(s.host_contact, f"Missed call from guest {phone} who wanted to talk. Please call back.", kind="missed_call")
-        messaging.send(phone, "Amina couldn't pick up just now. Text your question to this number and she'll reply here." if lang != "sw"
-                       else "Amina hakuweza kupokea sasa. Tuma swali lako kwa ujumbe na atakujibu.", kind="missed_call")
+        messaging.send(
+            s.host_contact, f"Missed call from guest {phone} who wanted to talk. Please call back.", kind="missed_call"
+        )
+        messaging.send(
+            phone,
+            "Amina couldn't pick up just now. Text your question to this number and she'll reply here."
+            if lang != "sw"
+            else "Amina hakuweza kupokea sasa. Tuma swali lako kwa ujumbe na atakujibu.",
+            kind="missed_call",
+        )
 
 
 def voicemail(session, url):
@@ -425,7 +506,11 @@ def voicemail(session, url):
     b = bookings.current_booking(session.phone)
     msg = messaging.record_inbound(session.phone, f"[voicemail] {url}", channel="voice", booking=b)
     messaging.mark(msg, "relayed", "voicemail")
-    messaging.send(SiteSettings.load().host_contact, f"Voicemail from {session.phone}{' (' + b.ref + ')' if b else ''}: {url}", kind="voicemail")
+    messaging.send(
+        SiteSettings.load().host_contact,
+        f"Voicemail from {session.phone}{' (' + b.ref + ')' if b else ''}: {url}",
+        kind="voicemail",
+    )
 
 
 def handle(data):
@@ -433,7 +518,9 @@ def handle(data):
     sid = data.get("sessionId") or ""
     outbound = (data.get("direction") or "").lower() == "outbound"
     phone = data.get("destinationNumber") if outbound else data.get("callerNumber")
-    session, created = VoiceSession.objects.get_or_create(session_id=sid, defaults={"phone": phone or "", "direction": "outbound" if outbound else "inbound"})
+    session, created = VoiceSession.objects.get_or_create(
+        session_id=sid, defaults={"phone": phone or "", "direction": "outbound" if outbound else "inbound"}
+    )
     if created and outbound and str(data.get("clientRequestId", "")).startswith("alert-"):
         session.state = {"purpose": "alert", "alert_id": int(str(data["clientRequestId"]).split("-")[1])}
         session.save(update_fields=["state"])

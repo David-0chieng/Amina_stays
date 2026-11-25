@@ -27,7 +27,9 @@ class Payment(models.Model):
     checkout_token = models.CharField(max_length=64, null=True, blank=True, unique=True)
     failure_reason = models.CharField(max_length=200, blank=True)
     raw = models.JSONField(default=list, blank=True, help_text="Provider responses and callbacks, for reconciliation")
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -50,7 +52,9 @@ class Refund(models.Model):
     provider_ref = models.CharField(max_length=80, blank=True)
     reason = models.CharField(max_length=200, blank=True)
     raw = models.JSONField(default=list, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

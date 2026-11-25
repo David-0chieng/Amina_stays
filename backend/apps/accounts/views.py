@@ -34,11 +34,26 @@ def user_dict(u):
     if not u or not u.is_authenticated:
         return {"authenticated": False}
     return {
-        "authenticated": True, "id": u.pk, "phone": u.phone, "name": u.name, "email": u.email, "role": u.role, "is_host": u.is_host,
-        "lang": u.lang, "nationality": u.nationality, "preferred_channel": u.preferred_channel, "marketing_opt_in": u.marketing_opt_in,
-        "identity": {"type": u.id_type, "type_label": u.get_id_type_display() if u.id_type else "", "last4": u.id_last4,
-                     "submitted_at": u.id_submitted_at, "verified": bool(u.id_verified_at)},
-        "languages": LANGUAGES, "id_types": ID_TYPES,
+        "authenticated": True,
+        "id": u.pk,
+        "phone": u.phone,
+        "name": u.name,
+        "email": u.email,
+        "role": u.role,
+        "is_host": u.is_host,
+        "lang": u.lang,
+        "nationality": u.nationality,
+        "preferred_channel": u.preferred_channel,
+        "marketing_opt_in": u.marketing_opt_in,
+        "identity": {
+            "type": u.id_type,
+            "type_label": u.get_id_type_display() if u.id_type else "",
+            "last4": u.id_last4,
+            "submitted_at": u.id_submitted_at,
+            "verified": bool(u.id_verified_at),
+        },
+        "languages": LANGUAGES,
+        "id_types": ID_TYPES,
     }
 
 
@@ -102,8 +117,14 @@ def me(request):
 def identity(request):
     d = request.data
     try:
-        services.set_identity(request.user, id_type=d.get("id_type", ""), id_number=d.get("id_number", ""),
-                              nationality=d.get("nationality", ""), consent=bool(d.get("consent")), name=d.get("name", ""))
+        services.set_identity(
+            request.user,
+            id_type=d.get("id_type", ""),
+            id_number=d.get("id_number", ""),
+            nationality=d.get("nationality", ""),
+            consent=bool(d.get("consent")),
+            name=d.get("name", ""),
+        )
     except services.AuthError as e:
         return Response({"error": str(e)}, status=400)
     return Response(user_dict(request.user))
@@ -132,7 +153,12 @@ def wishlist(request):
         unit = get_object_or_404(Unit, slug=request.data.get("slug"))
         Wishlist.objects.get_or_create(user=request.user, unit=unit)
         return Response({"ok": True}, status=201)
-    units = [w.unit for w in Wishlist.objects.filter(user=request.user).select_related("unit__area").prefetch_related("unit__photos")]
+    units = [
+        w.unit
+        for w in Wishlist.objects.filter(user=request.user)
+        .select_related("unit__area")
+        .prefetch_related("unit__photos")
+    ]
     stats = review_stats()
     return Response([listing_card(u, stats=stats, wished=True) for u in units if u.status == "active"])
 

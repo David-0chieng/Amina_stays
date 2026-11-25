@@ -178,7 +178,10 @@ DEFAULTS = {
         "sw": "Nafasi yako {ref} ({unit}, {dates}) imeghairiwa.{refund_line}",
     },
     "refund_line": {"en": " Refund of {amount} is on its way.", "sw": " Pesa {amount} zitarudishwa kwako."},
-    "goodwill_line": {"en": " We've sent you KES {airtime} airtime as an apology.", "sw": " Tumekutumia salio la KES {airtime} kama pole."},
+    "goodwill_line": {
+        "en": " We've sent you KES {airtime} airtime as an apology.",
+        "sw": " Tumekutumia salio la KES {airtime} kama pole.",
+    },
     # ---------- Ask Amina (SMS bot) ----------
     "menu": {
         "en": "Ask Amina - reply with: PRICES, BOOK, BREAKFAST, WIFI, DIRECTIONS, STATUS, CHECKOUT, HELP (urgent) or STOP. Or just ask a question!",
@@ -201,13 +204,28 @@ DEFAULTS = {
         "de": "{call_line} Sie meldet sich sofort. Bei Gefahr ruf jetzt 999 oder 112 an.",
         "fr": "{call_line} Elle vous contacte immediatement. En cas de danger appelez le 999 ou le 112.",
     },
-    "help_calling": {"en": "We are calling Amina right now.", "sw": "Tunampigia Amina simu sasa hivi.", "it": "Stiamo chiamando Amina adesso.", "de": "Wir rufen Amina gerade an.", "fr": "Nous appelons Amina maintenant."},
-    "help_alerted": {"en": "Amina has been alerted urgently.", "sw": "Amina amearifiwa kwa dharura.", "it": "Amina e stata avvisata con urgenza.", "de": "Amina wurde dringend alarmiert.", "fr": "Amina a ete alertee en urgence."},
+    "help_calling": {
+        "en": "We are calling Amina right now.",
+        "sw": "Tunampigia Amina simu sasa hivi.",
+        "it": "Stiamo chiamando Amina adesso.",
+        "de": "Wir rufen Amina gerade an.",
+        "fr": "Nous appelons Amina maintenant.",
+    },
+    "help_alerted": {
+        "en": "Amina has been alerted urgently.",
+        "sw": "Amina amearifiwa kwa dharura.",
+        "it": "Amina e stata avvisata con urgenza.",
+        "de": "Amina wurde dringend alarmiert.",
+        "fr": "Amina a ete alertee en urgence.",
+    },
     "opted_out": {
         "en": "You won't get promotional messages from {business} any more. Booking and safety messages will still reach you. Reply START to opt back in.",
         "sw": "Hutapokea tena ujumbe wa matangazo kutoka {business}. Ujumbe wa nafasi na usalama utaendelea. Jibu START kurudi.",
     },
-    "opted_in": {"en": "You're subscribed to offers from {business}. Reply STOP any time.", "sw": "Umejiunga na ofa za {business}. Jibu STOP wakati wowote."},
+    "opted_in": {
+        "en": "You're subscribed to offers from {business}. Reply STOP any time.",
+        "sw": "Umejiunga na ofa za {business}. Jibu STOP wakati wowote.",
+    },
     "lang_set": {
         "en": "Language set to English.",
         "sw": "Lugha imewekwa: Kiswahili.",
@@ -236,8 +254,14 @@ DEFAULTS = {
         "de": "Leider ist für {dates} nichts frei. Wir melden uns, sobald etwas frei wird.",
         "fr": "Desole, rien n'est libre pour {dates}. Nous vous previendrons si une place se libere.",
     },
-    "taken": {"en": "Sorry, someone just grabbed that one. Reply BOOK to see what's still free.", "sw": "Samahani, mtu ameichukua sasa hivi. Jibu BOOK kuona zilizobaki."},
-    "price_list": {"en": "Our homes (per night, from): {list}. Reply BOOK with your dates to check availability.", "sw": "Nyumba zetu (kwa usiku, kuanzia): {list}. Jibu BOOK na tarehe zako kuangalia nafasi."},
+    "taken": {
+        "en": "Sorry, someone just grabbed that one. Reply BOOK to see what's still free.",
+        "sw": "Samahani, mtu ameichukua sasa hivi. Jibu BOOK kuona zilizobaki.",
+    },
+    "price_list": {
+        "en": "Our homes (per night, from): {list}. Reply BOOK with your dates to check availability.",
+        "sw": "Nyumba zetu (kwa usiku, kuanzia): {list}. Jibu BOOK na tarehe zako kuangalia nafasi.",
+    },
     "breakfast_menu": {
         "en": "Breakfast ({price}/person/day, served {time}): 1 Swahili (mahamri, chai, mbaazi, fruit) 2 Continental 3 Full English 4 Vegetarian/vegan. Reply a number, or 0 for none. Add HALAL/GLUTEN etc. if needed.",
         "sw": "Kifungua kinywa ({price}/mtu/siku, saa {time}): 1 Cha Kiswahili (mahamri, chai, mbaazi, matunda) 2 Continental 3 Kiingereza 4 Mboga/vegan. Jibu nambari, au 0 kama huhitaji.",
@@ -252,7 +276,10 @@ DEFAULTS = {
         "de": "Frühstück gespeichert: {summary}. Ändern jederzeit mit BREAKFAST.",
         "fr": "Petit-dejeuner enregistre : {summary}. Repondez BREAKFAST pour modifier.",
     },
-    "breakfast_none": {"en": "No problem - no breakfast for this stay. Reply BREAKFAST if you change your mind.", "sw": "Sawa - hakuna kifungua kinywa. Jibu BREAKFAST ukibadilisha mawazo."},
+    "breakfast_none": {
+        "en": "No problem - no breakfast for this stay. Reply BREAKFAST if you change your mind.",
+        "sw": "Sawa - hakuna kifungua kinywa. Jibu BREAKFAST ukibadilisha mawazo.",
+    },
     "eta_saved": {"en": "Thanks! We'll expect you around {eta}.", "sw": "Asante! Tutakutarajia karibu {eta}."},
     "arrival_question": {
         "en": "How are you getting here? 1 Flight (Moi Airport) 2 SGR train 3 Car/taxi 4 Bus 5 Already in Mombasa",
@@ -262,9 +289,18 @@ DEFAULTS = {
         "en": "Thanks! {tip} Want a pickup? Reply PICKUP ({pickup_price}).",
         "sw": "Asante! {tip} Unahitaji kuchukuliwa? Jibu PICKUP ({pickup_price}).",
     },
-    "request_sent": {"en": "We've asked Amina about {what}. You'll hear back shortly.", "sw": "Tumemuuliza Amina kuhusu {what}. Utajibiwa hivi karibuni."},
-    "request_approved": {"en": "Good news - {what} is confirmed for {unit}.{price_line}", "sw": "Habari njema - {what} imethibitishwa kwa {unit}.{price_line}"},
-    "request_declined": {"en": "Sorry - {what} isn't possible this time (another guest arrives). Reply HELP if you need anything.", "sw": "Samahani - {what} haiwezekani wakati huu. Jibu MSAADA ukihitaji chochote."},
+    "request_sent": {
+        "en": "We've asked Amina about {what}. You'll hear back shortly.",
+        "sw": "Tumemuuliza Amina kuhusu {what}. Utajibiwa hivi karibuni.",
+    },
+    "request_approved": {
+        "en": "Good news - {what} is confirmed for {unit}.{price_line}",
+        "sw": "Habari njema - {what} imethibitishwa kwa {unit}.{price_line}",
+    },
+    "request_declined": {
+        "en": "Sorry - {what} isn't possible this time (another guest arrives). Reply HELP if you need anything.",
+        "sw": "Samahani - {what} haiwezekani wakati huu. Jibu MSAADA ukihitaji chochote.",
+    },
     "issue_logged": {
         "en": "Sorry about that! Logged as #{task} - {assignee} has been notified and will sort it out. Reply HELP if it's an emergency.",
         "sw": "Samahani kwa hilo! Tumeandika #{task} - {assignee} amearifiwa na atashughulikia. Jibu MSAADA kama ni dharura.",
@@ -272,18 +308,36 @@ DEFAULTS = {
         "de": "Das tut uns leid! Erfasst als #{task} - {assignee} ist informiert. Antworte HELP bei einem Notfall.",
         "fr": "Desole ! Enregistre sous #{task} - {assignee} est prevenu. Repondez HELP en cas d'urgence.",
     },
-    "issue_fixed": {"en": "Update on #{task}: {title} has been fixed. Thanks for your patience!", "sw": "Taarifa ya #{task}: {title} imerekebishwa. Asante kwa uvumilivu!"},
-    "id_saved": {"en": "Thank you - your {id_type} ending {last4} is registered.", "sw": "Asante - {id_type} yako inayoishia {last4} imesajiliwa."},
-    "no_booking": {"en": "We couldn't find an active booking for this number. Reply BOOK to make one.", "sw": "Hatukupata nafasi inayoendelea kwa nambari hii. Jibu BOOK kuweka nafasi."},
+    "issue_fixed": {
+        "en": "Update on #{task}: {title} has been fixed. Thanks for your patience!",
+        "sw": "Taarifa ya #{task}: {title} imerekebishwa. Asante kwa uvumilivu!",
+    },
+    "id_saved": {
+        "en": "Thank you - your {id_type} ending {last4} is registered.",
+        "sw": "Asante - {id_type} yako inayoishia {last4} imesajiliwa.",
+    },
+    "no_booking": {
+        "en": "We couldn't find an active booking for this number. Reply BOOK to make one.",
+        "sw": "Hatukupata nafasi inayoendelea kwa nambari hii. Jibu BOOK kuweka nafasi.",
+    },
     "cancel_quote": {
         "en": "Cancel {ref} ({unit}, {dates})? {refund_text} Reply YES to confirm or NO to keep it.",
         "sw": "Ghairi {ref} ({unit}, {dates})? {refund_text} Jibu NDIYO kuthibitisha au HAPANA kuiweka.",
     },
-    "kept": {"en": "Great - {ref} is still on. See you soon!", "sw": "Vizuri - {ref} bado iko. Tutaonana hivi karibuni!"},
-    "status": {"en": "{ref}: {unit}, {dates}. Status: {status}. Paid {paid} of {total}. {trip_link}", "sw": "{ref}: {unit}, {dates}. Hali: {status}. Umelipa {paid} kati ya {total}. {trip_link}"},
+    "kept": {
+        "en": "Great - {ref} is still on. See you soon!",
+        "sw": "Vizuri - {ref} bado iko. Tutaonana hivi karibuni!",
+    },
+    "status": {
+        "en": "{ref}: {unit}, {dates}. Status: {status}. Paid {paid} of {total}. {trip_link}",
+        "sw": "{ref}: {unit}, {dates}. Hali: {status}. Umelipa {paid} kati ya {total}. {trip_link}",
+    },
     "goodbye_ack": {"en": "Asante! Have a lovely stay.", "sw": "Asante! Kaa vizuri."},
     # ---------- staff & host ----------
-    "staff_task": {"en": "New task #{id}: {title}{unit_line}, due {due}. Reply DONE {id} when finished, or START {id}.", "sw": "Kazi mpya #{id}: {title}{unit_line}, kabla ya {due}. Jibu DONE {id} ukimaliza."},
+    "staff_task": {
+        "en": "New task #{id}: {title}{unit_line}, due {due}. Reply DONE {id} when finished, or START {id}.",
+        "sw": "Kazi mpya #{id}: {title}{unit_line}, kabla ya {due}. Jibu DONE {id} ukimaliza.",
+    },
     "kitchen_sheet": {"en": "Breakfasts for {date}: {lines}", "sw": "Kifungua kinywa {date}: {lines}"},
     "gate_list": {"en": "Gate list {date} (visitor log): {lines}", "sw": "Orodha ya geti {date}: {lines}"},
     "host_digest": {
@@ -294,9 +348,33 @@ DEFAULTS = {
 
 # Placeholder hints shown in the console template editor
 PLACEHOLDERS = [
-    "first_name", "name", "unit", "area", "ref", "dates", "check_in", "check_out", "nights", "total", "paid", "balance",
-    "due_date", "checkin_time", "checkout_time", "wifi", "directions", "landmark", "map_link", "trip_link", "business",
-    "host", "tips", "taxi", "code", "valid_from", "valid_until",
+    "first_name",
+    "name",
+    "unit",
+    "area",
+    "ref",
+    "dates",
+    "check_in",
+    "check_out",
+    "nights",
+    "total",
+    "paid",
+    "balance",
+    "due_date",
+    "checkin_time",
+    "checkout_time",
+    "wifi",
+    "directions",
+    "landmark",
+    "map_link",
+    "trip_link",
+    "business",
+    "host",
+    "tips",
+    "taxi",
+    "code",
+    "valid_from",
+    "valid_until",
 ]
 
 DESCRIPTIONS = {

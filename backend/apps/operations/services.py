@@ -27,8 +27,13 @@ DEFAULT_CHECKLIST = [
     "Photo of each room when finished",
 ]
 ROLE_FOR_TYPE = {
-    "turnover": "cleaner", "laundry": "cleaner", "restock": "cleaner", "maintenance": "caretaker",
-    "inspection": "caretaker", "guest_request": "caretaker", "other": "manager",
+    "turnover": "cleaner",
+    "laundry": "cleaner",
+    "restock": "cleaner",
+    "maintenance": "caretaker",
+    "inspection": "caretaker",
+    "guest_request": "caretaker",
+    "other": "manager",
 }
 ISSUE_KEYWORDS = [
     ("security", r"thief|stolen|steal|intruder|break.?in|robb|attack|unsafe|mwizi|wezi|kuibiwa"),
@@ -57,8 +62,13 @@ def classify_issue(text):
 
 def looks_like_issue(text):
     low = (text or "").lower()
-    return bool(re.search(r"broken|not working|doesn'?t work|isn'?t working|problem|issue|no water|no power|blackout|leak|locked out|"
-                          r"cockroach|bed ?bug|dirty|stopped|imeharibika|haifanyi|tatizo|hakuna maji|hakuna stima", low))
+    return bool(
+        re.search(
+            r"broken|not working|doesn'?t work|isn'?t working|problem|issue|no water|no power|blackout|leak|locked out|"
+            r"cockroach|bed ?bug|dirty|stopped|imeharibika|haifanyi|tatizo|hakuna maji|hakuna stima",
+            low,
+        )
+    )
 
 
 def staff_for(role, unit=None):
@@ -76,27 +86,63 @@ def notify_assignee(task):
     if not task.assignee:
         return
     unit_line = f" at {task.unit.name}" if task.unit else ""
-    due = f"{nice_date(timezone.localtime(task.due_at).date())} {nice_time(timezone.localtime(task.due_at).strftime('%H:%M'))}" if task.due_at else "today"
+    due = (
+        f"{nice_date(timezone.localtime(task.due_at).date())} {nice_time(timezone.localtime(task.due_at).strftime('%H:%M'))}"
+        if task.due_at
+        else "today"
+    )
     messaging.send(
         task.assignee.phone,
         messaging.render("staff_task", task.assignee.lang, id=task.pk, title=task.title, unit_line=unit_line, due=due),
-        kind="staff_task", sender="system",
+        kind="staff_task",
+        sender="system",
     )
 
 
-def create_task(type, title, *, unit=None, booking=None, priority="normal", description="", category="", due_at=None,
-                source="host", assignee=None, actor=None, notify=True, checklist=None):
+def create_task(
+    type,
+    title,
+    *,
+    unit=None,
+    booking=None,
+    priority="normal",
+    description="",
+    category="",
+    due_at=None,
+    source="host",
+    assignee=None,
+    actor=None,
+    notify=True,
+    checklist=None,
+):
     if assignee is None:
         role = ROLE_FOR_TYPE.get(type, "manager")
         assignee = staff_for(role, unit) or staff_for("caretaker", unit) or staff_for("manager")
     task = Task.objects.create(
-        type=type, title=title[:140], unit=unit, booking=booking, priority=priority, description=description, category=category,
-        due_at=due_at, source=source, assignee=assignee, created_by=actor if getattr(actor, "pk", None) else None,
-        checklist=[{"item": i, "done": False} for i in (checklist if checklist is not None else (DEFAULT_CHECKLIST if type == "turnover" else []))],
+        type=type,
+        title=title[:140],
+        unit=unit,
+        booking=booking,
+        priority=priority,
+        description=description,
+        category=category,
+        due_at=due_at,
+        source=source,
+        assignee=assignee,
+        created_by=actor if getattr(actor, "pk", None) else None,
+        checklist=[
+            {"item": i, "done": False}
+            for i in (checklist if checklist is not None else (DEFAULT_CHECKLIST if type == "turnover" else []))
+        ],
     )
     if notify:
         notify_assignee(task)
-    record("task", f"Task #{task.pk}: {task.title}{' -> ' + task.assignee.display_name if task.assignee else ''}", booking=booking, actor=actor)
+    record(
+        "task",
+        f"Task #{task.pk}: {task.title}{' -> ' + task.assignee.display_name if task.assignee else ''}",
+        booking=booking,
+        actor=actor,
+    )
     return task
 
 
@@ -105,11 +151,29 @@ def create_turnover_task(booking):
     from apps.bookings.services import effective_checkin_time
 
     unit = booking.unit
-    nxt = Booking.objects.filter(unit=unit, status__in=("confirmed", "held"), check_in__gte=today()).order_by("check_in").first()
+    nxt = (
+        Booking.objects.filter(unit=unit, status__in=("confirmed", "held"), check_in__gte=today())
+        .order_by("check_in")
+        .first()
+    )
     same_day = nxt is not None and nxt.check_in == today()
-    due = at_local(today(), effective_checkin_time(nxt)) - timedelta(hours=1) if same_day else timezone.now() + timedelta(hours=4)
-    title = f"Turnover clean - {unit.name}" + (f" (next guest {nice_time(effective_checkin_time(nxt))} today)" if same_day else "")
-    return create_task("turnover", title, unit=unit, booking=booking, priority="high" if same_day else "normal", due_at=due, source="auto")
+    due = (
+        at_local(today(), effective_checkin_time(nxt)) - timedelta(hours=1)
+        if same_day
+        else timezone.now() + timedelta(hours=4)
+    )
+    title = f"Turnover clean - {unit.name}" + (
+        f" (next guest {nice_time(effective_checkin_time(nxt))} today)" if same_day else ""
+    )
+    return create_task(
+        "turnover",
+        title,
+        unit=unit,
+        booking=booking,
+        priority="high" if same_day else "normal",
+        due_at=due,
+        source="auto",
+    )
 
 
 def report_issue(booking, text, *, category=None, channel="sms", unit=None):
@@ -121,16 +185,33 @@ def report_issue(booking, text, *, category=None, channel="sms", unit=None):
     label = dict(Task.CATEGORIES).get(category, "Issue")
     unit = unit or (booking.unit if booking else None)
     task = create_task(
-        "maintenance" if category != "cleanliness" else "guest_request", f"{label}: {text[:90]}", unit=unit, booking=booking,
-        priority=priority, description=text, category=category, source="guest", due_at=timezone.now() + timedelta(hours=1 if priority != "normal" else 6),
+        "maintenance" if category != "cleanliness" else "guest_request",
+        f"{label}: {text[:90]}",
+        unit=unit,
+        booking=booking,
+        priority=priority,
+        description=text,
+        category=category,
+        source="guest",
+        due_at=timezone.now() + timedelta(hours=1 if priority != "normal" else 6),
     )
     if category in URGENT and booking:
         from apps.safety.services import raise_alert
 
-        raise_alert("urgent_issue", f"{label} reported at {unit.name} by {booking.guest.display_name}: {text[:120]}", severity="high",
-                    booking=booking, source=channel)
+        raise_alert(
+            "urgent_issue",
+            f"{label} reported at {unit.name} by {booking.guest.display_name}: {text[:120]}",
+            severity="high",
+            booking=booking,
+            source=channel,
+        )
     if booking:
-        send_guest(booking, "issue_logged", task=task.pk, assignee=task.assignee.name.split(" ")[0] if task.assignee and task.assignee.name else "our caretaker")
+        send_guest(
+            booking,
+            "issue_logged",
+            task=task.pk,
+            assignee=task.assignee.name.split(" ")[0] if task.assignee and task.assignee.name else "our caretaker",
+        )
     return task
 
 
@@ -157,12 +238,20 @@ def complete_task(task, by=None, note=""):
         task.unit.save(update_fields=["housekeeping"])
     if task.source == "guest" and task.booking and task.booking.status == "checked_in":
         send_guest(task.booking, "issue_fixed", task=task.pk, title=task.title.split(":")[0])
-    record("task", f"Task #{task.pk} done{' by ' + by.display_name if getattr(by, 'pk', None) else ''}: {task.title}", booking=task.booking)
+    record(
+        "task",
+        f"Task #{task.pk} done{' by ' + by.display_name if getattr(by, 'pk', None) else ''}: {task.title}",
+        booking=task.booking,
+    )
     return task
 
 
 def open_tasks_for(user):
-    return Task.objects.filter(assignee=user, status__in=("open", "in_progress")).select_related("unit").order_by("due_at", "id")
+    return (
+        Task.objects.filter(assignee=user, status__in=("open", "in_progress"))
+        .select_related("unit")
+        .order_by("due_at", "id")
+    )
 
 
 # ---------- kitchen ----------
@@ -182,9 +271,15 @@ def kitchen_sheet(day=None):
     )
     return [
         {
-            "ref": r.booking.ref, "unit": r.booking.unit.name, "guest": r.booking.guest.display_name, "people": r.quantity,
-            "style": r.details.get("style", ""), "style_label": BREAKFAST_STYLES.get(r.details.get("style"), "Breakfast"),
-            "dietary": r.details.get("dietary", ""), "time": r.details.get("time", "08:00"), "notes": r.details.get("notes", ""),
+            "ref": r.booking.ref,
+            "unit": r.booking.unit.name,
+            "guest": r.booking.guest.display_name,
+            "people": r.quantity,
+            "style": r.details.get("style", ""),
+            "style_label": BREAKFAST_STYLES.get(r.details.get("style"), "Breakfast"),
+            "dietary": r.details.get("dietary", ""),
+            "time": r.details.get("time", "08:00"),
+            "notes": r.details.get("notes", ""),
         }
         for r in rows
     ]
@@ -195,7 +290,10 @@ def kitchen_sheet_text(day=None):
     rows = kitchen_sheet(day)
     if not rows:
         return None
-    lines = "; ".join(f"{r['time']} {r['unit']}: {r['people']}x {r['style_label'].split(' (')[0]}{' (' + r['dietary'] + ')' if r['dietary'] else ''}" for r in rows)
+    lines = "; ".join(
+        f"{r['time']} {r['unit']}: {r['people']}x {r['style_label'].split(' (')[0]}{' (' + r['dietary'] + ')' if r['dietary'] else ''}"
+        for r in rows
+    )
     return messaging.render("kitchen_sheet", "en", date=nice_date(day), lines=lines)
 
 
@@ -221,7 +319,9 @@ def gate_list(day=None):
 
     day = day or today()
     return list(
-        Booking.objects.filter(check_in=day, status__in=("confirmed", "checked_in")).select_related("unit", "guest").order_by("unit__name")
+        Booking.objects.filter(check_in=day, status__in=("confirmed", "checked_in"))
+        .select_related("unit", "guest")
+        .order_by("unit__name")
     )
 
 
@@ -238,7 +338,9 @@ def send_gate_list(day=None):
         for b in arrivals
     )
     for g in guards:
-        messaging.send(g.phone, messaging.render("gate_list", g.lang, date=nice_date(day), lines=lines), kind="gate_list")
+        messaging.send(
+            g.phone, messaging.render("gate_list", g.lang, date=nice_date(day), lines=lines), kind="gate_list"
+        )
     return len(guards)
 
 
@@ -267,4 +369,6 @@ def digest_numbers(day=None):
 
 def send_host_digest():
     s = SiteSettings.load()
-    return messaging.send(s.host_contact, messaging.render("host_digest", "en", host=s.host_name, **digest_numbers()), kind="host_digest")
+    return messaging.send(
+        s.host_contact, messaging.render("host_digest", "en", host=s.host_name, **digest_numbers()), kind="host_digest"
+    )

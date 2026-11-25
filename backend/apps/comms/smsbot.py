@@ -29,8 +29,21 @@ log = logging.getLogger("amina.sms")
 
 SOS = re.compile(r"^\s*(help|sos|msaada|dharura|emergency|aiuto|hilfe|au secours|urgence)\b", re.IGNORECASE)
 LANG_WORDS = {
-    "english": "en", "en": "en", "kiswahili": "sw", "swahili": "sw", "sw": "sw", "italiano": "it", "italian": "it", "it": "it",
-    "deutsch": "de", "german": "de", "de": "de", "francais": "fr", "français": "fr", "french": "fr", "fr": "fr",
+    "english": "en",
+    "en": "en",
+    "kiswahili": "sw",
+    "swahili": "sw",
+    "sw": "sw",
+    "italiano": "it",
+    "italian": "it",
+    "it": "it",
+    "deutsch": "de",
+    "german": "de",
+    "de": "de",
+    "francais": "fr",
+    "français": "fr",
+    "french": "fr",
+    "fr": "fr",
 }
 YES = {"yes", "y", "ndiyo", "ndio", "sawa", "si", "ja", "oui", "ok", "confirm"}
 NO = {"no", "n", "hapana", "la", "nein", "non"}
@@ -45,7 +58,9 @@ def handle_sms(phone, text, inbound=None):
         return HostCommands(phone, text, inbound).run()
     from apps.accounts.models import User
 
-    staff = User.objects.filter(phone=phone, role__in=[r for r in STAFF_ROLES if r not in ("owner", "manager")], is_active=True).first()
+    staff = User.objects.filter(
+        phone=phone, role__in=[r for r in STAFF_ROLES if r not in ("owner", "manager")], is_active=True
+    ).first()
     if staff:
         return StaffCommands(staff, text, inbound).run()
     guest, created = get_or_create_user(phone, channel="sms")
@@ -104,7 +119,9 @@ class GuestBot:
             self.g.sms_opt_out_at, self.g.marketing_opt_in = None, True
             self.g.save(update_fields=["sms_opt_out_at", "marketing_opt_in"])
             return self.say("opted_in")
-        if self.word in ("lang", "lugha", "language", "lingua", "sprache", "langue") or (self.low in LANG_WORDS and len(self.low) > 2):
+        if self.word in ("lang", "lugha", "language", "lingua", "sprache", "langue") or (
+            self.low in LANG_WORDS and len(self.low) > 2
+        ):
             code = LANG_WORDS.get((self.rest or self.low).lower().strip())
             if code:
                 self.g.lang = self.lang = code
@@ -145,14 +162,18 @@ class GuestBot:
 
     def _has_booking_details(self):
         ci, _ = nlu.parse_dates(self.text)
-        return bool(ci or nlu.parse_guests(self.text) or nlu.parse_area(self.text, Area.objects.all()) or self.word == "book")
+        return bool(
+            ci or nlu.parse_guests(self.text) or nlu.parse_area(self.text, Area.objects.all()) or self.word == "book"
+        )
 
     # -- safety
     def sos(self):
         from apps.safety.services import escalate
 
         alert = escalate(self.phone, "sms", text=self.rest)
-        call_line = messaging.render("help_calling" if alert.call_status in ("Queued", "dry_run") else "help_alerted", self.lang)
+        call_line = messaging.render(
+            "help_calling" if alert.call_status in ("Queued", "dry_run") else "help_alerted", self.lang
+        )
         return self.say("help_ack", handled="escalated", call_line=call_line)
 
     # -- conversation states
@@ -183,8 +204,12 @@ class GuestBot:
             return None
         add_comment(review, self.text)
         if review.rating <= 2:
-            bookings.notify_host(f"Review comment from {self.g.display_name} ({review.rating}/5, {review.booking.ref}): {self.text[:300]}")
-            return self.reply("Thank you for telling us - Amina will read this personally.", kind="review_comment_thanks")
+            bookings.notify_host(
+                f"Review comment from {self.g.display_name} ({review.rating}/5, {review.booking.ref}): {self.text[:300]}"
+            )
+            return self.reply(
+                "Thank you for telling us - Amina will read this personally.", kind="review_comment_thanks"
+            )
         return self.say("review_thanks", rating=review.rating)
 
     def state_offer(self, convo):
@@ -197,7 +222,9 @@ class GuestBot:
             return self.say("taken")
         from datetime import date
 
-        return self.hold(unit, date.fromisoformat(d["check_in"]), date.fromisoformat(d["check_out"]), d.get("guests") or 1)
+        return self.hold(
+            unit, date.fromisoformat(d["check_in"]), date.fromisoformat(d["check_out"]), d.get("guests") or 1
+        )
 
     def state_showing(self, convo):
         if not re.fullmatch(r"\d", self.low):
@@ -210,7 +237,9 @@ class GuestBot:
         from datetime import date
 
         d = convo.data
-        return self.hold(unit, date.fromisoformat(d["check_in"]), date.fromisoformat(d["check_out"]), d.get("guests") or 1)
+        return self.hold(
+            unit, date.fromisoformat(d["check_in"]), date.fromisoformat(d["check_out"]), d.get("guests") or 1
+        )
 
     def state_breakfast(self, convo):
         m = re.match(r"^([0-4])\b\s*(.*)$", self.low)
@@ -224,7 +253,10 @@ class GuestBot:
         if style == "none":
             bookings.set_breakfast(b, None, channel="sms")
             return self.say("breakfast_none", booking=b)
-        dietary = ", ".join(w.upper() for w in re.findall(r"halal|gluten|lactose|vegan|nut|kosher|diabet\w*|no pork|allerg\w*", m[2] or ""))
+        dietary = ", ".join(
+            w.upper()
+            for w in re.findall(r"halal|gluten|lactose|vegan|nut|kosher|diabet\w*|no pork|allerg\w*", m[2] or "")
+        )
         try:
             ba = bookings.set_breakfast(b, style, dietary=dietary, channel="sms")
         except bookings.BookingError as e:
@@ -297,7 +329,9 @@ class GuestBot:
         if not b or b.status not in ("held", "confirmed", "checked_in") or not addon:
             return None  # the knowledge base explains breakfast to non-guests
         set_convo(self.phone, "breakfast", {"ref": b.ref})
-        return self.say("breakfast_menu", booking=b, price=kes(addon.price), time=addon.options.get("hours", "7:30-10:00"))
+        return self.say(
+            "breakfast_menu", booking=b, price=kes(addon.price), time=addon.options.get("hours", "7:30-10:00")
+        )
 
     def eta(self):
         b = self.booking()
@@ -352,7 +386,9 @@ class GuestBot:
             return self.reply(str(e), kind="addon_error", booking=b)
         if ba.status == "requested":
             return self.say("request_sent", booking=b, what=ba.addon.name.lower())
-        return self.reply(f"Added: {ba.addon.name} ({kes(ba.total)}). Reply PAY to pay now.", kind="addon_added", booking=b)
+        return self.reply(
+            f"Added: {ba.addon.name} ({kes(ba.total)}). Reply PAY to pay now.", kind="addon_added", booking=b
+        )
 
     def register_id(self):
         number = re.sub(r"[^A-Za-z0-9]", "", self.rest or "")
@@ -370,7 +406,11 @@ class GuestBot:
             return self.say("checkin_code", booking=b, **bookings.guest_context(b))
         b = self.booking()
         if b and b.status == "confirmed":
-            return self.reply(f"Your door code arrives by SMS on the morning of {bookings.guest_context(b)['check_in']}.", kind="code_info", booking=b)
+            return self.reply(
+                f"Your door code arrives by SMS on the morning of {bookings.guest_context(b)['check_in']}.",
+                kind="code_info",
+                booking=b,
+            )
         return self.say("no_booking")
 
     def pay(self):
@@ -378,7 +418,11 @@ class GuestBot:
 
         b = self.booking()
         if not b or (b.status == "held" and not b.hold_active) or (b.status != "held" and b.balance_due <= 0):
-            return self.say("no_booking") if not b else self.reply("You're all paid up - thank you!", kind="paid", booking=b)
+            return (
+                self.say("no_booking")
+                if not b
+                else self.reply("You're all paid up - thank you!", kind="paid", booking=b)
+            )
         r = start_remote_payment(b)
         return self.reply(r["text"], kind="pay", booking=b)
 
@@ -460,7 +504,12 @@ class GuestBot:
             found["area"] = area.slug
         data = {**(convo.data if convo.state == "collecting" else {}), **found}
 
-        last = Booking.objects.filter(guest=self.g, status__in=("confirmed", "checked_in", "completed")).select_related("unit__area").order_by("-id").first()
+        last = (
+            Booking.objects.filter(guest=self.g, status__in=("confirmed", "checked_in", "completed"))
+            .select_related("unit__area")
+            .order_by("-id")
+            .first()
+        )
         if last and re.search(r"\b(same|usual|again|last time|kama mwisho)\b", self.low):
             data.setdefault("area", last.unit.area.slug)
             if self.g.last_guests:
@@ -496,13 +545,21 @@ class GuestBot:
             options.append({"id": u.pk, "name": u.name})
             parts.append(f"{i}) {u.name} ({u.area.name}) {kes(q['total'])}")
         set_convo(self.phone, "showing", {**data, "guests": guests, "options": options})
-        return self.say("options", hello=hello, dates=dates, list=" ".join(parts), choices=", ".join(str(i) for i in range(1, len(units) + 1)))
+        return self.say(
+            "options",
+            hello=hello,
+            dates=dates,
+            list=" ".join(parts),
+            choices=", ".join(str(i) for i in range(1, len(units) + 1)),
+        )
 
     def hold(self, unit, ci, co, guests):
         from apps.payments.services import start_remote_payment
 
         try:
-            b = bookings.create_hold(unit=unit, guest=self.g, check_in=ci, check_out=co, channel="sms", adults=max(1, int(guests)))
+            b = bookings.create_hold(
+                unit=unit, guest=self.g, check_in=ci, check_out=co, channel="sms", adults=max(1, int(guests))
+            )
         except bookings.BookingError as e:
             set_convo(self.phone, "idle")
             return self.reply(str(e) + " Reply BOOK to see what's still free.", kind="hold_error")
@@ -520,10 +577,16 @@ class GuestBot:
         thread = messaging.get_thread(self.phone, self.g)
         b = self.booking()
         context = f" [{b.ref} {b.unit.name}]" if b else ""
-        messaging.send(s.host_contact, f"#{thread.pk} {self.g.name or self.phone}{context}: {self.text[:300]} (reply #{thread.pk} <text>)",
-                       kind="relay", booking=b)
+        messaging.send(
+            s.host_contact,
+            f"#{thread.pk} {self.g.name or self.phone}{context}: {self.text[:300]} (reply #{thread.pk} <text>)",
+            kind="relay",
+            booking=b,
+        )
         messaging.mark(self.inbound, "relayed", "question")
-        recently_acked = thread.messages.filter(direction="out", kind="relay_ack", created_at__gt=timezone.now() - timezone.timedelta(minutes=30)).exists()
+        recently_acked = thread.messages.filter(
+            direction="out", kind="relay_ack", created_at__gt=timezone.now() - timezone.timedelta(minutes=30)
+        ).exists()
         if not recently_acked:
             messaging.send(self.phone, messaging.render("relay_ack", self.lang), kind="relay_ack", sender="bot")
         return "relayed"
@@ -585,7 +648,9 @@ class HostCommands:
             if not ba:
                 return self.say(f"No request #{m[2]}.")
             bookings.decide_addon(ba, m[1] in ("yes", "ndiyo"), actor=host)
-            return self.say(f"{'Approved' if m[1] in ('yes', 'ndiyo') else 'Declined'}: {ba.addon.name} for {ba.booking.ref}. Guest told.")
+            return self.say(
+                f"{'Approved' if m[1] in ('yes', 'ndiyo') else 'Declined'}: {ba.addon.name} for {ba.booking.ref}. Guest told."
+            )
         if self.low in ("ok", "ack", "sawa", "handled"):
             from apps.safety.services import acknowledge_latest
 
@@ -595,10 +660,14 @@ class HostCommands:
             from apps.operations.services import digest_numbers
 
             n = digest_numbers()
-            return self.say(f"Today: {n['arrivals']} arriving, {n['departures']} leaving, {n['in_house']} in-house, {n['breakfasts']} breakfasts, "
-                            f"{n['tasks']} tasks, {n['unread']} chats waiting, {n['alerts']} alerts.")
+            return self.say(
+                f"Today: {n['arrivals']} arriving, {n['departures']} leaving, {n['in_house']} in-house, {n['breakfasts']} breakfasts, "
+                f"{n['tasks']} tasks, {n['unread']} chats waiting, {n['alerts']} alerts."
+            )
         if self.low in ("menu", "help", "commands"):
-            return self.say("Commands: #12 <text> reply to guest 12 | <text> reply to last guest | YES/NO <id> requests | OK ack alert | STATUS")
+            return self.say(
+                "Commands: #12 <text> reply to guest 12 | <text> reply to last guest | YES/NO <id> requests | OK ack alert | STATUS"
+            )
         waiting = Thread.objects.filter(needs_reply=True).order_by("-last_message_at").first()
         if not waiting:
             return self.say("No guest is waiting for a reply. Start with #<thread> to pick a guest.")
@@ -613,7 +682,15 @@ class HostCommands:
 def reply_as_host(phone, text, user=None, channel="sms"):
     s = SiteSettings.load()
     b = bookings.current_booking(phone)
-    return messaging.send(phone, f"{s.host_name}: {text}", sender="host", user=user, booking=b, kind="host_reply", channel=channel if channel != "web" else None)
+    return messaging.send(
+        phone,
+        f"{s.host_name}: {text}",
+        sender="host",
+        user=user,
+        booking=b,
+        kind="host_reply",
+        channel=channel if channel != "web" else None,
+    )
 
 
 class StaffCommands:
@@ -651,7 +728,15 @@ class StaffCommands:
             return self.say(ops.kitchen_sheet_text(today() + timedelta(days=1)) or "No breakfasts booked for tomorrow.")
         if self.low in ("gate", "geti", "arrivals") and self.staff.role in ("security", "manager"):
             arrivals = ops.gate_list()
-            return self.say("; ".join(f"{b.unit.name}: {b.guest.display_name}{' car ' + b.vehicle_plate if b.vehicle_plate else ''}" for b in arrivals)
-                            or "No arrivals today.")
+            return self.say(
+                "; ".join(
+                    f"{b.unit.name}: {b.guest.display_name}{' car ' + b.vehicle_plate if b.vehicle_plate else ''}"
+                    for b in arrivals
+                )
+                or "No arrivals today."
+            )
         bookings.notify_host(f"Staff {self.staff.display_name} ({self.staff.get_role_display()}): {self.text[:300]}")
-        return self.say("Sent to Amina. Commands: TASKS, DONE <id>, START <id>" + (", BREAKFAST" if self.staff.role == "cook" else ""))
+        return self.say(
+            "Sent to Amina. Commands: TASKS, DONE <id>, START <id>"
+            + (", BREAKFAST" if self.staff.role == "cook" else "")
+        )

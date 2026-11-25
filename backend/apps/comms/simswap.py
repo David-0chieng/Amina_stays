@@ -35,7 +35,7 @@ def request_check(booking):
     else:
         try:
             res = at.sim_swap_check([phone])
-            first = (res.get("responses") or res.get("data") or [{}])
+            first = res.get("responses") or res.get("data") or [{}]
             first = first[0] if isinstance(first, list) and first else res
             check.request_id = str(first.get("requestId") or first.get("transactionId") or "")[:80]
             check.status = first.get("status") or "Queued"

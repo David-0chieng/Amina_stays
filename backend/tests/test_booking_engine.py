@@ -47,12 +47,30 @@ def test_overlapping_hold_is_refused(unit, guest, foreign_guest):
 def test_database_constraint_blocks_overlap_even_without_the_service(unit, guest):
     b = bookings.create_hold(unit=unit, guest=guest, check_in=days(5), check_out=days(8), channel="sms")
     with pytest.raises(IntegrityError), transaction.atomic():
-        Booking.objects.create(ref="AMS-0000", unit=unit, guest=guest, check_in=days(6), check_out=days(7), status="confirmed",
-                               channel="walk_in", total=1, cancellation_policy="flexible")
+        Booking.objects.create(
+            ref="AMS-0000",
+            unit=unit,
+            guest=guest,
+            check_in=days(6),
+            check_out=days(7),
+            status="confirmed",
+            channel="walk_in",
+            total=1,
+            cancellation_policy="flexible",
+        )
     # cancelled/expired bookings don't block the dates
     Booking.objects.filter(pk=b.pk).update(status="cancelled")
-    Booking.objects.create(ref="AMS-0001", unit=unit, guest=guest, check_in=days(6), check_out=days(7), status="confirmed",
-                           channel="walk_in", total=1, cancellation_policy="flexible")
+    Booking.objects.create(
+        ref="AMS-0001",
+        unit=unit,
+        guest=guest,
+        check_in=days(6),
+        check_out=days(7),
+        status="confirmed",
+        channel="walk_in",
+        total=1,
+        cancellation_policy="flexible",
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -70,7 +88,10 @@ def test_simultaneous_holds_from_two_channels_only_one_wins(unit, guest, foreign
         finally:
             connection.close()
 
-    threads = [threading.Thread(target=attempt, args=(guest, "ussd")), threading.Thread(target=attempt, args=(foreign_guest, "web"))]
+    threads = [
+        threading.Thread(target=attempt, args=(guest, "ussd")),
+        threading.Thread(target=attempt, args=(foreign_guest, "web")),
+    ]
     for t in threads:
         t.start()
     for t in threads:
@@ -190,4 +211,9 @@ def test_flexible_cancellation_refunds_in_full(unit, guest):
 def test_cancelled_dates_can_be_booked_again(unit, guest, foreign_guest):
     b = _confirmed(unit, guest, days(10), days(12))
     bookings.cancel(b, by="guest")
-    assert bookings.create_hold(unit=unit, guest=foreign_guest, check_in=days(10), check_out=days(12), channel="web").status == "held"
+    assert (
+        bookings.create_hold(
+            unit=unit, guest=foreign_guest, check_in=days(10), check_out=days(12), channel="web"
+        ).status
+        == "held"
+    )

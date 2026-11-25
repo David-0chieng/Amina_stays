@@ -19,7 +19,20 @@ class Task(models.Model):
     STATUS = [("open", "Open"), ("in_progress", "In progress"), ("done", "Done"), ("cancelled", "Cancelled")]
     CATEGORIES = [
         (c, c.replace("_", " ").capitalize())
-        for c in ("water", "power", "wifi", "ac", "appliance", "plumbing", "cleanliness", "noise", "security", "pests", "lock", "other")
+        for c in (
+            "water",
+            "power",
+            "wifi",
+            "ac",
+            "appliance",
+            "plumbing",
+            "cleanliness",
+            "noise",
+            "security",
+            "pests",
+            "lock",
+            "other",
+        )
     ]
 
     type = models.CharField(max_length=14, choices=TYPES, default="other")
@@ -27,15 +40,21 @@ class Task(models.Model):
     description = models.TextField(blank=True)
     category = models.CharField(max_length=12, choices=CATEGORIES, blank=True)
     unit = models.ForeignKey("properties.Unit", null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
-    booking = models.ForeignKey("bookings.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    booking = models.ForeignKey(
+        "bookings.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
+    )
     priority = models.CharField(max_length=7, choices=PRIORITIES, default="normal")
     status = models.CharField(max_length=12, choices=STATUS, default="open", db_index=True)
-    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
+    )
     due_at = models.DateTimeField(null=True, blank=True)
     source = models.CharField(max_length=6, default="host", help_text="auto, guest, host, staff")
     checklist = models.JSONField(default=list, blank=True)
     completion_note = models.CharField(max_length=300, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)

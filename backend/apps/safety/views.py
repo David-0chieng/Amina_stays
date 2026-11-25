@@ -14,10 +14,22 @@ from .models import Alert
 
 def alert_dict(a):
     return {
-        "id": a.pk, "kind": a.kind, "kind_label": a.get_kind_display(), "severity": a.severity, "status": a.status, "source": a.source,
-        "phone": a.phone, "summary": a.summary, "details": a.details, "call_status": a.call_status, "calls_made": a.calls_made,
-        "booking": a.booking.ref if a.booking_id else None, "created_at": a.created_at, "acknowledged_at": a.acknowledged_at,
-        "resolved_at": a.resolved_at, "resolution_note": a.resolution_note,
+        "id": a.pk,
+        "kind": a.kind,
+        "kind_label": a.get_kind_display(),
+        "severity": a.severity,
+        "status": a.status,
+        "source": a.source,
+        "phone": a.phone,
+        "summary": a.summary,
+        "details": a.details,
+        "call_status": a.call_status,
+        "calls_made": a.calls_made,
+        "booking": a.booking.ref if a.booking_id else None,
+        "created_at": a.created_at,
+        "acknowledged_at": a.acknowledged_at,
+        "resolved_at": a.resolved_at,
+        "resolution_note": a.resolution_note,
         "resolved_by": a.resolved_by.display_name if a.resolved_by_id else None,
     }
 
@@ -54,24 +66,76 @@ def guest_register(request):
     start = parse_date(request.query_params.get("from")) or today().replace(day=1)
     end = parse_date(request.query_params.get("to")) or today()
     rows = (
-        BookingGuest.objects.filter(booking__check_in__lte=end, booking__check_out__gte=start, booking__status__in=("confirmed", "checked_in", "completed"))
-        .select_related("booking", "booking__unit", "booking__guest").order_by("booking__check_in")
+        BookingGuest.objects.filter(
+            booking__check_in__lte=end,
+            booking__check_out__gte=start,
+            booking__status__in=("confirmed", "checked_in", "completed"),
+        )
+        .select_related("booking", "booking__unit", "booking__guest")
+        .order_by("booking__check_in")
     )
     data = [
-        {"ref": o.booking.ref, "unit": o.booking.unit.name, "address": o.booking.unit.address, "name": o.full_name, "lead_guest": o.is_lead,
-         "minor": o.is_minor, "id_type": o.id_type, "id_last4": o.id_last4, "nationality": o.nationality,
-         "phone": o.booking.guest.phone if o.is_lead else "", "check_in": o.booking.check_in, "check_out": o.booking.check_out,
-         "arrived_at": o.booking.checked_in_at, "left_at": o.booking.checked_out_at, "vehicle": o.booking.vehicle_plate}
+        {
+            "ref": o.booking.ref,
+            "unit": o.booking.unit.name,
+            "address": o.booking.unit.address,
+            "name": o.full_name,
+            "lead_guest": o.is_lead,
+            "minor": o.is_minor,
+            "id_type": o.id_type,
+            "id_last4": o.id_last4,
+            "nationality": o.nationality,
+            "phone": o.booking.guest.phone if o.is_lead else "",
+            "check_in": o.booking.check_in,
+            "check_out": o.booking.check_out,
+            "arrived_at": o.booking.checked_in_at,
+            "left_at": o.booking.checked_out_at,
+            "vehicle": o.booking.vehicle_plate,
+        }
         for o in rows
     ]
     if request.query_params.get("format") == "csv":
         resp = HttpResponse(content_type="text/csv")
         resp["Content-Disposition"] = f'attachment; filename="guest-register-{start}-{end}.csv"'
         w = csv.writer(resp)
-        w.writerow(["Ref", "Home", "Address", "Name", "Lead guest", "Minor", "ID type", "ID (last 4)", "Nationality", "Phone", "Check-in", "Check-out",
-                    "Arrived", "Left", "Vehicle"])
+        w.writerow(
+            [
+                "Ref",
+                "Home",
+                "Address",
+                "Name",
+                "Lead guest",
+                "Minor",
+                "ID type",
+                "ID (last 4)",
+                "Nationality",
+                "Phone",
+                "Check-in",
+                "Check-out",
+                "Arrived",
+                "Left",
+                "Vehicle",
+            ]
+        )
         for r in data:
-            w.writerow([r["ref"], r["unit"], r["address"], r["name"], "yes" if r["lead_guest"] else "", "yes" if r["minor"] else "", r["id_type"],
-                        r["id_last4"], r["nationality"], r["phone"], r["check_in"], r["check_out"], r["arrived_at"] or "", r["left_at"] or "", r["vehicle"]])
+            w.writerow(
+                [
+                    r["ref"],
+                    r["unit"],
+                    r["address"],
+                    r["name"],
+                    "yes" if r["lead_guest"] else "",
+                    "yes" if r["minor"] else "",
+                    r["id_type"],
+                    r["id_last4"],
+                    r["nationality"],
+                    r["phone"],
+                    r["check_in"],
+                    r["check_out"],
+                    r["arrived_at"] or "",
+                    r["left_at"] or "",
+                    r["vehicle"],
+                ]
+            )
         return resp
     return Response({"from": start, "to": end, "rows": data, "missing_id": sum(1 for r in data if not r["id_last4"])})

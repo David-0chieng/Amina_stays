@@ -7,14 +7,18 @@ class Thread(models.Model):
 
     STATUS = [("open", "Open"), ("resolved", "Resolved")]
     phone = models.CharField(max_length=20, unique=True)
-    guest = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="threads")
+    guest = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="threads"
+    )
     status = models.CharField(max_length=8, choices=STATUS, default="open")
     needs_reply = models.BooleanField(default=False, db_index=True)
     unread = models.PositiveIntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
     last_preview = models.CharField(max_length=160, blank=True)
     waiting_since = models.DateTimeField(null=True, blank=True, help_text="Oldest unanswered guest message")
-    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -26,14 +30,19 @@ class Thread(models.Model):
 
 class Message(models.Model):
     DIRECTIONS = [("in", "Inbound"), ("out", "Outbound")]
-    CHANNELS = [(c, c.upper() if len(c) <= 4 else c.capitalize()) for c in ("sms", "web", "voice", "ussd", "whatsapp", "email", "system")]
+    CHANNELS = [
+        (c, c.upper() if len(c) <= 4 else c.capitalize())
+        for c in ("sms", "web", "voice", "ussd", "whatsapp", "email", "system")
+    ]
     SENDERS = [(s, s.capitalize()) for s in ("guest", "bot", "host", "staff", "system")]
     HANDLED = [(h, h.capitalize()) for h in ("pending", "auto", "relayed", "answered", "escalated", "na")]
     STATUS = [(s, s.capitalize()) for s in ("queued", "sending", "sent", "delivered", "failed", "received", "logged")]
 
     thread = models.ForeignKey(Thread, on_delete=models.CASCADE, related_name="messages")
     phone = models.CharField(max_length=20, db_index=True)
-    booking = models.ForeignKey("bookings.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="messages")
+    booking = models.ForeignKey(
+        "bookings.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="messages"
+    )
     direction = models.CharField(max_length=3, choices=DIRECTIONS)
     channel = models.CharField(max_length=8, choices=CHANNELS, default="sms")
     sender = models.CharField(max_length=6, choices=SENDERS, default="system")
@@ -47,7 +56,9 @@ class Message(models.Model):
     failure_reason = models.CharField(max_length=120, blank=True)
     cost = models.CharField(max_length=20, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
-    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
@@ -78,7 +89,11 @@ class Template(models.Model):
 class Automation(models.Model):
     """The guest message timeline: what goes out, when, relative to the stay."""
 
-    ANCHORS = [("confirmed", "When booking is confirmed"), ("check_in", "Check-in date"), ("check_out", "Check-out date")]
+    ANCHORS = [
+        ("confirmed", "When booking is confirmed"),
+        ("check_in", "Check-in date"),
+        ("check_out", "Check-out date"),
+    ]
     key = models.CharField(max_length=40, unique=True)
     name = models.CharField(max_length=80)
     description = models.CharField(max_length=200, blank=True)
@@ -102,7 +117,20 @@ class FAQ(models.Model):
 
     CATEGORIES = [
         (c, c.replace("_", " ").capitalize())
-        for c in ("booking", "pricing", "check_in", "breakfast", "wifi", "amenities", "transport", "area", "safety", "payment", "policies", "other")
+        for c in (
+            "booking",
+            "pricing",
+            "check_in",
+            "breakfast",
+            "wifi",
+            "amenities",
+            "transport",
+            "area",
+            "safety",
+            "payment",
+            "policies",
+            "other",
+        )
     ]
     category = models.CharField(max_length=12, choices=CATEGORIES, default="other")
     question = models.CharField(max_length=160)
@@ -141,7 +169,9 @@ class Broadcast(models.Model):
     body = models.TextField()
     is_marketing = models.BooleanField(default=False)
     recipients = models.PositiveIntegerField(default=0)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

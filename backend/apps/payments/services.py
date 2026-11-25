@@ -63,13 +63,16 @@ def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None
         raise PaymentError("There's nothing left to pay.")
 
     # "Guest taps Pay twice": reuse a request made in the last minute instead of sending a second prompt
-    recent = Payment.objects.filter(booking=b, method=method, amount=amount, status="pending",
-                                    created_at__gt=timezone.now() - timedelta(seconds=60)).first()
+    recent = Payment.objects.filter(
+        booking=b, method=method, amount=amount, status="pending", created_at__gt=timezone.now() - timedelta(seconds=60)
+    ).first()
     if recent:
         return _result(recent, {"status": "pending", "message": "A payment request is already waiting on your phone."})
 
     provider = mpesa_provider() if method == "mpesa" else card_provider()
-    p = Payment.objects.create(booking=b, amount=amount, method=method, purpose=purpose, phone=phone, provider=provider.name, created_by=actor)
+    p = Payment.objects.create(
+        booking=b, amount=amount, method=method, purpose=purpose, phone=phone, provider=provider.name, created_by=actor
+    )
     try:
         res = provider.request(p)
     except PaymentError as e:
@@ -95,8 +98,13 @@ def _checkout_url(p):
 
 def _result(p, res, simulated=None):
     return {
-        "payment_id": p.pk, "method": p.method, "status": p.status, "amount": p.amount, "purpose": p.purpose,
-        "checkout_url": res.get("checkout_url") or _checkout_url(p), "message": res.get("message", ""),
+        "payment_id": p.pk,
+        "method": p.method,
+        "status": p.status,
+        "amount": p.amount,
+        "purpose": p.purpose,
+        "checkout_url": res.get("checkout_url") or _checkout_url(p),
+        "message": res.get("message", ""),
         "simulated": simulated if simulated is not None else p.provider == "simulate",
     }
 
@@ -107,8 +115,16 @@ def start_remote_payment(booking):
     try:
         r = start_payment(b)
     except PaymentError as e:
-        return {"error": str(e), "text": f"We couldn't start payment ({e}). Your hold lasts a few minutes - reply PAY to try again."}
-    ctx = {**bookings.guest_context(b), "amount": kes(r["amount"]), "minutes": SiteSettings.load().hold_minutes, "link": r.get("checkout_url") or ""}
+        return {
+            "error": str(e),
+            "text": f"We couldn't start payment ({e}). Your hold lasts a few minutes - reply PAY to try again.",
+        }
+    ctx = {
+        **bookings.guest_context(b),
+        "amount": kes(r["amount"]),
+        "minutes": SiteSettings.load().hold_minutes,
+        "link": r.get("checkout_url") or "",
+    }
     if r["method"] == "card":
         messaging.send(b.guest.phone, messaging.render("hold_card", b.lang, **ctx), booking=b, kind="hold_card")
         return {**r, "text": f"We've texted you a secure card payment link for {kes(r['amount'])}."}
@@ -141,14 +157,20 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
                 b.amount_paid += p.amount
                 bookings.update_payment_status(b, save=False)
                 b.save(update_fields=["amount_paid", "payment_status", "updated_at"])
-                bookings.event(b, "payment", f"{p.get_method_display()} payment received: {kes(p.amount)}{' (' + p.provider_ref + ')' if p.provider_ref else ''}")
+                bookings.event(
+                    b,
+                    "payment",
+                    f"{p.get_method_display()} payment received: {kes(p.amount)}{' (' + p.provider_ref + ')' if p.provider_ref else ''}",
+                )
                 if b.status == "held":
                     outcome = "confirm"
                 elif b.status in ("expired", "cancelled"):
                     if b.status == "expired" and is_available(b.unit, b.check_in, b.check_out, exclude_booking_id=b.pk):
                         b.status, b.hold_expires_at = "held", timezone.now() + timedelta(minutes=5)
                         b.save(update_fields=["status", "hold_expires_at", "updated_at"])
-                        bookings.event(b, "reinstated", "Paid after the hold lapsed - unit still free, booking reinstated")
+                        bookings.event(
+                            b, "reinstated", "Paid after the hold lapsed - unit still free, booking reinstated"
+                        )
                         outcome = "confirm"
                     else:
                         b.status = "refund_due"
@@ -161,7 +183,9 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
         Booking.objects.filter(pk=payment.booking_id).update(status="refund_due")
         outcome = "refund_due"
 
-    p = Payment.objects.select_related("booking", "booking__guest", "booking__unit", "booking__unit__area").get(pk=payment.pk)
+    p = Payment.objects.select_related("booking", "booking__guest", "booking__unit", "booking__unit__area").get(
+        pk=payment.pk
+    )
     b = p.booking
     if outcome == "confirm":
         bookings.confirm(b)
@@ -169,8 +193,13 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
         from apps.safety.services import raise_alert
 
         bookings.send_guest(b, "late_payment_refund", amount=kes(p.amount))
-        raise_alert("payment", f"Refund due: {kes(p.amount)} to {b.guest.phone} for {b.ref} (paid after the unit was re-let)",
-                    severity="high", booking=b, dedupe=f"refund-due:{p.pk}")
+        raise_alert(
+            "payment",
+            f"Refund due: {kes(p.amount)} to {b.guest.phone} for {b.ref} (paid after the unit was re-let)",
+            severity="high",
+            booking=b,
+            dedupe=f"refund-due:{p.pk}",
+        )
     elif outcome == "extra":
         b.refresh_from_db()
         balance_line = f"Balance due: {kes(b.balance_due)}." if b.balance_due else "You're fully paid - thank you!"
@@ -178,9 +207,21 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
     elif outcome == "mismatch":
         from apps.safety.services import raise_alert
 
-        raise_alert("payment", f"Payment amount mismatch on {b.ref}: {p.failure_reason}", severity="high", booking=b, dedupe=f"mismatch:{p.pk}")
+        raise_alert(
+            "payment",
+            f"Payment amount mismatch on {b.ref}: {p.failure_reason}",
+            severity="high",
+            booking=b,
+            dedupe=f"mismatch:{p.pk}",
+        )
     if outcome in ("confirm", "extra", "refund_due"):
-        record("payment", f"{p.get_method_display()} {kes(p.amount)} received for {b.ref}", booking=b, method=p.method, amount=p.amount)
+        record(
+            "payment",
+            f"{p.get_method_display()} {kes(p.amount)} received for {b.ref}",
+            booking=b,
+            method=p.method,
+            amount=p.amount,
+        )
     return b
 
 
@@ -204,18 +245,35 @@ def refund(booking, amount, *, reason="", actor=None, method=None):
     """Simulated payments refund instantly; real ones are queued for Amina to send (M-Pesa B2C / card reversal)."""
     b = booking
     last = b.payments.filter(status="success").order_by("-id").first()
-    method = method or ("card" if last and last.method == "card" else "mpesa_b2c" if last and last.method == "mpesa" else "manual")
+    method = method or (
+        "card" if last and last.method == "card" else "mpesa_b2c" if last and last.method == "mpesa" else "manual"
+    )
     simulated = last is not None and last.provider == "simulate"
-    r = Refund.objects.create(booking=b, payment=last, amount=amount, method=method, reason=reason[:200], created_by=actor,
-                              status="success" if simulated else "pending", completed_at=timezone.now() if simulated else None)
+    r = Refund.objects.create(
+        booking=b,
+        payment=last,
+        amount=amount,
+        method=method,
+        reason=reason[:200],
+        created_by=actor,
+        status="success" if simulated else "pending",
+        completed_at=timezone.now() if simulated else None,
+    )
     if simulated:
         _apply_refund(b, amount)
     else:
         from apps.safety.services import raise_alert
 
-        raise_alert("payment", f"Refund to send: {kes(amount)} to {b.guest.phone} for {b.ref} ({r.get_method_display()})",
-                    severity="medium", booking=b, dedupe=f"refund:{r.pk}")
-    bookings.event(b, "refund", f"Refund {kes(amount)} {'sent' if simulated else 'queued'} ({r.get_method_display()})", actor=actor)
+        raise_alert(
+            "payment",
+            f"Refund to send: {kes(amount)} to {b.guest.phone} for {b.ref} ({r.get_method_display()})",
+            severity="medium",
+            booking=b,
+            dedupe=f"refund:{r.pk}",
+        )
+    bookings.event(
+        b, "refund", f"Refund {kes(amount)} {'sent' if simulated else 'queued'} ({r.get_method_display()})", actor=actor
+    )
     return r
 
 
@@ -225,7 +283,12 @@ def mark_refund_sent(r, provider_ref="", actor=None):
     r.status, r.provider_ref, r.completed_at = "success", provider_ref[:80], timezone.now()
     r.save(update_fields=["status", "provider_ref", "completed_at"])
     _apply_refund(r.booking, r.amount)
-    bookings.event(r.booking, "refund", f"Refund {kes(r.amount)} marked as sent{' (' + provider_ref + ')' if provider_ref else ''}", actor=actor)
+    bookings.event(
+        r.booking,
+        "refund",
+        f"Refund {kes(r.amount)} marked as sent{' (' + provider_ref + ')' if provider_ref else ''}",
+        actor=actor,
+    )
     return r
 
 
@@ -240,15 +303,24 @@ def _apply_refund(b, amount):
 
 def record_manual_payment(booking, amount, method="cash", reference="", actor=None):
     """Amina took cash / a bank transfer at the door."""
-    p = Payment.objects.create(booking=booking, amount=int(amount), method=method, purpose="balance" if booking.amount_paid else "full",
-                               phone=booking.guest.phone, provider="manual", created_by=actor)
+    p = Payment.objects.create(
+        booking=booking,
+        amount=int(amount),
+        method=method,
+        purpose="balance" if booking.amount_paid else "full",
+        phone=booking.guest.phone,
+        provider="manual",
+        created_by=actor,
+    )
     return on_success(p, provider_ref=reference or f"{method.upper()}-{p.pk}")
 
 
 def reconcile_pending():
     """Ask the provider about STK pushes with no callback after 2 minutes; expire very old ones."""
     provider = mpesa_provider()
-    for p in Payment.objects.filter(status="pending", method="mpesa", created_at__lt=timezone.now() - timedelta(minutes=2))[:20]:
+    for p in Payment.objects.filter(
+        status="pending", method="mpesa", created_at__lt=timezone.now() - timedelta(minutes=2)
+    )[:20]:
         res = provider.query(p) if p.transaction_id else None
         code = str((res or {}).get("ResultCode", ""))
         if code == "0":

@@ -60,7 +60,10 @@ def send_sms(to, message, sender_id=None):
     if sender:
         data["from"] = sender
     body = _post(
-        _url("https://api.africastalking.com/version1/messaging", "https://api.sandbox.africastalking.com/version1/messaging"),
+        _url(
+            "https://api.africastalking.com/version1/messaging",
+            "https://api.sandbox.africastalking.com/version1/messaging",
+        ),
         data=data,
     )
     sms = body.get("SMSMessageData", {}) if isinstance(body, dict) else {}
@@ -74,7 +77,11 @@ def voice_call(to, client_request_id=""):
     if not configured() or not settings.AT_VOICE_NUMBER:
         log.info("[dry-run CALL] -> %s (%s)", to, client_request_id)
         return {"dry_run": True, "entries": [{"phoneNumber": to, "status": "NotConfigured"}]}
-    data = {"username": settings.AT_USERNAME, "from": settings.AT_VOICE_NUMBER, "to": to if isinstance(to, str) else ",".join(to)}
+    data = {
+        "username": settings.AT_USERNAME,
+        "from": settings.AT_VOICE_NUMBER,
+        "to": to if isinstance(to, str) else ",".join(to),
+    }
     if client_request_id:
         data["clientRequestId"] = client_request_id
     return _post("https://voice.africastalking.com/call", data=data)
@@ -96,7 +103,10 @@ def send_airtime(phone, amount_kes, idempotency_key, metadata=None):
     if metadata:
         data["requestMetadata"] = json.dumps(metadata)
     return _post(
-        _url("https://api.africastalking.com/version1/airtime/send", "https://api.sandbox.africastalking.com/version1/airtime/send"),
+        _url(
+            "https://api.africastalking.com/version1/airtime/send",
+            "https://api.sandbox.africastalking.com/version1/airtime/send",
+        ),
         data=data,
         headers={"Idempotency-Key": idempotency_key},
     )
@@ -113,12 +123,21 @@ def send_mobile_data(phone, megabytes, metadata=None, idempotency_key=""):
         "username": settings.AT_USERNAME,
         "productName": settings.AT_DATA_PRODUCT,
         "recipients": [
-            {"phoneNumber": phone, "quantity": int(megabytes), "unit": "MB", "validity": "Week", "metadata": metadata or {}}
+            {
+                "phoneNumber": phone,
+                "quantity": int(megabytes),
+                "unit": "MB",
+                "validity": "Week",
+                "metadata": metadata or {},
+            }
         ],
     }
     headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
     return _post(
-        _url("https://bundles.africastalking.com/mobile/data/request", "https://bundles.sandbox.africastalking.com/mobile/data/request"),
+        _url(
+            "https://bundles.africastalking.com/mobile/data/request",
+            "https://bundles.sandbox.africastalking.com/mobile/data/request",
+        ),
         json_body=body,
         headers=headers,
     )
@@ -132,7 +151,9 @@ def sim_swap_check(phones):
     if not configured():
         return {"dry_run": True}
     return _post(
-        _url("https://insights.africastalking.com/v1/sim-swap", "https://insights.sandbox.africastalking.com/v1/sim-swap"),
+        _url(
+            "https://insights.africastalking.com/v1/sim-swap", "https://insights.sandbox.africastalking.com/v1/sim-swap"
+        ),
         json_body={"username": settings.AT_USERNAME, "phoneNumbers": list(phones)},
     )
 
@@ -161,7 +182,10 @@ def balance():
     try:
         with httpx.Client(timeout=settings.AT_HTTP_TIMEOUT) as client:
             r = client.get(
-                _url("https://api.africastalking.com/version1/user", "https://api.sandbox.africastalking.com/version1/user"),
+                _url(
+                    "https://api.africastalking.com/version1/user",
+                    "https://api.sandbox.africastalking.com/version1/user",
+                ),
                 params={"username": settings.AT_USERNAME},
                 headers={"apiKey": settings.AT_API_KEY, "Accept": "application/json"},
             )

@@ -15,7 +15,8 @@ def record(kind, title, *, channel="", detail="", booking=None, phone="", actor=
             title=title[:200],
             detail=detail or "",
             booking_ref=ref,
-            phone=phone or (getattr(booking, "guest_phone", "") if booking is not None and not isinstance(booking, str) else ""),
+            phone=phone
+            or (getattr(booking, "guest_phone", "") if booking is not None and not isinstance(booking, str) else ""),
             actor=actor if getattr(actor, "pk", None) else None,
             data=data,
         )

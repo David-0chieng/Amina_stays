@@ -67,7 +67,9 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # Messaging preferences
     preferred_channel = models.CharField(
-        max_length=8, default="sms", choices=[("sms", "SMS"), ("whatsapp", "WhatsApp")],
+        max_length=8,
+        default="sms",
+        choices=[("sms", "SMS"), ("whatsapp", "WhatsApp")],
         help_text="International guests often prefer WhatsApp",
     )
     marketing_opt_in = models.BooleanField(default=False)
