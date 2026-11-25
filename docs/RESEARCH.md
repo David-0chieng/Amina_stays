@@ -1,0 +1,117 @@
+# Research → product decisions
+
+Amina Stays was designed from five research briefs written on 25 Nov 2026. The full briefs, with sources, are in [`docs/research/`](research/):
+
+| Brief | What it covers |
+|---|---|
+| [01 Global platforms](research/01-global-str-platforms.md) | Airbnb, Booking.com, Vrbo/Expedia, Agoda, Trip.com: guest UX, design language, host tools, engineering lessons, industry problems and fixes 2019–2026 |
+| [02 Small-host operations](research/02-small-host-operations.md) | Pain points of 2–10-unit hosts, PMS tooling (Hospitable, Hostaway, Guesty…), KPIs, message timelines, top guest FAQs |
+| [03 Kenya & Mombasa](research/03-kenya-mombasa-context.md) | TRA licensing (Tourism Enterprises Regulations 2025), Tourism Levy, KRA, guest register, Data Protection Act, SMS rules, safety, payments, coastal operations |
+| [04 Africa's Talking](research/04-africas-talking.md) | SMS, USSD, Voice, Payments, Airtime, Mobile Data, Insights, SDKs, callbacks, sandbox limits |
+| [05 Tech stack](research/05-tech-stack.md) | Django/DRF + PostgreSQL + Next.js choices, auth across origins, jobs, Postgres patterns, deployment |
+
+## The challenge
+
+> Amina has several apartments in Mombasa and struggles to communicate prices, suites, breakfast preferences and check-in information to guests.
+> — AMINA-STAYS brief, Innovate Mombasa Hospitality & Tourism Hackathon
+
+The research showed this is the visible tip of a bigger problem. For small hosts, **87% of pre-arrival questions have static answers** (Wi-Fi, check-in, parking, directions, door code), yet **15% go unanswered** because the information isn't written down (brief 02). Hosts lose more time on **cleaning, maintenance and admin** than on messaging, and they juggle 3–5 inboxes. In Kenya, many guests and staff use feature phones or have no data, and the law now requires a guest register, TRA licensing and monthly returns (brief 03).
+
+So Amina Stays is not only a booking site. It is **one source of truth for every home**, available on every channel: web, USSD, SMS and voice. It also automates the whole stay and covers the operations and compliance work behind it.
+
+## What we adopted from the industry leaders
+
+| Pattern | Who does it | How it shows up in Amina Stays |
+|---|---|---|
+| Where / When / Who search pill, category tabs, map, photo-carousel cards | Airbnb | Home page search, category tabs, map toggle, swipeable cards with "Guest favourite" |
+| **Total price display** with all mandatory fees | Airbnb (2022); FTC fee rule (May 2025) | Every quote is all-in (nights + cleaning + 2% tourism levy + VAT if registered), on web, USSD, SMS and voice |
+| Guest favourite badge (top homes by rating and reviews) | Airbnb (2023) | Rating ≥ 4.8 with ≥ 5 reviews, computed from verified stays only |
+| Reserve now, pay later / deposits | Airbnb, Vrbo, Agoda | Pay 30% now and the rest one day before arrival (M-Pesa prompt or pay link) |
+| Staged disclosure: area → address → directions → door code | Airbnb | Address once booked, directions and Wi-Fi 48 h before, door code only on arrival morning |
+| A living itinerary | Airbnb Trips | Trip hub: checklist, door code, directions, Wi-Fi, breakfast, extras, help, receipt, timeline |
+| Services and add-ons | Airbnb Services (2025) | Breakfast, airport/SGR pickup, early/late checkout, dhow cruise, cooking class, groceries, baby cot |
+| AI and auto-answers with human escalation | Airbnb (~40% of issues resolved by AI) | "Ask Amina": facts answered instantly, requests go to Amina, problems become tasks |
+| 24/7 safety line | Airbnb Safety Line | Text HELP, USSD 9, press 9 on a call, or the trip-page SOS: alerts Amina, the caretaker and security, then escalates by voice call |
+| Indoor-camera ban, outdoor-camera disclosure | Airbnb (Apr 2024) | Per-home safety disclosures on the listing ("Things to know") |
+| Party and fraud screening | Airbnb anti-party system | Risk score from one-night weekend, same-day and last-minute bookings, first stays, full occupancy and past incidents, shown to Amina |
+| Partner 2FA after account takeovers | Booking.com (2024) | Phone OTP login with a 30-second resend gap, 5-codes-per-hour cap and lockout after 5 wrong attempts; SIM-swap check before door codes |
+| Never pay off-platform | Airbnb, Booking.com | Every payment message: "Pay only via the official prompt — we never ask you to send money to a personal number" |
+
+## Industry problems and how Amina Stays answers them
+
+| # | Problem (evidence) | Our answer | Where |
+|---|---|---|---|
+| 1 | **Double bookings**: iCal is polled every 2–3 h (Airbnb, Booking.com), and two channels can grab the same night (brief 02) | PostgreSQL exclusion constraint on `(unit, daterange)` for live bookings, a per-unit row lock when holding, 10-minute holds, iCal import/export with conflict alerts | `bookings/models.py`, `bookings/services.py::create_hold`, `properties/services.py` (iCal); tested with a two-thread race |
+| 2 | **Hidden fees** ("$40 night, $90 total"); FTC and EU rules (brief 01) | All-in quotes everywhere; itemised receipt; no booking fee for direct guests | `properties/services.py::quote`, checkout, trip receipt |
+| 3 | **Repetitive questions**: 87% static, 15% unanswered for lack of info (brief 02) | One knowledge base per home (prices, suites, breakfast, Wi-Fi, directions, rules) feeding web, SMS FAQ auto-answers, USSD and voice; FAQ manager with a test console | `messaging/` (FAQ, templates), `comms/smsbot.py`, host Messaging page |
+| 4 | **Breakfast and preferences lost in chat** (the brief) | Structured breakfast (style, people, time, dietary needs) at booking, from the trip page, by SMS "BREAKFAST" or USSD 4; a nightly kitchen sheet for the cook | `bookings/services.py::set_breakfast`, host Kitchen page, `kitchen_sheet` job |
+| 5 | **Check-in chaos** and lockouts | Self check-in codes valid only for the stay, released at 08:00 on arrival day once paid and registered, revoked at checkout; directions with landmarks | `bookings/locks.py`, `release_code`, Demo Lab time machine |
+| 6 | **No data or no smartphone** (most Kenyan phones, many domestic guests and staff) | Full booking, payment, breakfast, issues, checkout and emergencies over USSD and voice (English and Kiswahili), and natural-language SMS | `comms/ussd.py`, `comms/voice.py`, `comms/smsbot.py` |
+| 7 | **Language**: about 94% of Mombasa's visitors are international, with Italian and German big on the coast (brief 03) | Templates and SMS replies in English, Kiswahili, Italian, German and French; Kiswahili voice prompts | `messaging/templates_default.py`, `comms/nlu.py` |
+| 8 | **Payment fraud and fake hosts** (Booking.com phishing surge; Kisauni fake-host case, brief 03) | M-Pesa STK push and hosted card checkout only; idempotent callbacks; amount check; late payments re-hold or are refunded; SIM-swap check (AT Insights) before door codes | `payments/`, `comms/simswap.py` |
+| 9 | **Guest safety** | HELP from any channel; an escalation ladder (SMS to Amina and staff, then voice calls, retried until acknowledged); visible emergency numbers 999/112/1199/1514 | `safety/services.py`, `comms/voice.py::alert_call` |
+| 10 | **Cleaning and maintenance are the biggest time sinks** (PriceLabs 2025; Hostaway 2025) | Turnover task created at every checkout; guest issues become prioritised work orders assigned to the right staff member, who can close them by SMS "DONE" | `operations/`, host Tasks page |
+| 11 | **Fragmented inboxes** across 3–5 platforms (Breezeway) | One inbox for SMS, web chat, USSD requests, voicemail and staff messages; Amina can reply from her own phone ("#12 text", "YES 34") | `messaging/`, `HostCommands` in `comms/smsbot.py` |
+| 12 | **Bad reviews hurt** (71% of hosts fear them; brief 02) | "All good?" check on arrival evening catches problems early; review requests by SMS (reply 1–5) and web with category scores; host responses | `reviews/`, automations |
+| 13 | **Compliance**: TRA licence, 5-year guest register, monthly TRA return, 2% levy, ODPC, promotional-SMS rules (brief 03) | Licence shown on listings and receipts; encrypted guest register with consent and CSV export; one-click monthly TRA return; levy in every quote plus a monthly reminder; data export and erasure; promotional SMS only 08:00–18:00 with STOP | `insights/services.py::tra_return`, `safety/views.py::guest_register`, `accounts/services.py`, `messaging/services.py` |
+| 14 | **Gate and estate security** (PSRA visitor-log directive) | Morning gate list for the security guard: arrivals, names, plates, ETAs | `operations/services.py`, `gate_list` job |
+| 15 | **Power and water cuts** on the coast | Backup power and water-tank information in FAQs and house manuals; the issue flow sends water, power and plumbing problems to the caretaker as high priority (lock and security problems are urgent and raise an alert) | seed FAQs, `operations` categories |
+| 16 | **OTA commissions** (Airbnb 15.5%, Booking.com ≈15%, Vrbo 12%) | Direct booking with M-Pesa; OTA calendars synced by iCal so Amina can still list on Airbnb and Booking.com without double bookings | `properties` iCal feeds, host Channels page |
+| 17 | **Cancellations and refunds disputes** (Agoda fine, brief 01) | Four plain policies, shown before payment; the refund amount is shown before the guest confirms; host cancellations refund in full plus an airtime apology (AT Airtime) | `bookings/services.py::refund_quote`, `send_goodwill` |
+| 18 | **Response-time expectations** (Airbnb ranks on 24 h response) | Instant answers 24/7; unanswered threads flagged with waiting time in the inbox; a morning digest to Amina by SMS | inbox, `host_digest` job |
+
+## Kenya-specific requirements (brief 03, top 15) — coverage
+
+| Requirement | Status |
+|---|---|
+| TRA licence shown on listings and receipts, with a verify link | ✅ Licence on every listing, receipt and footer; per-home override |
+| Digital guest register (all occupants, ID, nationality, plate), kept 5 years, exportable | ✅ Encrypted, consented, last-4 only in the UI; CSV export; purged automatically after `id_retention_days` (1,825) |
+| Monthly TRA return (occupancy, visitors by country, revenue) | ✅ Host Insights, "TRA return" |
+| Tourism Levy engine | ✅ 2% in every quote; monthly reminder (5th) |
+| KRA / VAT tracking | ⚠️ VAT switch in settings (applies once registered); eTIMS invoicing is out of scope |
+| M-Pesa STK push, callbacks as the only proof, reconciliation, refunds | ✅ Daraja provider plus reconciliation job; refunds tracked to "sent" |
+| Card path for foreign guests | ✅ Hosted card checkout (Paystack in production, simulated in the demo) |
+| Safety-by-design check-in, SOS, emergency numbers | ✅ |
+| Data protection built in (consent, 7-day access, 14-day erasure) | ✅ Self-service export and erasure; privacy notice |
+| Compliant SMS (opt-in, STOP, 08:00–18:00 for promotions) | ✅ |
+| USSD and voice in English and Swahili | ✅ |
+| Outage and water resilience information | ✅ FAQs and house manuals; ⚠️ KPLC feed ingestion is future work |
+| Arrival logistics by mode (SGR Miritini, Moi airport, Likoni vs Dongo Kundu) | ✅ Area "getting there" guides, pickups, arrival mode at booking |
+| Seasonality-aware pricing and calendar sync | ✅ Price rules (season, weekend, last-minute, early-bird, length of stay), date overrides, iCal |
+| Local trust and culture layer (licence verify, tout tips, Old Town etiquette, halal breakfast) | ✅ FAQs, breakfast dietary options, licence verify link |
+
+## How we use Africa's Talking (brief 04)
+
+| Product | Used for |
+|---|---|
+| **SMS** (two-way, delivery reports, opt-out callback) | "Ask Amina" bot, confirmations, door codes, reminders, staff tasks, host commands, OTP login |
+| **USSD** | Full no-data booking and trip management, staff and host menus |
+| **Voice** | English/Kiswahili IVR (availability, booking, prices, directions), bridge to Amina, voicemail, outbound SOS escalation calls, optional welcome call |
+| **Airtime** | Automatic goodwill airtime when Amina has to cancel a paid stay |
+| **Mobile Data** | Optional welcome data bundle for Kenyan guests on arrival |
+| **Insights – SIM Swap** | Door codes held if the guest's SIM was swapped recently |
+| **WhatsApp** (preview) | Optional channel for guests who prefer it |
+| **Payments** | M-Pesa checkout via AT is supported as a provider, but AT Payments is onboarding-gated with no sandbox (brief 04). That is why the payment layer is pluggable: simulated for the demo, Safaricom Daraja for production. |
+
+Design consequences of AT's documented limits:
+- **USSD screens** fit 160 characters (Safaricom) and the 10-second response window. Menus use paging ("98 More"), "0 Back", "00 Home", and the text chain is replayed so sessions survive.
+- **No webhook signatures**: callbacks live under a secret path `/at/<AT_WEBHOOK_SECRET>/…`.
+- **No voice sandbox**: the Demo Lab plays our real voice XML in the browser with speech synthesis.
+- **Sandbox SMS never reaches real phones**: the Demo Lab shows each simulated handset's inbox.
+
+## Design language
+
+The guest site follows the interaction patterns of the industry's best-tested consumer product (Airbnb's search pill, cards, listing layout, sticky booking card, checkout and trip pages), under our own coastal brand:
+- coral `#e8553e` and ocean teal;
+- Plus Jakarta Sans;
+- generous white space, 12–24 px radii, soft shadows;
+- mobile-first with a bottom tab bar.
+
+Prices are always in KES, with USD/EUR/GBP approximations for international guests. The host console follows calm operational dashboards (Hospitable, Guesty): a "Today" view first, then calendar, inbox, tasks and insights.
+
+## Out of scope (for now)
+
+- eTIMS e-invoicing and KRA filing (exports only)
+- Two-way OTA API channel management (iCal only; brief 02 explains why APIs are partner-gated)
+- Native mobile apps (the site is a responsive web app; USSD/SMS/voice cover feature phones)
+- AI-generated free-text replies (deterministic NLU plus FAQ matching, with every unknown question escalated to Amina)
