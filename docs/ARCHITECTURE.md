@@ -35,10 +35,10 @@ There is **one public origin**. Next.js serves the website and proxies the API, 
 | `core` | Site settings (business details, policies, TRA licence, automation switches), activity/audit log, Fernet encryption, the scheduler (jobs, daily markers, Postgres advisory lock), demo endpoints, seed data |
 | `accounts` | Phone-number identity (`User` with roles: guest, owner, manager, cleaner, cook, caretaker, security, driver), OTP login, encrypted ID, preferences, data export/erasure, retention purge |
 | `properties` | Areas, units (homes), photos, amenities, price rules and overrides, calendar blocks, iCal feeds (import/export), wishlists; availability and the all-in quote engine |
-| `bookings` | Booking lifecycle (hold → confirmed → checked in → completed), add-ons and approvals, breakfast, occupants (guest register), access codes, waitlist, risk screening, refunds quote |
-| `payments` | Payments and refunds; providers: simulated M-Pesa, Safaricom Daraja, AT mobile checkout, simulated card, Paystack; idempotent settlement; reconciliation |
+| `bookings` | Booking lifecycle (hold → confirmed → checked in → completed), date changes and extensions (`ChangeRequest`), add-ons and approvals, breakfast, occupants (guest register), access codes, waitlist, risk screening, refunds quote |
+| `payments` | Payments and refunds; providers: simulated M-Pesa, Safaricom Daraja, AT mobile checkout, simulated card, Paystack; idempotent settlement; reconciliation; M-Pesa result-code guidance; Paybill (C2B) matching; invoices, credit notes and the ledger CSV |
 | `messaging` | Threads, messages (outbox), multilingual templates, automations (message timeline), FAQ knowledge base, broadcasts, GSM-7 encoding, promo-hours guard |
-| `comms` | Africa's Talking REST client; the SMS bot ("Ask Amina") and host SMS commands; USSD state machine; voice IVR; SIM-swap checks; webhooks and Demo Lab endpoints |
+| `comms` | Africa's Talking REST client; the SMS bot ("Ask Amina") and host SMS commands; USSD state machine; voice IVR; M-Pesa prompts deferred until after a USSD/voice reply; SIM-swap checks; webhooks and Demo Lab endpoints |
 | `operations` | Tasks/work orders (turnover, maintenance, guest requests), staff, kitchen sheet, gate list, morning digest, guest CRM |
 | `safety` | Alerts and the SOS escalation ladder, follow-ups, guest register CSV |
 | `reviews` | Ratings by SMS/web with category scores, host responses |
@@ -60,6 +60,12 @@ erDiagram
   BOOKING ||--o{ BOOKING_GUEST : "register (occupants)"
   BOOKING ||--o{ PAYMENT : "paid by"
   BOOKING ||--o{ REFUND : "refunded by"
+  BOOKING ||--o{ CHANGE_REQUEST : "changed by"
+  CHANGE_REQUEST |o--o| PAYMENT : "difference paid by"
+  BOOKING ||--o| INVOICE : "invoiced as"
+  INVOICE ||--o{ CREDIT_NOTE : "reduced by"
+  C2B_TRANSACTION |o--o| PAYMENT : "settles as"
+  USER ||--o{ WAITLIST : "waits for"
   BOOKING ||--o{ ACCESS_CODE : unlocks
   BOOKING ||--o{ BOOKING_EVENT : timeline
   BOOKING ||--o| REVIEW : "reviewed in"
@@ -81,6 +87,8 @@ stateDiagram-v2
   expired --> refund_due: late payment, dates re-let → refund + alert
   confirmed --> checked_in: door code released (arrival 08:00:<br/>balance paid ∧ ID registered ∧ SIM not swapped)
   confirmed --> cancelled: guest / host (refund by policy)
+  confirmed --> confirmed: change applied (new dates / guests,<br/>difference paid or refunded)
+  checked_in --> checked_in: extension applied
   held --> cancelled
   checked_in --> completed: checkout (guest, SMS "CHECKOUT", auto at checkout time + 30 min)
   completed --> [*]: review request, turnover task
@@ -101,12 +109,19 @@ stateDiagram-v2
 - **Pluggable providers.** `MPESA_PROVIDER=simulate|daraja|africastalking`, `CARD_PROVIDER=simulate|paystack`.
 - **Callbacks** live under secret paths. Settlement (`payments.services.on_success`) locks the payment row and is safe to call any number of times. It checks the amount and handles late payments: re-hold if the unit is free, otherwise `refund_due` plus an alert to Amina.
 - **Reconciliation.** A scheduler job queries pending STK pushes every 2 minutes.
-- **Deposits.** 30% now and the balance one day before arrival. The door code waits for the balance, and Kenyan guests get an automatic M-Pesa prompt for it.
+- **Deposits.** 30% now and the balance one day before arrival. The door code waits for the balance, and Kenyan guests get an automatic M-Pesa prompt for it. A daily balance ladder adds a heads-up a week ahead and an overdue SMS with the Paybill details; Amina sees every outstanding balance on the Payments page.
+- **Failed prompts.** `payments/results.py` maps each Daraja result code (1 low balance, 1001 another prompt open, 1019 expired, 1025 unreachable, 1032 cancelled, 1037 timeout, 2001 wrong PIN) to the reason Amina sees, the guest's message and the next step: resend, wait, pay the 30% deposit, card or Paybill.
+- **Paybill (C2B).** Daraja calls `/api/payments/daraja/c2b/validation|confirmation/<secret>`. A payment whose account number is a booking reference settles that booking (an overpayment is queued as a refund); anything else waits in an Unmatched queue on the Payments page. `manage.py register_c2b` registers the URLs.
+- **Changes.** A `ChangeRequest` re-prices the stay at current rates and re-checks availability inside one transaction. A higher price is applied when its payment settles (48 h at most, then it lapses); a lower one applies at once and refunds by the cancellation policy. `SiteSettings.instant_changes` off means Amina approves first.
+- **Invoices.** Numbered invoices (`AMS-INV-YYYY-NNNNN`, one per booking) and credit notes (`AMS-CN-…`) from a per-year counter, a printable page at `/trips/[ref]/invoice`, and sales-register and ledger CSVs. eTIMS transmission is not built.
+- **Cards.** Paystack webhooks are HMAC-checked and then confirmed with Verify Transaction (KES, full amount); pending card payments are reconciled like STK pushes.
 
 ### Messaging: an outbox
 
 `messaging.send()` writes a `queued` message in the caller's transaction and dispatches it **after commit** (`transaction.on_commit`), so a rolled-back booking never texts the guest. Anything still queued (crash, AT outage) is re-sent by the scheduler. Other behaviour:
 - delivery reports update the status (`delivered`, `failed`);
+- Africa's Talking status codes decide retries: 402/403/404/406 are final (406 also marks the number as opted out), 405 (no credit) alerts Amina while booking messages wait it out, and 5xx/407/network errors retry after 1 and 5 minutes (3 sends in all);
+- inbound messages are de-duplicated by a unique constraint on the provider's message id;
 - seeded demo users are never sent real SMS;
 - with no AT key, messages are logged (dry run);
 - promotional messages are only sent inside the configured hours (08:00–18:00) and never to opted-out numbers.
@@ -124,21 +139,24 @@ stateDiagram-v2
 | `auto_checkout` | checkout time + 30 min | Completes forgotten checkouts, revokes codes, creates turnover tasks |
 | `reviews` | after checkout | SMS review request (reply 1–5) |
 | `alert_followups` | every tick | Escalate unacknowledged SOS alerts (calls Amina, then the backup contact) |
-| `payments_reconcile` | 2 min | Query pending STK pushes |
+| `changes_expire` | every tick | Lapse date changes left unpaid or unapproved past their deadline (applies any that were paid) |
+| `payments_reconcile` | 2 min | Query pending STK pushes and card payments |
 | `ical_sync` | 15 min | Import Airbnb/Booking.com calendars; alert on conflicts |
 | `host_digest` | 07:00 | Amina's morning SMS: arrivals, departures, in-house, breakfasts, open tasks, unanswered messages, alerts, week occupancy |
 | `gate_list` | 07:30 | Today's arrivals, plates and ETAs to the security guard |
 | `kitchen_sheet` | 18:00 | Tomorrow's breakfasts (style, people, time, dietary) to the cook |
 | `levy_reminder` | 5th of the month | Last month's tourism levy and TRA return reminder |
+| `licence_reminder` | 09:00 | TRA licence renewal: SMS and a compliance alert 45, 30, 14, 7 and 1 days before the expiry date |
+| `balance_ladder` | 10:00 | Balance heads-up a week before arrival; overdue SMS with the Paybill details |
 | `retention` | 03:00 | Erase ID numbers past the 5-year register period |
 
 ## Channels
 
 | Channel | Entry point | Notes |
 |---|---|---|
-| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Separate menus for guests, staff (tasks) and the host (today, approvals, tonight's availability). |
+| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Separate menus for guests, staff (tasks) and the host (today, approvals, tonight's availability). The M-Pesa prompt is sent after the `END` reply (`comms/deferred.py`), so a slow payment API can't time out the session. |
 | SMS | `comms/smsbot.py` | Keywords in 5 languages, then the conversation state, then NLU (dates, nights, guests, area), then the FAQ knowledge base, then relay to Amina. HELP is checked first, always. Host commands: `#12 text`, `YES 34`, `NO 34`, `OK`. Staff: `DONE 7`. |
-| Voice | `comms/voice.py` | AT voice XML: `<Say>` (Kiswahili voice), `<GetDigits>`, `<Dial>` to Amina, `<Record>` voicemail. DB-backed sessions. Outbound SOS call to Amina ("press 1 to call the guest"). A missed bridged call triggers SMS follow-up or escalation. |
+| Voice | `comms/voice.py` | AT voice XML: `<Say>` (Kiswahili voice), `<GetDigits>`, `<Dial>` to Amina, `<Record>` voicemail. DB-backed sessions. Outbound SOS call to Amina ("press 1 to call the guest"). A missed bridged call triggers SMS follow-up or escalation; an unanswered SOS call escalates at once, and an unanswered welcome call becomes a welcome SMS. |
 | Web | `frontend/` | Next.js; the same services as every other channel |
 
 ## Security & privacy
@@ -147,7 +165,7 @@ stateDiagram-v2
   - Phone number + 6-digit OTP (hashed): 5-minute expiry, lockout after 5 attempts, 30-second resend gap, 5 codes per number per hour, plus per-IP throttles.
   - Session cookie (HttpOnly, SameSite=Lax, Secure in production) with CSRF.
 - **Roles.** Guest; host (owner/manager); staff (cleaner, cook, caretaker, security, driver). DRF permission classes (`IsGuest`, `IsHost`, `IsStaffMember`). Guests only ever see their own bookings (404 otherwise).
-- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. Payment callbacks use their own secret path, and Paystack webhooks are HMAC-verified.
+- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. Payment callbacks use their own secret path (the Paybill callbacks use `DARAJA_CALLBACK_SECRET`), and Paystack webhooks are HMAC-verified.
 - **Guest IDs.**
   - Encrypted with Fernet; staff see only the last 4 characters. Consent is required.
   - Kept for the legal register period (`id_retention_days`), then purged by the retention job.
@@ -171,7 +189,7 @@ stateDiagram-v2
   | `/stays/[slug]` listing | Calendar (multi-unit, prices) |
   | `/book/[slug]` checkout | Reservations + detail |
   | `/pay/card/[token]` hosted card page | Messages (inbox) |
-  | `/trips`, `/trips/[ref]` trip hub | Tasks, Kitchen |
+  | `/trips`, `/trips/[ref]` trip hub, `/trips/[ref]/invoice` | Tasks, Kitchen |
   | `/messages` | Listings + editor (photos, pricing, rules, check-in info) |
   | `/wishlists` | Guests (CRM) |
   | `/account` | Messaging (templates, automations, FAQ, broadcasts) |
@@ -180,7 +198,7 @@ stateDiagram-v2
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (529 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;
@@ -192,3 +210,5 @@ stateDiagram-v2
 - the voice IVR;
 - webhook secrets and delivery reports;
 - OTP login, permissions, staged disclosure, the web booking API and iCal round-trips.
+
+End-to-end flow suites walk every journey through the public API the way the web, USSD, SMS and voice channels use it: `test_flows_guest`, `_host`, `_ops`, `_payments`, `_sms`, `_ussd`, `_voice` and `_webhooks`, with shared helpers in `tests/flowkit.py`. Feature suites (`test_feature_bookings`, `_payments`, `_channels`) cover date changes and extensions, the waitlist, deposits on manual bookings, M-Pesa result codes, Paybill matching, invoices and credit notes, the balance ladder, licence reminders and SMS retry rules; `test_scheduler` covers the core jobs, the single-instance lock and failure isolation.

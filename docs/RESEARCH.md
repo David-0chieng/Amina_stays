@@ -1,6 +1,6 @@
 # Research → product decisions
 
-Amina Stays was designed from five research briefs written on 25 Nov 2026. The full briefs, with sources, are in [`docs/research/`](research/):
+Amina Stays was designed from eight research briefs written on 25–26 Nov 2026. The full briefs, with sources, are in [`docs/research/`](research/):
 
 | Brief | What it covers |
 |---|---|
@@ -11,6 +11,7 @@ Amina Stays was designed from five research briefs written on 25 Nov 2026. The f
 | [05 Tech stack](research/05-tech-stack.md) | Django/DRF + PostgreSQL + Next.js choices, auth across origins, jobs, Postgres patterns, deployment |
 | [06 Airbnb guest UX (2025–26)](research/06-airbnb-guest-ux.md) | Page-by-page anatomy of the current guest product: header and search, home feed, search results and map, listing page, checkout, trips, account; design tokens and the top details to replicate |
 | [07 Airbnb host UX (2025–26)](research/07-airbnb-host-ux.md) | Hosting mode: Today / Calendar / Listings / Messages / Menu, reservation cards and statuses, calendar and pricing tools, inbox, earnings, insights; comparable PMS patterns and a recommended console IA |
+| [08 End-to-end flows: gap analysis](research/08-end-to-end-flows.md) | Every guest/host flow compared with Airbnb, Hospitable and Hostaway; M-Pesa result codes and recovery, Paybill/C2B, Paystack verification, Africa's Talking USSD/SMS/voice edge cases, Kenyan tax and licence compliance; ranked MUST/SHOULD/NICE gaps |
 
 ## The challenge
 
@@ -61,18 +62,26 @@ So Amina Stays is not only a booking site. It is **one source of truth for every
 | 16 | **OTA commissions** (Airbnb 15.5%, Booking.com ≈15%, Vrbo 12%) | Direct booking with M-Pesa; OTA calendars synced by iCal so Amina can still list on Airbnb and Booking.com without double bookings | `properties` iCal feeds, host Channels page |
 | 17 | **Cancellations and refunds disputes** (Agoda fine, brief 01) | Four plain policies, shown before payment; the refund amount is shown before the guest confirms; host cancellations refund in full plus an airtime apology (AT Airtime) | `bookings/services.py::refund_quote`, `send_goodwill` |
 | 18 | **Response-time expectations** (Airbnb ranks on 24 h response) | Instant answers 24/7; unanswered threads flagged with waiting time in the inbox; a morning digest to Amina by SMS | inbox, `host_digest` job |
+| 19 | **Failed M-Pesa prompts**: wrong PIN, cancelled, low balance, phone unreachable, another prompt open (brief 08) | Every Daraja result code maps to a plain message and the right next step: resend, wait a minute, pay the 30% deposit, card or Paybill. The hold stays in place while the guest retries | `payments/results.py`, `payment-help.tsx`, checkout |
+| 20 | **No STK prompt at all**, or the guest simply prefers Paybill | Lipa na M-Pesa Paybill fallback: the booking reference is the account number, the payment is matched automatically (C2B confirmation) and confirmed by SMS; anything unmatched waits in a queue Amina clears in one click | `payments/c2b.py`, host Payments |
+| 21 | **Plans change after booking** (Airbnb lets guests alter a reservation and pay or get back the difference) | Change dates or guests, or extend, from the trip page or by SMS `EXTEND`: re-priced at current rates, pay the difference by M-Pesa or card, reductions refunded by the cancellation policy; Amina can require approval | `bookings` `ChangeRequest`, `trip-change.tsx`, Today |
+| 22 | **Unpaid balances before arrival** (Airbnb gives 72 h, then cancels) | A balance ladder: reminder a week ahead, M-Pesa prompt on the due day, then an overdue SMS with the Paybill details; an overdue badge on the trip page; an Outstanding list for Amina; the door code stays held until paid | `run_balance_ladder`, host Payments |
+| 23 | **Sold-out dates lose demand** | "Notify me" on the web as well as SMS, USSD and voice; when the dates free up, everyone waiting for them gets an SMS offer with a booking link, oldest request first | `bookings` waitlist, listing page, Account |
+| 24 | **Tax paperwork** (VAT 16%, KRA eTIMS) | Numbered invoices and credit notes, a printable invoice page, sales-register and payments-ledger CSVs | `payments/invoices.py`, `/trips/[ref]/invoice` |
+| 25 | **A lapsed TRA licence** (licences expire on 31 Dec) | Renewal reminders 45, 30, 14, 7 and 1 days before the expiry date, with a compliance alert until it is renewed | `safety/services.py::licence_reminder` |
+| 26 | **Messages that silently fail** (opted-out numbers, no SMS credit, USSD sessions timing out on slow payment APIs) | SMS errors split into final (no retry) and transient (retried after 1 and 5 minutes); a 405 "no credit" alerts Amina; the M-Pesa push from USSD and voice is sent after the session's reply; an unanswered SOS call escalates at once | `messaging/services.py`, `comms/deferred.py`, `comms/voice.py` |
 
 ## Kenya-specific requirements (brief 03, top 15) — coverage
 
 | Requirement | Status |
 |---|---|
-| TRA licence shown on listings and receipts, with a verify link | ✅ Licence on every listing, receipt and footer; per-home override |
+| TRA licence shown on listings and receipts, with a verify link | ✅ Licence on every listing, receipt and footer; per-home override; renewal reminders before the expiry date |
 | Digital guest register (all occupants, ID, nationality, plate), kept 5 years, exportable | ✅ Encrypted, consented, last-4 only in the UI; CSV export; purged automatically after `id_retention_days` (1,825) |
 | Monthly TRA return (occupancy, visitors by country, revenue) | ✅ Host Insights, "TRA return" |
 | Tourism Levy engine | ✅ 2% in every quote; monthly reminder (5th) |
-| KRA / VAT tracking | ⚠️ VAT switch in settings (applies once registered); eTIMS invoicing is out of scope |
-| M-Pesa STK push, callbacks as the only proof, reconciliation, refunds | ✅ Daraja provider plus reconciliation job; refunds tracked to "sent" |
-| Card path for foreign guests | ✅ Hosted card checkout (Paystack in production, simulated in the demo) |
+| KRA / VAT tracking | ⚠️ VAT switch in settings (applies once registered); numbered invoices and credit notes with a sales-register CSV; eTIMS transmission is out of scope |
+| M-Pesa STK push, callbacks as the only proof, reconciliation, refunds | ✅ Daraja provider plus reconciliation job; result-code guidance; Paybill (C2B) fallback with automatic matching; refunds tracked to "sent", with an SMS to the guest |
+| Card path for foreign guests | ✅ Hosted card checkout (Paystack in production, confirmed with Verify Transaction and reconciled; simulated in the demo) |
 | Safety-by-design check-in, SOS, emergency numbers | ✅ |
 | Data protection built in (consent, 7-day access, 14-day erasure) | ✅ Self-service export and erasure; privacy notice |
 | Compliant SMS (opt-in, STOP, 08:00–18:00 for promotions) | ✅ |
@@ -131,7 +140,8 @@ Prices are always in KES, with USD/EUR/GBP approximations for international gues
 
 ## Out of scope (for now)
 
-- eTIMS e-invoicing and KRA filing (exports only)
+- eTIMS transmission and KRA filing (numbered invoices, credit notes and CSV exports only)
+- Special offers, security deposits and damage claims (ranked in [brief 08](research/08-end-to-end-flows.md#what-we-built))
 - Two-way OTA API channel management (iCal only; brief 02 explains why APIs are partner-gated)
 - Native mobile apps (the site is a responsive web app; USSD/SMS/voice cover feature phones)
 - AI-generated free-text replies (deterministic NLU plus FAQ matching, with every unknown question escalated to Amina)

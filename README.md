@@ -10,13 +10,13 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 
 | | |
 |---|---|
-| 🌍 **Web** | Search with an all-in price, listing pages, checkout with M-Pesa or card (pay in full or a 30% deposit), and a living trip page with directions, Wi-Fi, door code, breakfast, extras and help |
+| 🌍 **Web** | Search with an all-in price, listing pages, checkout with M-Pesa (Paybill as a fallback) or card, in full or with a 30% deposit, and a living trip page with directions, Wi-Fi, door code, breakfast, extras, help, date changes and extensions, and a tax invoice |
 | 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina, check out, language, emergency |
 | 💬 **SMS — "Ask Amina"** | Natural-language booking in English, Kiswahili, Italian, German and French; instant answers from each home's knowledge base; HELP for emergencies |
 | 📞 **Voice — "Call Amina"** | English/Kiswahili IVR: availability and booking, prices, directions, bridge to Amina, voicemail, emergencies |
 | 🛎️ **Host console** | Today view, multi-home calendar and pricing, reservations, a unified inbox, tasks and kitchen, listings editor, guest CRM, messaging automations, reviews, insights with the TRA return, payments, safety and channels |
 
-**Research first.** We studied Airbnb, Booking.com, Vrbo, Agoda and Trip.com, small-host operations, Kenyan regulation and Africa's Talking's real limits before writing code. See [docs/RESEARCH.md](docs/RESEARCH.md) for the problem → solution matrix, and [docs/research/](docs/research/) for the five full briefs with sources.
+**Research first.** We studied Airbnb, Booking.com, Vrbo, Agoda and Trip.com, small-host operations, Kenyan regulation and Africa's Talking's real limits before writing code, then compared every guest and host flow end to end with Airbnb, Hospitable and Hostaway. See [docs/RESEARCH.md](docs/RESEARCH.md) for the problem → solution matrix, and [docs/research/](docs/research/) for the eight full briefs with sources.
 
 ---
 
@@ -26,7 +26,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages and a single-instance scheduler; Next.js 16 front end; 41 backend tests. See [Architecture](docs/ARCHITECTURE.md). |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages and a single-instance scheduler; Next.js 16 front end; 529 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out), USSD, Voice (IVR, bridge, voicemail, outbound safety calls), Airtime, Mobile Data, SIM Swap; WhatsApp and AT checkout optional. |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
 
@@ -41,6 +41,11 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
   - The **door code by SMS at 08:00 on arrival day**, only once the balance is paid, the guest register is complete and an **Africa's Talking SIM-swap check** passes.
   - The code stops working at checkout.
 - **Breakfast that reaches the kitchen.** Style (Swahili, continental, full English, vegetarian), people, time and dietary needs (halal, vegan, gluten-free…) are chosen at booking, on the trip page, by SMS or USSD. The cook gets tomorrow's sheet at 18:00.
+- **Payments that recover.**
+  - A failed M-Pesa prompt (wrong PIN, cancelled, low balance, phone unreachable) gets a plain explanation and the right next step: resend, pay the 30% deposit, card, or the **Paybill**, using the booking reference as the account number.
+  - Paybill payments are matched to the booking automatically and confirmed by SMS. Anything unmatched waits for Amina's one-click match.
+  - Balances are chased by a reminder ladder, overpayments are refunded, and every stay gets a numbered invoice (with credit notes for refunds).
+- **Plans change.** Guests change dates or guests, or extend, from the trip page or by texting EXTEND. The stay is re-priced, and they pay the difference or get it back under the cancellation policy; Amina can require approval. Sold-out dates offer "Notify me" and an SMS when they free up.
 - **Safety.**
   - Text HELP, dial 9 on USSD, press 9 on a call, or tap SOS. Amina, the caretaker and security are alerted together, and voice calls escalate until someone answers.
   - Emergency numbers (999 / 112 / 1199 / 1514) are always one tap away.
@@ -49,7 +54,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
   - Staff reply DONE by SMS.
   - The guard gets the day's arrivals and car plates; Amina gets a morning digest.
 - **Compliance built in.**
-  - TRA licence on every listing and receipt.
+  - TRA licence on every listing and receipt, with renewal reminders before it expires.
   - An encrypted, consented guest register kept for the 5-year legal period, then purged.
   - A one-click monthly TRA return and the tourism levy in every quote.
   - Data Protection Act export and erasure; promotional SMS only 08:00–18:00, with STOP.
@@ -139,6 +144,7 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 | Variable | Options |
 |---|---|
 | `MPESA_PROVIDER` | `simulate` (default) · `daraja` (Safaricom STK push; set the `DARAJA_*` keys; callback `https://<tunnel>/api/payments/daraja/callback/<secret>`) · `africastalking` (AT mobile checkout, onboarding-gated, with no sandbox) |
+| `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Set `DARAJA_CALLBACK_SECRET`, then register the Paybill callbacks once with `cd backend && uv run python manage.py register_c2b` (it prints the validation and confirmation URLs). |
 | `CARD_PROVIDER` | `simulate` (default: a hosted test card page) · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<tunnel>/api/payments/paystack/webhook`) |
 
 Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable and Safaricom Daraja is the production path.
@@ -149,15 +155,20 @@ Africa's Talking no longer offers self-serve payments with a sandbox (see [resea
 2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 2 (Diani) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (pay all now). About 6 seconds later the simulated M-Pesa payment confirms, and the confirmation SMS with a trip link arrives on the SMS phone.
 3. **Ask Amina by SMS.** Text "Bei?" (Kiswahili for "price?"), then "WIFI", then "Nataka nyumba Diani 12 Dec siku 3 watu 2" (a booking in plain Kiswahili).
 4. **Call Amina.** Press 2 for Kiswahili, then 2 for prices and breakfast. The IVR is read aloud in the browser.
-5. **Web.** Search → listing → checkout with a 30% deposit and breakfast → trip page: the checklist, directions unlocking 48 h before, and the receipt.
+5. **Web.** Search → listing → checkout with breakfast, paying in full. While the M-Pesa prompt is waiting, tap *Simulate "insufficient funds"*: the guest is told why and offered the 30% deposit instead, a card or the Paybill. Pay the deposit, then open the trip page: the checklist, directions unlocking 48 h before, the receipt and the tax invoice.
 6. **Time machine.** Pick Hans's booking and press *Release door code*: it is held because the guest register (ID) is missing. Hold Hans's phone, text "ID C01X00T47", release again, and the door code arrives by SMS in German.
 7. **Safety.** Holding Wanjiku's phone, text "HELP": she gets an instant reply in Kiswahili and Amina gets an SMS alert. Switch to Amina's phone and *Answer the SOS safety call*: it names the guest, home and booking, and pressing 1 connects Amina to her.
 8. **Host console.** Today (the Today | Upcoming reservation cards), Calendar and Messages (Amina can also reply from her phone with "#3 …"). Then open the Menu for the kitchen sheet, insights and the one-click TRA return.
 
+More flows, if there's time:
+- **Change of plans.** On a confirmed trip, *Change dates or guests* (or *Extend your stay* once checked in) shows the new price before the guest commits; pay the difference and the dates move. Turn off *Instant changes* in Settings and the request waits on Amina's Today page instead.
+- **Paybill.** In the Demo Lab time machine, pick a booking that owes money and press *Simulate Paybill payment*: it is matched by reference, the guest gets a PAID SMS, and Host › Payments updates. Payments that match no booking land in the Unmatched queue.
+- **Waitlist.** On a listing whose dates are taken, *Notify me*; cancel the blocking stay in the console and the waiting guest gets an SMS offer.
+
 ## Tests
 
 ```bash
-cd backend && uv run pytest          # 42 tests on a real PostgreSQL test database
+cd backend && uv run pytest          # 529 tests on a real PostgreSQL test database, incl. end-to-end flow suites (tests/test_flows_*.py)
 cd backend && uv run ruff check .
 cd frontend && npx tsc --noEmit && npm run lint
 ```
