@@ -67,16 +67,135 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 
 ## Quick start
 
-Requirements:
-- Python 3.12+ with [uv](https://docs.astral.sh/uv/)
-- Node.js 20.9+
-- PostgreSQL 16+: local, via Docker, or `scripts/db.sh install` (micromamba, no root)
+You need three tools, or Docker on its own:
+- [uv](https://docs.astral.sh/uv/), which also downloads the Python version the backend uses (3.14);
+- Node.js 20.9+;
+- PostgreSQL 16+.
+
+Clone the repository (or download the ZIP) and open a terminal in its folder.
+
+### Any system: Docker
+
+With [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, macOS) or Docker Engine (Linux):
 
 ```bash
-scripts/dev.sh            # Postgres + migrations + demo data + Django + scheduler + Next.js
+docker compose up --build
 ```
 
-Then open:
+This starts PostgreSQL 18, the API, the scheduler and the website, and loads the demo data. Ctrl+C stops it; `docker compose down -v` also deletes the database.
+
+### Linux
+
+These steps are for Ubuntu 24.04+ and Debian 13+. Other distributions need the same tools from their own package manager.
+
+1. Install the tools:
+
+   ```bash
+   sudo apt update && sudo apt install -y git curl postgresql
+   curl -LsSf https://astral.sh/uv/install.sh | sh                                  # uv
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash  # nvm, for Node.js
+   ```
+
+   Open a new terminal and run `nvm install --lts`. The distribution's own Node.js is too old for Next.js 16.
+
+2. Create the database user and database:
+
+   ```bash
+   sudo -u postgres psql -c "CREATE ROLE amina LOGIN CREATEDB PASSWORD 'amina';"
+   sudo -u postgres createdb -O amina amina
+   ```
+
+3. Start everything:
+
+   ```bash
+   export DATABASE_URL=postgres://amina:amina@localhost:5432/amina
+   scripts/dev.sh
+   ```
+
+   The first run installs the dependencies, creates the tables and loads the demo data. After that, the API (port 8000), the scheduler and the website (port 3000) run until you press Ctrl+C. `scripts/dev.sh --reseed` resets the demo data.
+
+If you can't use sudo, or your distribution's PostgreSQL is older than 16, leave PostgreSQL out of step 1 and skip step 2. Then run `scripts/dev.sh` without `DATABASE_URL`. It uses either:
+- PostgreSQL 18 run from the project folder, which you set up with `scripts/db.sh install && scripts/db.sh init` (needs [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)); or
+- a database container, if Docker is installed.
+
+<details>
+<summary>Linux step by step, instead of <code>scripts/dev.sh</code></summary>
+
+```bash
+cp .env.example .env                       # demo mode and the database address
+cd backend
+uv sync
+uv run python manage.py migrate
+uv run python manage.py seed_demo
+uv run python manage.py runserver          # API on :8000
+uv run python manage.py run_scheduler      # second terminal, in backend/
+npm install && npm run dev                 # third terminal, in frontend/ → http://localhost:3000
+```
+</details>
+
+### Windows
+
+**Recommended: WSL 2.**
+1. In PowerShell opened as administrator, run `wsl --install`, then restart.
+2. Open **Ubuntu** from the Start menu and clone the project into your Ubuntu home folder (`~`). Avoid `/mnt/c`: installs and live reload are much slower there.
+3. Follow the Linux steps inside Ubuntu.
+4. Open http://localhost:3000 in your Windows browser as usual.
+
+If the database isn't running after a restart, start it with `sudo service postgresql start`.
+
+**Or natively, in PowerShell** (Windows 10 or 11):
+
+1. Install the tools:
+
+   ```powershell
+   winget install -e --id Git.Git
+   winget install -e --id OpenJS.NodeJS.LTS
+   winget install -e --id astral-sh.uv
+   winget install -e --id PostgreSQL.PostgreSQL.18 --interactive
+   ```
+
+   In the PostgreSQL installer, choose a password for the `postgres` user and keep port 5432. Then close and reopen PowerShell so it finds the new commands, and allow it to run npm (once):
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   ```
+
+2. Create the database user and database. Type the `postgres` password when asked:
+
+   ```powershell
+   & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE ROLE amina LOGIN CREATEDB PASSWORD 'amina';"
+   & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE amina OWNER amina;"
+   ```
+
+3. In the project folder, copy the local settings (demo mode and the database address), then set up and start the API:
+
+   ```powershell
+   Copy-Item .env.example .env
+   cd backend
+   uv sync
+   uv run python manage.py migrate
+   uv run python manage.py seed_demo
+   uv run python manage.py runserver
+   ```
+
+4. In a second PowerShell window, from the project folder, start the scheduler. It sends reminders, door codes and automated messages:
+
+   ```powershell
+   cd backend
+   uv run python manage.py run_scheduler
+   ```
+
+5. In a third window, from the project folder, start the website:
+
+   ```powershell
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+If you have Docker Desktop, you can skip installing PostgreSQL and step 2: `docker compose up -d db` creates the same database.
+
+### Open the app
 
 | URL | What |
 |---|---|
@@ -84,32 +203,6 @@ Then open:
 | http://localhost:3000/demo | **Demo Lab**: SMS, USSD and voice phones in the browser, Amina's phone and a lifecycle time machine |
 | http://localhost:3000/host | Host console: log in as **+254 700 000 001** (Amina); in demo mode the login code is shown on screen |
 | http://localhost:8000/api/docs | OpenAPI docs |
-
-<details>
-<summary>Step by step, or with Docker</summary>
-
-```bash
-# Database (pick one)
-scripts/db.sh install && scripts/db.sh init       # local PostgreSQL 18 in .data/ (micromamba, no root)
-docker compose up -d db                           # or Docker
-
-# Backend
-cd backend
-uv sync
-DEBUG=1 DEMO=1 uv run python manage.py migrate
-DEBUG=1 DEMO=1 uv run python manage.py seed_demo
-DEBUG=1 DEMO=1 uv run python manage.py runserver      # API on :8000
-DEBUG=1 DEMO=1 uv run python manage.py run_scheduler  # background jobs (another terminal)
-
-# Frontend
-cd frontend
-npm install
-npm run dev                                       # http://localhost:3000
-
-# Everything in containers
-docker compose up --build
-```
-</details>
 
 Configuration is environment-driven; every variable is documented in [.env.example](.env.example). With no keys at all you get:
 - dry-run SMS and voice (logged, not sent);
@@ -144,7 +237,7 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 | Variable | Options |
 |---|---|
 | `MPESA_PROVIDER` | `simulate` (default) · `daraja` (Safaricom STK push; set the `DARAJA_*` keys; callback `https://<tunnel>/api/payments/daraja/callback/<secret>`) · `africastalking` (AT mobile checkout, onboarding-gated, with no sandbox) |
-| `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Set `DARAJA_CALLBACK_SECRET`, then register the Paybill callbacks once with `cd backend && uv run python manage.py register_c2b` (it prints the validation and confirmation URLs). |
+| `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Set `DARAJA_CALLBACK_SECRET`, then register the Paybill callbacks once by running `uv run python manage.py register_c2b` in `backend/` (it prints the validation and confirmation URLs). |
 | `CARD_PROVIDER` | `simulate` (default: a hosted test card page) · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<tunnel>/api/payments/paystack/webhook`) |
 
 Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable and Safaricom Daraja is the production path.
@@ -167,10 +260,15 @@ More flows, if there's time:
 
 ## Tests
 
+They use the database from the quick start; pytest creates and drops its own test database. Run them from the project folder; the commands are the same in bash and PowerShell:
+
 ```bash
-cd backend && uv run pytest          # 529 tests on a real PostgreSQL test database, incl. end-to-end flow suites (tests/test_flows_*.py)
-cd backend && uv run ruff check .
-cd frontend && npx tsc --noEmit && npm run lint
+cd backend
+uv run pytest            # 529 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run ruff check .
+cd ../frontend
+npx tsc --noEmit
+npm run lint
 ```
 
 ## Project structure
@@ -194,7 +292,7 @@ frontend/                Next.js 16 (App Router), Tailwind CSS v4, TanStack Quer
   src/app/host           host console
   src/components         UI kit, site, host and demo components
 docs/                    research synthesis, architecture, full research briefs
-scripts/                 dev.sh (run everything), db.sh (local PostgreSQL)
+scripts/                 dev.sh (run everything), db.sh (local PostgreSQL); bash: Linux, macOS, WSL
 ```
 
 More: [Architecture](docs/ARCHITECTURE.md) · [Research](docs/RESEARCH.md) · [Project brief](<AMINA-STAYS_Project_Brief (2).pdf>)
