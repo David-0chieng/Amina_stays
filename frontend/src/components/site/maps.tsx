@@ -8,7 +8,7 @@ import * as React from "react";
 import { Circle, MapContainer, Marker, Popup, TileLayer, ZoomControl, useMap } from "react-leaflet";
 
 import { StarIcon, cardTitle } from "@/components/site/listing-card";
-import { kes } from "@/lib/format";
+import { useMoney } from "@/components/site/locale";
 import { sized } from "@/lib/img";
 import type { ListingCard } from "@/lib/types";
 
@@ -37,6 +37,7 @@ function Fit({ points, token }: { points: [number, number][]; token?: unknown })
 
 export default function ListingsMap({ listings, query, hoverId, resizeToken }: { listings: ListingCard[]; query: string; hoverId?: number | null; resizeToken?: unknown }) {
   const [selected, setSelected] = React.useState<number | null>(null);
+  const money = useMoney();
   const points = React.useMemo(() => listings.filter((l) => l.location).map((l) => [l.location!.lat, l.location!.lng] as [number, number]), [listings]);
   return (
     <MapContainer center={[-4.05, 39.68]} zoom={11} scrollWheelZoom className="size-full" zoomControl={false} attributionControl>
@@ -48,7 +49,7 @@ export default function ListingsMap({ listings, query, hoverId, resizeToken }: {
           <Marker
             key={l.id}
             position={[l.location.lat, l.location.lng]}
-            icon={pinIcon(kes(l.price.total ?? l.price.from_nightly), hoverId === l.id || selected === l.id)}
+            icon={pinIcon(money(l.price.total ?? l.price.from_nightly), hoverId === l.id || selected === l.id)}
             zIndexOffset={hoverId === l.id || selected === l.id ? 1000 : 0}
             eventHandlers={{ popupopen: () => setSelected(l.id), popupclose: () => setSelected(null) }}
           >
@@ -67,7 +68,7 @@ export default function ListingsMap({ listings, query, hoverId, resizeToken }: {
                   </span>
                   <span className="block truncate text-[15px] text-ink-2">{l.name}</span>
                   <span className="mt-1 block text-[15px]">
-                    <b className="font-semibold">{kes(l.price.total ?? l.price.from_nightly)}</b>
+                    <b className="font-semibold">{money(l.price.total ?? l.price.from_nightly)}</b>
                     <span className="text-ink-2">{l.price.total ? ` for ${l.price.nights} nights` : " a night"}</span>
                   </span>
                 </span>

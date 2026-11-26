@@ -45,7 +45,7 @@ export function DropdownItem({ className, ...props }: React.ComponentProps<typeo
     />
   );
 }
-export const DropdownSeparator = () => <DM.Separator className="my-2 h-px bg-line-soft" />;
+export const DropdownSeparator = ({ className }: { className?: string }) => <DM.Separator className={cn("my-2 h-px bg-line-soft", className)} />;
 
 // ---------- Tabs ----------
 export const Tabs = T.Root;

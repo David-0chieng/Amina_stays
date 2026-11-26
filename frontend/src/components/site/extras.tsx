@@ -5,8 +5,9 @@ import Link from "next/link";
 import * as React from "react";
 
 import { hydrationSafe, useConfig, useHydrated } from "@/components/providers";
-import { MobileTabs, SiteHeader, type SiteTab } from "@/components/site/header";
+import { MobileTabs, SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
+import { useMoney } from "@/components/site/locale";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
@@ -33,9 +34,10 @@ export function useAddons() {
   return hydrationSafe(q, useHydrated());
 }
 
-export const addonPrice = (a: Addon) => (a.price ? `${kes(a.price)} ${a.pricing_label}` : "Free on request");
+export const addonPrice = (a: Addon, money: (n: number) => string = kes) => (a.price ? `${money(a.price)} ${a.pricing_label}` : "Free on request");
 
 export function ExtraCard({ addon: a, onOpen, size = "md" }: { addon: Addon; onOpen: () => void; size?: "md" | "lg" }) {
+  const money = useMoney();
   return (
     <button type="button" onClick={onOpen} className="group block w-full text-left outline-none">
       <div className={cn("relative overflow-hidden rounded-card bg-surface", size === "lg" ? "aspect-[4/3]" : "aspect-[20/19]")}>
@@ -50,12 +52,12 @@ export function ExtraCard({ addon: a, onOpen, size = "md" }: { addon: Addon; onO
         <>
           <h3 className="mt-3 text-[17px] font-semibold">{a.name}</h3>
           <p className="mt-0.5 line-clamp-2 text-[15px] text-ink-2">{a.short}</p>
-          <p className="mt-1.5 text-[15px]"><span className="font-semibold">{addonPrice(a)}</span></p>
+          <p className="mt-1.5 text-[15px]"><span className="font-semibold">{addonPrice(a, money)}</span></p>
         </>
       ) : (
         <>
           <h3 className="mt-2 truncate text-[13px] font-medium">{a.name}</h3>
-          <p className="truncate text-xs text-ink-2">{addonPrice(a)}</p>
+          <p className="truncate text-xs text-ink-2">{addonPrice(a, money)}</p>
         </>
       )}
     </button>
@@ -64,6 +66,7 @@ export function ExtraCard({ addon: a, onOpen, size = "md" }: { addon: Addon; onO
 
 export function ExtraDialog({ addon: a, onClose }: { addon: Addon | null; onClose: () => void }) {
   const { data: config } = useConfig();
+  const money = useMoney();
   const sms = config?.channels.sms_number;
   const keyword = a ? SMS_KEYWORD[a.code] : undefined;
   const steps: { icon: Icon3DName; title: string; text: React.ReactNode }[] = [
@@ -82,7 +85,7 @@ export function ExtraDialog({ addon: a, onClose }: { addon: Addon | null; onClos
           footer={
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-base font-semibold">{addonPrice(a)}</p>
+                <p className="text-base font-semibold">{addonPrice(a, money)}</p>
                 {a.requires_approval && <p className="text-xs text-ink-2">Confirmed by Amina once she&apos;s checked the calendar</p>}
               </div>
               <Button variant="brand" size="lg" asChild>
@@ -124,7 +127,7 @@ export function ExtraDialog({ addon: a, onClose }: { addon: Addon | null; onClos
   );
 }
 
-export function ExtrasView({ kind }: { kind: Exclude<SiteTab, "homes"> }) {
+export function ExtrasView({ kind }: { kind: "experiences" | "services" }) {
   const { data: addons, isLoading } = useAddons();
   const [open, setOpen] = React.useState<Addon | null>(null);
   const experiences = (addons ?? []).filter((a) => a.category === "experience");
@@ -169,7 +172,7 @@ export function ExtrasView({ kind }: { kind: Exclude<SiteTab, "homes"> }) {
   );
 }
 
-function Intro({ title, text }: { title: string; text: string }) {
+export function Intro({ title, text }: { title: string; text: string }) {
   return (
     <div className="max-w-2xl pt-8 md:pt-10">
       <h1 className="text-[26px] leading-tight font-semibold tracking-tight md:text-[32px]">{title}</h1>

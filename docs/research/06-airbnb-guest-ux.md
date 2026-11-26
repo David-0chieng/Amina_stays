@@ -75,19 +75,20 @@
 | Tab bar (home only) | `<a role=tab>` ×5: All `/`, Homes `/homes`, Hotels `/hotels`, Experiences `/experiences`, Services `/services`. Tab box 36px tall. Label 14px/20px, 400, #222 (M) |
 | Tab icons | `<video muted>` boxes of 72×72 at y=12, positioned inline left of the label. Artwork visible ≈ 36–40px (E). Sources `a0.muscache.com/videos/search-bar-icons/webm/house-selected.webm`, `balloon-selected.webm`, `consierge-selected.webm`, `unified/webm/Globe_Selected_180px_01.webm`, `Hotel_Selected_180px_02.webm`. Not autoplay and paused at rest, so the "selected" clip plays on select (M). Non-selected icons are static 3D PNGs (`search-bar-icons/original/<uuid>.png?im_w=240`, 48px in the compact pill) (M). |
 | Selected indicator | Three spans, 3px tall, #222: two 3×3 rounded caps (radius 1.5px) and a 60px bar. It sits at y=74, 8px below the label (M) |
-| Unselected labels | Look lighter (≈#6C6C6C) but computed colour reads #222 ⚠ |
+| Unselected labels | The visible label is an `aria-hidden` span at 14/18, 500: #222 when selected, #6C6C6C otherwise. The computed #222/400 text is a visually hidden screen-reader copy (M, re-measured 25 Nov) |
 | Icon animation | Press animation per Design Week (S). Hover produced no DOM change in my test ⚠ |
 | While search is active | The icons disappear and tabs show text only (M, screenshot) |
 | Right cluster | "Become a host": 121×40, radius 20px, 14px/500, transparent. "Log in or sign up": 40×40 circle, bg #F2F2F2. "Main navigation menu": 40×40 circle (M) |
 | Icon-button states | 40×40, bg grey200 #F2F2F2, hover grey300 #EBEBEB, active `scale(38/40)`, radius 50% (C) |
-| Globe icon | No globe in the header. Language and currency are footer buttons ("English (US)", "¥ JPY"). The SSR fallback lists "Languages & currency" in the menu |
-| Logged-out menu items ⚠ | From the noscript SSR text; order unverified: Help Center, Become a host ("It's easy to start hosting and earn extra income."), Refer a Host, Find a co-host, Gift cards, Log in or sign up, Languages & currency |
-| Expanded pill row | Pill at y=102 (6px below the 96px row). The expanded header spans ≈200px with a hairline at ≈y=200 (E). Background looks like a faint grey-to-white gradient ⚠ |
+| Globe icon | No globe in the header. "Languages & currency" (16px globe) is the first item of the main menu, and the footer has the same buttons ("English (US)", "¥ JPY") (M) |
+| Logged-out menu (M) | Order: Languages & currency, Help Center · Become a host ("It's easy to start hosting and earn extra income.", 48px art at right) · Refer a Host, Find a co-host, Gift cards · Log in or sign up (400, not bold). Panel 265px wide, radius 12px, `0 2px 16px rgba(0,0,0,.12)`, padding 12px 0, top ≈3px above the header row's bottom edge. Rows 36px: padding 9px 24px, 14/18 400 #222, 16px icons 10px before the text. Dividers 1px #DDD inset 24px with 8px above and below. Promo row padding 4px 24px: title 14/18 500, text 12/16 #6C6C6C |
+| Expanded pill row | Pill at y=102 (6px below the 96px row). The band is 200px, `linear-gradient(#fff 39.9%, #f8f8f8 100%)`, with a hairline at y=200 (M) |
 | Collapsed on scroll | The tab bar disappears and a compact pill replaces it: 375.8×46, radius 40px, centred at x≈712, y=25–71. Segments: [48×48 3D icon + "Anywhere"] 141px, "Anytime" 90px, "Add guests" 109px, then a search circle. Each segment is 48px tall (M). A soft bottom shadow appears under the header (E). Transition timing not captured ⚠ (use 250–350ms on `cubic-bezier(.2,0,0,1)`). |
 | Results header | Tabs reduce to Homes / Experiences / Services. The compact pill reads "Homes in Kamakura · Jan 8 – 10, 2027 · 2 guests" (M). Total sticky header 152px: 96px row + 54px filter row (M) |
 | Listing header | Same 96px row. The compact pill reads "Anywhere / Anytime / Add guests" (M). A fixed 80px white bar with `0 1px 0 rgba(0,0,0,.1)` appears after scrolling past the hero; its contents were not captured ⚠ |
 | Checkout header | 80px, logo only (M) |
-| Tab layout vs width | Inline icon+label at 1440 (M). At ≈1009px my first screenshot showed icons stacked above labels. The exact breakpoint is unknown ⚠ (Airbnb's CSS uses 744/950/1128/1440 media queries) |
+| Tab layout vs width | At 860 and 1024: icons (36px) stacked above 14px labels, tabs 60px tall at ≈100px pitch, and the right cluster is only the two circles. At 1280–1366: inline icon+label in an 80px row (tabs y=22, indicator y=66, pill y=94, 32px padding), "Become a host" back. From 1440: the 96px row with 48px padding (M). The switch between 1024 and 1280 is presumably the 1128px media query (Airbnb's CSS uses 744/950/1128/1440) |
+| "Continue your search" (desktop) | A full-width row under the band: a centred link 86px tall (padding 15px 48px, gap 16px) with a 56px deck of three stacked photos (2px white borders, radius 11–12px, small shadow, two tilted), "Continue your search" 16/20 500, then "Kamakura · Jan 8 – 10, 2027" 16/26 #6C6C6C and a 10px arrow. A 1px #DDD rule sits under it (M) |
 
 ### Mobile web (375px)
 - **App banner (M):** 83px tall, white, 1px bottom border #E2E2E2. It contains ×, a 40px app-icon tile, "Get the app" (14/18, 500), "The fastest, easiest way to Airbnb", and a blue "USE APP" pill.
@@ -544,8 +545,8 @@ I measured average advance-width ratio against Cereal at 500 weight and 16px (fo
 
 ## Gaps and uncertainties
 
-- Tab-icon hover and press animations, header collapse timing, and the exact tab-layout breakpoint were not captured.
-- I could not open the amenities modal, the reviews modal (with search), the user menu (the only account menu), or the "Become a host" menu.
+- Tab-icon hover and press animations and header collapse timing were not captured. The tab-layout switch lies between 1024px (stacked) and 1280px (inline).
+- I could not open the amenities modal, the reviews modal (with search) or the logged-in account menu. The logged-out main menu is measured in §1.
 - Checkout steps 2 and 3, the booking confirmation screen, Trips, Messages, Profile, account settings and the AI search bar are not measured. The reader found no accessible pixel-level sources for them; Mobbin, Page Flows, Refero and Medium were gated or JS-only.
 - Search-results column counts at other breakpoints are not captured.
 - Hero outer-corner radius is estimated; per-corner clipping is not visible in computed style.
@@ -565,7 +566,10 @@ The patterns, scale, spacing and interactions above were rebuilt under Amina's o
 | Buttons: 8px radius at 32px, 12px at 40–56px, pill primary, #F2F2F2 secondary, press shrink | `ui/button.tsx` (radius per size, brand pill via `compoundVariants`, `soft` = #F2F2F2) |
 | Font: Cereal | **Figtree**, the report's #2 pick, chosen for the closest friendly geometry. Manrope matches metrics more closely; changing the font is a one-line edit in `app/layout.tsx`. |
 | 3D tab and highlight icons | Microsoft Fluent Emoji 3D (MIT) via `ui/icon3d.tsx`; laurels drawn in SVG |
-| Header: tabs, collapse into compact pill, expanding search over a scrim, flat deeper-brand search button | `site/header.tsx`, `site/search-bar.tsx` (Homes / Experiences / Services; no Hotels or All tab, since Amina has only homes plus her own extras) |
+| Header: All / Homes / Hotels / Experiences / Services tabs (stacked below 1128px, 96px row from 1440px), collapse into compact pill, expanding search over a scrim, flat deeper-brand search button | `site/header.tsx`, `site/search-bar.tsx`. "All" (`/`) mixes homes with Amina's experiences and services; "Homes" (`/homes`) adds tag rows. Amina has no hotels, so "Hotels" (`/hotels`, `site/hotels-view.tsx`) gathers the serviced apartments and studios with the hotel-style services (breakfast, mid-stay cleaning, pickups, early/late times). |
+| Main menu: 265px panel, 36px rows, 16px icons, inset #DDD dividers, promo row with 48px art | `UserMenu` in `site/header.tsx`. "Book without data" (USSD, SMS, voice) takes the "Become a host" slot. |
+| "Continue your search" row with a photo deck | `ContinueSearch` in `site/home-view.tsx`. The last search submitted from the header is kept in this browser (`useLastSearch`), and dates that have passed are dropped. |
+| Languages & currency (menu item and footer buttons) | `site/locale.tsx`. Currency is a display preference (KES, USD, EUR, GBP at the rates in `/api/config`) for cards, map pins, extras and the listing's headline price; guests always pay in KES, so checkout and trips stay in shillings. Language is the guest's language for Amina's texts and WhatsApps, saved to their account; the website itself is English. |
 | Where / When / Who panels | Same structure. When adds quick ranges (this/next weekend, 1–2 weeks) instead of ± flexibility, because the search API takes exact dates. Who has no Pets row, because most homes don't allow pets. |
 | Mobile: "Start your search" pill, pillow chips, full-screen search sheet, bottom bar with brand-coloured Explore | `MobileSearch`, `MobileTabs`, `MobileTabBar` |
 | Home rows: 7-up at 1440, 6-up from 1128, 10 destination tiles, 28px grey arrows, 20:19 cards | `site/carousel.tsx`, `site/home-view.tsx` (Destinations, Popular, Available this weekend, Experiences & services) |

@@ -1,12 +1,13 @@
 "use client";
 
-import { CircleHelp, CircleUserRound, Heart, LogOut, Menu, MessageSquare, Search, Settings, UserRound } from "lucide-react";
+import { CircleHelp, CircleUserRound, Globe, Heart, LogOut, Menu, MessageSquare, Search, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useAuthDialog, useConfig, useLogout, useMe } from "@/components/providers";
 import { BrandLink, BrandMark } from "@/components/site/brand";
+import { openLocaleDialog } from "@/components/site/locale";
 import { PhoneLogin } from "@/components/site/phone-login";
 import { CompactSearch, MobileSearch, SearchBar, type Segment } from "@/components/site/search-bar";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -15,17 +16,20 @@ import { Avatar } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/overlays";
 import { cn } from "@/lib/utils";
 
-export type SiteTab = "homes" | "experiences" | "services";
+export type SiteTab = "all" | "homes" | "hotels" | "experiences" | "services";
 
 export const SITE_TABS: { id: SiteTab; href: string; label: string; icon: Icon3DName }[] = [
-  { id: "homes", href: "/", label: "Homes", icon: "homes" },
+  { id: "all", href: "/", label: "All", icon: "globe" },
+  { id: "homes", href: "/homes", label: "Homes", icon: "homes" },
+  { id: "hotels", href: "/hotels", label: "Hotels", icon: "hotel" },
   { id: "experiences", href: "/experiences", label: "Experiences", icon: "sailboat" },
   { id: "services", href: "/services", label: "Services", icon: "services" },
 ];
 
-// Desktop heights: an 80px top row, plus a 116px search row while the home header is expanded.
+// Desktop heights, as measured on Airbnb: the expanded home header is a 200px band (an 80px top row — 96px
+// from 1440px — over the search bar) that collapses into an 80px row with the compact search pill.
 const ROW = 80;
-const EXPANDED = 196;
+const EXPANDED = 200;
 
 /**
  * The site header, modelled on Airbnb's 2025 header.
@@ -77,8 +81,8 @@ export function SiteHeader({
   }
 
   const topRow = (expanded: boolean) => (
-    <div className={cn(container, "grid h-20 grid-cols-[1fr_auto_1fr] items-center gap-4")}>
-      <BrandLink compact />
+    <div className={cn(container, "grid h-20 grid-cols-[1fr_auto_1fr] items-center gap-4", expanded && "min-[1440px]:h-24")}>
+      <BrandLink compact className="justify-self-start" />
       <div className="flex justify-center">
         {expanded ? (
           <Tabs active={tab} />
@@ -92,7 +96,7 @@ export function SiteHeader({
     </div>
   );
   const searchRow = (initial: Segment | null) => (
-    <div className={cn(container, "pt-3.5 pb-9")}>
+    <div className={cn(container, "pt-3.5 pb-10 min-[1440px]:pt-1.5 min-[1440px]:pb-8")}>
       <React.Suspense fallback={<div className="mx-auto h-[66px] max-w-[850px] rounded-full border border-line bg-white shadow-search" />}>
         <SearchBar key={overlayKey} initial={initial} onClose={() => setOverlay(null)} />
       </React.Suspense>
@@ -135,9 +139,10 @@ export function SiteHeader({
   );
 }
 
+/** Airbnb's category tabs: icon over label on tablets, side by side from 1128px, a square 3px bar under the active one. */
 function Tabs({ active }: { active: SiteTab }) {
   return (
-    <nav className="flex items-center gap-2 lg:gap-4" aria-label="Browse">
+    <nav className="flex items-center gap-7 lg:gap-10" aria-label="Browse">
       {SITE_TABS.map((t) => {
         const on = t.id === active;
         return (
@@ -145,11 +150,21 @@ function Tabs({ active }: { active: SiteTab }) {
             key={t.id}
             href={t.href}
             aria-current={on ? "page" : undefined}
-            className={cn("group relative flex h-14 items-center gap-1.5 px-2.5 text-sm font-medium transition-colors", on ? "text-ink" : "text-ink-2 hover:text-ink")}
+            className={cn(
+              "group relative flex flex-col items-center gap-1.5 text-sm leading-[18px] font-medium whitespace-nowrap transition-colors min-[1128px]:h-9 min-[1128px]:flex-row min-[1128px]:gap-2.5",
+              on ? "text-ink" : "text-ink-2 hover:text-ink",
+            )}
           >
-            <Icon3D name={t.icon} size={44} eager className="transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3" />
+            {/* drawn at 40px inside Airbnb's 36px icon box: the PNGs carry a little transparent padding */}
+            <Icon3D name={t.icon} size={40} eager className="-m-0.5 max-w-none transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3" />
             {t.label}
-            <span className={cn("absolute inset-x-2.5 -bottom-1 h-[3px] rounded-full bg-ink transition-opacity", on ? "opacity-100" : "opacity-0 group-hover:opacity-20")} />
+            <span
+              aria-hidden
+              className={cn(
+                "absolute inset-x-0 top-full mt-1.5 h-[3px] bg-ink transition-[opacity,transform] duration-200 min-[1128px]:inset-x-[3px] min-[1128px]:mt-2",
+                on ? "opacity-100" : "scale-x-50 opacity-0",
+              )}
+            />
           </Link>
         );
       })}
@@ -157,7 +172,7 @@ function Tabs({ active }: { active: SiteTab }) {
   );
 }
 
-/** Mobile tab chips (Homes · Experiences · Services) shown under the search pill. */
+/** Mobile tab chips (All · Homes · Hotels · Experiences · Services) shown under the search pill. */
 export function MobileTabs({ active, className }: { active: SiteTab; className?: string }) {
   return (
     <nav className={cn("no-scrollbar flex gap-2 overflow-x-auto border-b border-line-soft px-6 pt-1.5 pb-4 md:hidden", className)} aria-label="Browse">
@@ -188,13 +203,13 @@ function UserMenu() {
   const router = useRouter();
   const c = config?.channels;
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-end gap-3">
       {me?.is_host ? (
-        <Link href="/host" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip lg:flex">
+        <Link href="/host" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip xl:flex">
           Switch to hosting
         </Link>
       ) : (
-        <Link href="/help#book-your-way" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip lg:flex">
+        <Link href="/help#book-your-way" className="hidden h-10 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors hover:bg-chip xl:flex">
           Book without data
         </Link>
       )}
@@ -210,35 +225,37 @@ function UserMenu() {
         <DropdownTrigger className="grid size-10 place-items-center rounded-full bg-chip transition-colors outline-none hover:bg-line-soft data-[state=open]:bg-line-soft" aria-label="Main menu">
           <Menu className="size-[18px]" strokeWidth={2.2} />
         </DropdownTrigger>
-        <DropdownContent className="w-[260px] rounded-2xl border-0 py-2 shadow-pop">
+        <DropdownContent sideOffset={20} className="w-[265px] rounded-xl border-0 py-3 shadow-pop">
           {me?.authenticated ? (
             <>
               <MenuItem onSelect={() => router.push("/wishlists")} icon={Heart}>Wishlists</MenuItem>
               <MenuItem onSelect={() => router.push("/trips")} icon={BrandMark}>Trips</MenuItem>
               <MenuItem onSelect={() => router.push("/messages")} icon={MessageSquare}>Messages</MenuItem>
               <MenuItem onSelect={() => router.push("/account")} icon={UserRound}>Profile</MenuItem>
-              <DropdownSeparator />
+              <MenuSeparator />
               <MenuItem onSelect={() => router.push("/account")} icon={Settings}>Account &amp; privacy</MenuItem>
+              <MenuItem onSelect={() => openLocaleDialog()} icon={Globe}>Languages &amp; currency</MenuItem>
               <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
-              <DropdownSeparator />
+              <MenuSeparator />
               {me.is_host ? (
                 <PromoItem onSelect={() => router.push("/host")} icon="key" title="Switch to hosting" text="Today, calendar, inbox and the team." />
               ) : (
                 <PromoItem onSelect={() => router.push("/help#book-your-way")} icon="mobile-phone" title="Book without data" text={c?.ussd_code ? `Dial ${c.ussd_code} or text Amina — English or Kiswahili.` : "Book by USSD, SMS or a phone call."} />
               )}
-              <DropdownSeparator />
+              <MenuSeparator />
               <MenuItem onSelect={logout} icon={LogOut}>Log out</MenuItem>
             </>
           ) : (
             <>
+              <MenuItem onSelect={() => openLocaleDialog()} icon={Globe}>Languages &amp; currency</MenuItem>
               <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
-              <DropdownSeparator />
+              <MenuSeparator />
               <PromoItem onSelect={() => router.push("/help#book-your-way")} icon="mobile-phone" title="Book without data" text={c?.ussd_code ? `Dial ${c.ussd_code} or text Amina — English or Kiswahili.` : "Book by USSD, SMS or a phone call."} />
-              <DropdownSeparator />
+              <MenuSeparator />
               <MenuItem onSelect={() => router.push("/host")}>Host console</MenuItem>
               <MenuItem onSelect={() => router.push("/demo")}>Demo Lab</MenuItem>
-              <DropdownSeparator />
-              <MenuItem onSelect={() => requireLogin()} className="font-medium">Log in or sign up</MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => requireLogin()}>Log in or sign up</MenuItem>
             </>
           )}
         </DropdownContent>
@@ -247,25 +264,28 @@ function UserMenu() {
   );
 }
 
+// Airbnb's menu rhythm: 36px rows with 24px side padding, 16px icons and hairlines inset to the text.
 function MenuItem({ icon: Icon, children, onSelect, className }: {
   icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>; children: React.ReactNode; onSelect: () => void; className?: string;
 }) {
   return (
-    <DropdownItem onSelect={onSelect} className={cn("gap-3 px-5 py-3 text-sm", className)}>
-      {Icon && <Icon className="size-[18px] shrink-0" strokeWidth={1.8} />}
+    <DropdownItem onSelect={onSelect} className={cn("gap-2.5 px-6 py-[9px] text-sm leading-[18px]", className)}>
+      {Icon && <Icon className="size-4 shrink-0" strokeWidth={1.8} />}
       {children}
     </DropdownItem>
   );
 }
 
+const MenuSeparator = () => <DropdownSeparator className="mx-6 bg-line" />;
+
 function PromoItem({ icon, title, text, onSelect }: { icon: Icon3DName; title: string; text: string; onSelect: () => void }) {
   return (
-    <DropdownItem onSelect={onSelect} className="items-start gap-3 px-5 py-3">
+    <DropdownItem onSelect={onSelect} className="gap-2.5 px-6 py-1">
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-0.5 block text-xs leading-snug text-ink-2">{text}</span>
+        <span className="block text-sm leading-[18px] font-medium">{title}</span>
+        <span className="block text-xs leading-4 text-ink-2">{text}</span>
       </span>
-      <Icon3D name={icon} size={44} />
+      <Icon3D name={icon} size={48} />
     </DropdownItem>
   );
 }
@@ -291,7 +311,7 @@ export function LoginDialog() {
   );
 }
 
-const TAB_BAR_PAGES = ["/", "/s", "/experiences", "/services", "/trips", "/wishlists", "/messages", "/account", "/help"];
+const TAB_BAR_PAGES = ["/", "/homes", "/hotels", "/s", "/experiences", "/services", "/trips", "/wishlists", "/messages", "/account", "/help"];
 
 /** Phone bottom navigation; slides away while scrolling down, returns on scroll up. */
 export function MobileTabBar() {
@@ -312,7 +332,7 @@ export function MobileTabBar() {
   if (!TAB_BAR_PAGES.includes(pathname)) return null;
   const authed = !!me?.authenticated;
   const tabs: { href: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; auth?: boolean; match?: string[] }[] = [
-    { href: "/", label: "Explore", icon: Search, match: ["/", "/s", "/experiences", "/services"] },
+    { href: "/", label: "Explore", icon: Search, match: ["/", "/homes", "/hotels", "/s", "/experiences", "/services"] },
     { href: "/wishlists", label: "Wishlists", icon: Heart, auth: true },
     ...(authed
       ? [

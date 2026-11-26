@@ -5,6 +5,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { useConfig } from "@/components/providers";
+import { CURRENCIES, openLocaleDialog, useCurrency } from "@/components/site/locale";
 import { cn } from "@/lib/utils";
 
 type Item = { title: string; text: string; href: string };
@@ -46,6 +47,8 @@ const INSPIRATION: Record<string, Item[]> = {
 
 export function SiteFooter() {
   const { data: config } = useConfig();
+  const code = useCurrency();
+  const currency = CURRENCIES.find((x) => x.code === code)!;
   const [tab, setTab] = React.useState("Neighbourhoods");
   const c = config?.channels;
   const columns: { title: string; links: { label: string; href?: string }[] }[] = [
@@ -134,8 +137,8 @@ export function SiteFooter() {
             © 2026 Amina Stays · Mombasa, Kenya · <Link href="/privacy" className="hover:underline">Privacy</Link> · <Link href="/help" className="hover:underline">Help</Link>
           </p>
           <div className="flex items-center gap-5 font-medium">
-            <span className="flex items-center gap-2"><Globe className="size-4" /> English (KE)</span>
-            <span>KSh KES</span>
+            <button type="button" onClick={() => openLocaleDialog("language")} className="flex items-center gap-2 hover:underline"><Globe className="size-4" /> English (KE)</button>
+            <button type="button" onClick={() => openLocaleDialog("currency")} className="hover:underline">{currency.symbol} {currency.code}</button>
             <span className="text-ink-2">Built on Africa&apos;s Talking</span>
           </div>
         </div>

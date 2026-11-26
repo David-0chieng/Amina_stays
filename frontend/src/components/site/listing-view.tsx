@@ -15,6 +15,7 @@ import { useAuthDialog, useConfig, useMe } from "@/components/providers";
 import { GuestPicker, guestsLabel, type Guests } from "@/components/site/guest-picker";
 import { SiteHeader } from "@/components/site/header";
 import { Photo, PhotoCarousel, StarIcon, WishlistHeart, typeLabel } from "@/components/site/listing-card";
+import { useMoney } from "@/components/site/locale";
 import { RangeCalendar, type Range } from "@/components/site/range-calendar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -79,6 +80,7 @@ const regionName = (code: string) => {
 export function ListingView({ slug }: { slug: string }) {
   const params = useSearchParams();
   const router = useRouter();
+  const money = useMoney();
   const { data: l, isLoading, error } = useQuery({ queryKey: ["listing", slug], queryFn: () => get<ListingDetail>(`/api/listings/${slug}`) });
   const { data: cal } = useQuery({ queryKey: ["calendar", slug], queryFn: () => get<CalendarData>(`/api/listings/${slug}/calendar`) });
   const { data: reviews } = useQuery({ queryKey: ["reviews", slug], queryFn: () => get<Review[]>(`/api/listings/${slug}/reviews`) });
@@ -251,7 +253,7 @@ export function ListingView({ slug }: { slug: string }) {
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-medium">{a.name}</p>
-                        <p className="text-sm text-ink-2">{a.price ? `${kes(a.price)} ${a.pricing_label}` : "Free"}{a.requires_approval ? " · on request" : ""}</p>
+                        <p className="text-sm text-ink-2">{a.price ? `${money(a.price)} ${a.pricing_label}` : "Free"}{a.requires_approval ? " · on request" : ""}</p>
                       </div>
                     </div>
                   ))}
@@ -366,6 +368,7 @@ function FavouriteBox({ rating, count }: { rating: number; count: number }) {
 
 function SectionNav({ listing: l, show, cta, card }: { listing: ListingDetail; show: boolean; cta: boolean; card: CardProps }) {
   const { data: q } = useQuote(card.listing.slug, card.range, card.guests);
+  const money = useMoney();
   const links: [string, string][] = [["#photos", "Photos"], ["#amenities", "Amenities"], ["#reviews", "Reviews"], ["#location", "Location"]];
   return (
     <div className={cn("fixed inset-x-0 top-0 z-50 hidden border-b border-line bg-white transition-transform duration-200 md:block", show ? "translate-y-0" : "-translate-y-full")} aria-hidden={!show}>
@@ -379,7 +382,7 @@ function SectionNav({ listing: l, show, cta, card }: { listing: ListingDetail; s
           <div className="flex items-center gap-6 animate-fade-in">
             <div className="text-right">
               <p className="text-base">
-                {q ? <><b className="font-semibold underline">{kes(q.total)}</b> for {q.nights} nights</> : <><b className="font-semibold">{kes(l.price.from_nightly)}</b> a night</>}
+                {q ? <><b className="font-semibold underline">{money(q.total)}</b> for {q.nights} nights</> : <><b className="font-semibold">{money(l.price.from_nightly)}</b> a night</>}
               </p>
               {l.rating && <p className="flex items-center justify-end gap-1 text-xs"><StarIcon className="size-2.5" /> {l.rating.toFixed(2)} · <span className="text-ink-2 underline">{l.reviews_count} reviews</span></p>}
             </div>
@@ -654,6 +657,7 @@ function PriceDetails({ q, depositPercent, children }: { q: Quote; depositPercen
 function BookingCard(props: CardProps & { flat?: boolean }) {
   const { listing: l, range, setRange, guests, setGuests, unavailable, prices, flat } = props;
   const { data: q } = useQuote(l.slug, range, guests);
+  const money = useMoney();
   const [datesOpen, setDatesOpen] = React.useState(false);
   const ready = !!(range.from && range.to);
   const freeUntil = freeCancelUntil(l.cancellation.policy, range.from);
@@ -662,7 +666,7 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
       {q ? (
         <p className="text-[22px] leading-[26px]">
           <PriceDetails q={q} depositPercent={l.deposit_percent}>
-            <button type="button" className="font-medium underline decoration-1 underline-offset-4" aria-label="Show price breakdown">{kes(q.total)}</button>
+            <button type="button" className="font-medium underline decoration-1 underline-offset-4" aria-label="Show price breakdown">{money(q.total)}</button>
           </PriceDetails>{" "}
           <span className="text-base">for {q.nights} night{q.nights !== 1 ? "s" : ""}</span>
         </p>
@@ -709,7 +713,7 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
       </div>
       {ready && q && q.available !== false && (q.deposit_available || freeUntil) && (
         <p className="mt-4 rounded-lg bg-chip px-3 py-2 text-xs">
-          {q.deposit_available && <>{kes(q.deposit)} today</>}
+          {q.deposit_available && <>{money(q.deposit)} today</>}
           {q.deposit_available && freeUntil && " · "}
           {freeUntil && <>Free cancellation before <b className="font-medium">{fmtDate(freeUntil, "d MMMM")}</b></>}
         </p>
@@ -745,6 +749,7 @@ function UssdNote() {
 function MobileReserveBar(props: CardProps) {
   const { listing: l, range } = props;
   const { data: q } = useQuote(l.slug, range, props.guests);
+  const money = useMoney();
   const [open, setOpen] = React.useState(false);
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-4 border-t border-line bg-white px-6 py-4 pb-[max(16px,env(safe-area-inset-bottom))] lg:hidden">
@@ -753,12 +758,12 @@ function MobileReserveBar(props: CardProps) {
           <button type="button" className="min-w-0 text-left">
             {q ? (
               <>
-                <p className="text-base"><b className="font-semibold underline">{kes(q.total)}</b> for {q.nights} nights</p>
+                <p className="text-base"><b className="font-semibold underline">{money(q.total)}</b> for {q.nights} nights</p>
                 <p className="text-sm font-medium underline">{fmtRange(range.from, range.to)}</p>
               </>
             ) : (
               <>
-                <p className="text-base"><b className="font-semibold">{kes(l.price.from_nightly)}</b> night</p>
+                <p className="text-base"><b className="font-semibold">{money(l.price.from_nightly)}</b> night</p>
                 <p className="flex items-center gap-1 text-sm font-medium"><span className="underline">Add dates</span>{l.rating && <> · <StarIcon className="size-2.5" /> {l.rating.toFixed(2)}</>}</p>
               </>
             )}

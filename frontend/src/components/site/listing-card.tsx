@@ -7,9 +7,10 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { useAuthDialog, useMe } from "@/components/providers";
+import { useMoney } from "@/components/site/locale";
 import { Icon3D } from "@/components/ui/icon3d";
 import { del, post } from "@/lib/api";
-import { fmtRange, kes } from "@/lib/format";
+import { fmtRange } from "@/lib/format";
 import { sized, srcSet } from "@/lib/img";
 import type { ListingCard as Card } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -109,6 +110,7 @@ export function GuestFavouriteBadge({ className, size = "md" }: { className?: st
 /** Compact card for the home-page carousels (photo, one title line, one price · rating line). */
 export function HomeCard({ listing: l, query = "", priority }: { listing: Card; query?: string; priority?: boolean }) {
   const p = l.price;
+  const money = useMoney();
   return (
     <Link href={`/stays/${l.slug}${query}`} className="group block outline-none" aria-label={`${l.name}, ${l.area.name}`}>
       <div className="relative aspect-[20/19] overflow-hidden rounded-card bg-surface">
@@ -118,7 +120,7 @@ export function HomeCard({ listing: l, query = "", priority }: { listing: Card; 
       </div>
       <h3 className="mt-2 truncate px-1 text-[13px] leading-4 font-medium">{cardTitle(l)}</h3>
       <p className="line-clamp-2 px-1 text-xs leading-4 text-ink-2">
-        {p.total ? `${kes(p.total)} for ${p.nights} night${p.nights !== 1 ? "s" : ""}` : `From ${kes(p.from_nightly)} a night`}
+        {p.total ? `${money(p.total)} for ${p.nights} night${p.nights !== 1 ? "s" : ""}` : `From ${money(p.from_nightly)} a night`}
         <span className="font-bold text-ink-disabled"> · </span>
         {l.rating ? (
           <>
@@ -222,6 +224,7 @@ export function ListingCard({ listing: l, query = "", priority, checkIn, checkOu
   listing: Card; query?: string; priority?: boolean; checkIn?: string; checkOut?: string; onHover?: (id: number | null) => void;
 }) {
   const p = l.price;
+  const money = useMoney();
   return (
     <Link
       href={`/stays/${l.slug}${query}`}
@@ -259,12 +262,12 @@ export function ListingCard({ listing: l, query = "", priority, checkIn, checkOu
         <p className="pt-1">
           {p.total ? (
             <>
-              <span className="underline decoration-1 underline-offset-2">{kes(p.total)}</span>
+              <span className="underline decoration-1 underline-offset-2">{money(p.total)}</span>
               <span className="text-ink-2"> for {p.nights} night{p.nights !== 1 ? "s" : ""}</span>
             </>
           ) : (
             <>
-              <span>{kes(p.from_nightly)}</span>
+              <span>{money(p.from_nightly)}</span>
               <span className="text-ink-2"> a night · sleeps {l.max_guests}</span>
             </>
           )}

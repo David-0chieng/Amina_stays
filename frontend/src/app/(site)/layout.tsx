@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { SiteFooter } from "@/components/site/footer";
 import { LoginDialog, MobileTabBar } from "@/components/site/header";
+import { LocaleDialog } from "@/components/site/locale";
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
         <MobileTabBar />
       </Suspense>
       <LoginDialog />
+      <LocaleDialog />
     </>
   );
 }

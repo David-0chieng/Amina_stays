@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 export type Icon3DName =
   | "airplane" | "antenna" | "baby-bottle" | "bar-chart" | "beach" | "bed" | "broom" | "calendar" | "classical-building"
   | "clipboard" | "cooking" | "credit-card" | "croissant" | "desert-island" | "door" | "envelope" | "gear" | "globe"
-  | "glowing-star" | "guests" | "homes" | "hot-beverage" | "house" | "hut" | "key" | "kitchen" | "label" | "light-bulb"
+  | "glowing-star" | "guests" | "homes" | "hot-beverage" | "hotel" | "house" | "hut" | "key" | "kitchen" | "label" | "light-bulb"
   | "lock" | "megaphone" | "mobile-phone" | "money-bag" | "old-key" | "palm-tree" | "party-popper" | "pushpin" | "sailboat"
   | "services" | "shield" | "shopping-cart" | "siren" | "sparkles" | "speech-balloon" | "spiral-calendar" | "sponge" | "star"
   | "sunrise" | "sunset" | "test-tube" | "tools" | "train" | "trophy" | "tropical-fish" | "wave" | "wifi";

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { addDays, isFriday, isSaturday, nextFriday, startOfToday } from "date-fns";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -9,9 +10,10 @@ import * as React from "react";
 import { useConfig, useHydrated } from "@/components/providers";
 import { CarouselRow } from "@/components/site/carousel";
 import { ExtraCard, ExtraDialog, useAddons } from "@/components/site/extras";
+import { guestsLabel } from "@/components/site/guest-picker";
 import { MobileTabs, SiteHeader } from "@/components/site/header";
 import { HomeCard, HomeCardSkeleton, Photo } from "@/components/site/listing-card";
-import { areaStyle, searchQuery, useAreas } from "@/components/site/search-bar";
+import { areaStyle, searchQuery, useAreas, useLastSearch } from "@/components/site/search-bar";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { get, qs } from "@/lib/api";
 import { fmtRange, iso } from "@/lib/format";
@@ -20,7 +22,18 @@ import { cn } from "@/lib/utils";
 
 type Results = { results: Card[]; count: number; nights: number | null };
 
-export function HomeView() {
+// Extra rows on the Homes tab, built from each home's tags (each links to the matching search).
+const HOME_ROWS: { tag: string; title: string }[] = [
+  { tag: "beachfront", title: "Beachfront homes" },
+  { tag: "pool", title: "Homes with a pool" },
+  { tag: "family", title: "Room for the whole family" },
+  { tag: "couples", title: "Hideaways for two" },
+];
+
+export const useHomes = () => useQuery({ queryKey: ["listings", ""], queryFn: () => get<Results>("/api/listings") });
+
+/** "/" is Airbnb's "All" tab (homes, experiences and services); "/homes" keeps to homes. */
+export function HomeView({ tab = "all" }: { tab?: "all" | "homes" }) {
   const params = useSearchParams();
   const router = useRouter();
   const legacy = params.toString();
@@ -30,21 +43,35 @@ export function HomeView() {
   }, [legacy, router]);
 
   const hydrated = useHydrated();
-  const { data, isLoading } = useQuery({ queryKey: ["listings", ""], queryFn: () => get<Results>("/api/listings") });
+  const { data, isLoading } = useHomes();
   const popular = [...(data?.results ?? [])].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
 
   return (
     <>
-      <SiteHeader mode="home" tab="homes" mobileSearch />
-      <MobileTabs active="homes" />
+      <SiteHeader mode="home" tab={tab} mobileSearch />
+      <MobileTabs active={tab} />
+      <ContinueSearch />
       <main className="container-site pb-6">
         <Destinations />
         <CarouselRow title="Popular homes in Mombasa" href="/s?sort=rating">
           {isLoading ? Array.from({ length: 6 }).map((_, i) => <HomeCardSkeleton key={i} />) : popular.map((l, i) => <HomeCard key={l.id} listing={l} priority={i < 3} />)}
         </CarouselRow>
         {hydrated && <WeekendRow />}
-        <ExtrasRow />
-        <BookWithoutData />
+        {tab === "all" ? (
+          <>
+            <ExtrasRow />
+            <BookWithoutData />
+          </>
+        ) : (
+          HOME_ROWS.map((r) => {
+            const homes = popular.filter((l) => l.tags.includes(r.tag));
+            return homes.length > 1 ? (
+              <CarouselRow key={r.tag} title={r.title} href={`/s?tag=${r.tag}`}>
+                {homes.map((l) => <HomeCard key={l.id} listing={l} />)}
+              </CarouselRow>
+            ) : null;
+          })
+        )}
         <WhyDirect />
         <div className="pointer-events-none sticky bottom-24 z-20 mt-10 flex justify-center md:bottom-6">
           <Link
@@ -57,6 +84,53 @@ export function HomeView() {
         </div>
       </main>
     </>
+  );
+}
+
+/** Airbnb's "Continue your search": the last search, with a little deck of its photos, under the header. */
+function ContinueSearch() {
+  const last = useLastSearch();
+  const { data: areas } = useAreas();
+  const { data } = useHomes();
+  if (!last) return null;
+  const area = areas?.find((a) => a.slug === last.area);
+  const homes = (data?.results ?? []).filter((l) => !last.area || l.area.slug === last.area);
+  const photos = [area?.photo_url, ...homes.flatMap((l) => l.photos.slice(0, 2))].filter((p): p is string => !!p).slice(0, 3);
+  const place = last.area ? (area?.name ?? last.area.replace(/-/g, " ")) : "Anywhere";
+  const when = last.checkIn && last.checkOut ? fmtRange(last.checkIn, last.checkOut) : last.adults + last.children ? guestsLabel(last) : "";
+  return (
+    <div className="border-b border-line">
+      <Link href={`/s${searchQuery(last)}`} className="group mx-auto flex w-fit max-w-full items-center gap-3 px-6 py-3 md:gap-4 md:px-12 md:py-[15px]">
+        <PhotoDeck photos={photos} />
+        <span className="flex min-w-0 items-center gap-1.5 text-sm leading-5 md:text-base">
+          <span className="shrink-0 font-medium">Continue your search</span>
+          <span className="truncate text-ink-2">{[place, when].filter(Boolean).join(" · ")}</span>
+          <ArrowRight className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5" strokeWidth={2.6} />
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+// back to front: two tilted photos peek out from behind a straight one, and fan out on hover
+const DECK_TILT = ["-translate-x-1 -rotate-[9deg] group-hover:-rotate-[14deg]", "translate-x-1 rotate-[8deg] group-hover:rotate-[13deg]", ""];
+
+function PhotoDeck({ photos }: { photos: string[] }) {
+  const deck = (photos.length ? photos : [""]).slice(0, 3).reverse();
+  return (
+    <span className="relative size-10 shrink-0 md:size-14" aria-hidden>
+      {deck.map((src, i) => (
+        <span
+          key={`${i}-${src}`}
+          className={cn(
+            "absolute inset-0 overflow-hidden rounded-xl border-2 border-white bg-surface shadow-[0_2.8px_5.6px_rgb(0_0_0/0.1),0_1.4px_4.2px_rgb(0_0_0/0.04)] transition-transform duration-300",
+            DECK_TILT[i + 3 - deck.length],
+          )}
+        >
+          <Photo src={src} alt="" className="size-full" sizes="56px" />
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -161,7 +235,7 @@ function BookWithoutData() {
   );
 }
 
-function WhyDirect() {
+export function WhyDirect() {
   const items: { icon: Icon3DName; title: string; text: string }[] = [
     { icon: "money-bag", title: "No booking fees", text: "The price you see is the total — cleaning and the 2% tourism levy included. Pay by M-Pesa, card, or 30% now and the rest later." },
     { icon: "shield", title: "Safe by design", text: "Licensed by the Tourism Regulatory Authority, guarded 24/7, and a HELP line that rings Amina's phone — day or night." },

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/overlays";
 import { get } from "@/lib/api";
+import { createBrowserStore, readStorage, writeStorage } from "@/lib/browser-store";
 import { fmtRange, fmtShort, iso, toDate } from "@/lib/format";
 import type { Area } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,33 @@ export function searchQuery(s: Partial<SearchState>, extra: Record<string, strin
   Object.entries(extra).forEach(([k, v]) => v && q.set(k, v));
   const out = q.toString();
   return out ? `?${out}` : "";
+}
+
+// "Continue your search": the last search submitted from the header, remembered in this browser as on Airbnb.
+const LAST_SEARCH_KEY = "amina:last-search";
+const lastSearchStore = createBrowserStore(() => readStorage(LAST_SEARCH_KEY));
+
+function saveLastSearch(s: SearchState) {
+  if (!s.area && !s.checkIn && !s.adults && !s.children) return;
+  const { area, checkIn, checkOut, adults, children, infants } = s;
+  writeStorage(LAST_SEARCH_KEY, JSON.stringify({ area, checkIn, checkOut, adults, children, infants }));
+  lastSearchStore.notify();
+}
+
+/** The guest's last search without any dates that have passed; null on the server and while hydrating. */
+export function useLastSearch(): SearchState | null {
+  const raw = React.useSyncExternalStore(lastSearchStore.subscribe, lastSearchStore.read, () => null);
+  return React.useMemo(() => {
+    if (!raw) return null;
+    try {
+      const s = JSON.parse(raw) as Partial<SearchState>;
+      const out: SearchState = { area: s.area, adults: s.adults || 0, children: s.children || 0, infants: s.infants || 0 };
+      if (s.checkIn && s.checkOut && s.checkIn >= iso(startOfToday())) Object.assign(out, { checkIn: s.checkIn, checkOut: s.checkOut });
+      return out.area || out.checkIn || out.adults + out.children ? out : null;
+    } catch {
+      return null;
+    }
+  }, [raw]);
 }
 
 export function useAreas() {
@@ -94,6 +122,7 @@ function useSearchDraft() {
   const submit = (next: SearchState = s) => {
     const keep: Record<string, string | undefined> = {};
     if (pathname === "/s") FILTER_KEYS.forEach((k) => (keep[k] = params.get(k) || undefined));
+    saveLastSearch(next);
     router.push(`/s${searchQuery(next, keep)}`);
   };
   return { s, setS, submit, areas: areas ?? [], areaName: areas?.find((a) => a.slug === s.area)?.name };

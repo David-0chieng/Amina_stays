@@ -9,12 +9,12 @@ import * as React from "react";
 
 import { SiteHeader } from "@/components/site/header";
 import { ListingCard, ListingCardSkeleton } from "@/components/site/listing-card";
+import { useMoney } from "@/components/site/locale";
 import { searchQuery, useAreas, useSearchState } from "@/components/site/search-bar";
 import { Button } from "@/components/ui/button";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Stepper } from "@/components/ui/misc";
 import { get, qs } from "@/lib/api";
-import { kes } from "@/lib/format";
 import type { ListingCard as Card } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -447,10 +447,11 @@ function PriceRange({ prices, floor, ceil, lo, hi, onChange }: { prices: number[
 }
 
 function PriceBox({ label, value, plus }: { label: string; value: number; plus?: boolean }) {
+  const money = useMoney();
   return (
     <div className="w-36 rounded-full border border-line px-5 py-2 text-center">
       <p className="text-xs text-ink-2">{label}</p>
-      <p className="text-sm font-medium">{kes(value)}{plus ? "+" : ""}</p>
+      <p className="text-sm font-medium">{money(value)}{plus ? "+" : ""}</p>
     </div>
   );
 }
