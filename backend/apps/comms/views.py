@@ -53,8 +53,13 @@ def _data(request):
 
 
 def process_incoming_sms(phone, text, provider_id="", channel="sms"):
-    phone = normalize_phone(phone) or phone
+    phone = normalize_phone(phone)
+    if not phone:  # a malformed or probing callback: nothing to answer, and no blank thread in Amina's inbox
+        log.warning("ignored an incoming SMS without a valid sender")
+        return None
     inbound = messaging.record_inbound(phone, text, channel=channel, provider_id=provider_id)
+    if inbound.duplicate:  # Africa's Talking re-delivered a webhook we already answered
+        return inbound
     try:
         smsbot.handle_sms(phone, text or "", inbound=inbound)
     except Exception:

@@ -4,36 +4,97 @@ Lessons from Airbnb's payments engineering (Orpheus): no network call inside a D
 a duplicate callback is a no-op, and async methods move pending → confirmed. A payment that
 arrives after its hold lapsed re-confirms the booking only if the unit is still free;
 otherwise the booking becomes refund_due and Amina is alerted.
+
+A failed M-Pesa prompt keeps its Daraja result code; results.MPESA_RESULTS turns it into the stored reason,
+the guest's message and the next step (public_failure). Paybill (C2B) payments live in c2b.py and tax
+invoices in invoices.py.
 """
 
 import logging
-from datetime import timedelta
+import math
+import os
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.bookings import services as bookings
 from apps.bookings.models import Booking
 from apps.core.activity import record
 from apps.core.models import SiteSettings
-from apps.core.utils import is_kenyan, kes
+from apps.core.utils import is_kenyan, kes, today
 from apps.messaging import services as messaging
 from apps.properties.models import Unit
 from apps.properties.services import is_available
 
 from .models import Payment, Refund
-from .providers import PaymentError, card_provider, mpesa_provider
+from .providers import PaymentError, PaystackCard, card_provider, mpesa_provider
+from .results import MPESA_RESULTS, result_for, sms_reason
 
 log = logging.getLogger("amina.payments")
 
-FAILURE_TEXT = {
-    "1032": "cancelled on the phone",
-    "1037": "the phone didn't respond in time",
-    "2001": "wrong M-Pesa PIN",
-    "1": "insufficient M-Pesa balance",
-    "1025": "M-Pesa is busy, please retry",
-}
+OPEN_PUSH_WINDOW = timedelta(minutes=2)
+OPEN_PUSH_MESSAGE = (
+    "An M-Pesa request is already waiting on your phone - enter your PIN there, or wait a minute and try again."
+)
+NO_CONFIRMATION = "no confirmation received"
+CARD_FAILED = "Your card payment didn't go through. Try again, or pay with M-Pesa."
+MISMATCH = (
+    "We received a different amount than expected, so this payment is on hold. Amina has been alerted and will "
+    "sort it out - please don't pay again."
+)
+
+
+# ---------- Paybill / deposit options ----------
+
+
+def paybill_number():
+    """The Paybill/Till guests can pay into with their booking ref as the account number (None = not offered)."""
+    number = (
+        getattr(settings, "MPESA_SHORTCODE", "")
+        or os.environ.get("MPESA_SHORTCODE", "")
+        or (settings.DARAJA_SHORTCODE if settings.MPESA_PROVIDER == "daraja" else "")
+        or ("174379" if settings.DEMO else "")  # Daraja's sandbox shortcode
+    )
+    return str(number).strip() or None
+
+
+def paybill_config():
+    number = paybill_number()
+    return {"number": number, "account_hint": "Your booking ref, e.g. AMS-1234"} if number else None
+
+
+def deposit_amount(b):
+    """The deposit a held, pay-in-full booking could pay now instead (None when a deposit isn't allowed)."""
+    s = SiteSettings.load()
+    if b.status != "held" or b.payment_plan != "full" or not 0 < s.deposit_percent < 100:
+        return None
+    if (b.check_in - today()).days <= s.balance_due_days:
+        return None
+    deposit = -(-b.total * s.deposit_percent // 100)  # ceil, as in the quote
+    return deposit if deposit > b.amount_paid else None
+
+
+def switch_to_deposit(booking, *, actor=None):
+    """Pay only the deposit now (e.g. after 'insufficient balance'); the balance falls due before arrival."""
+    b = booking
+    if b.payment_plan == "deposit":
+        return b
+    deposit = deposit_amount(b)
+    if not deposit:
+        raise PaymentError("A deposit isn't available for this stay.", suggest="card")
+    if not Booking.objects.filter(pk=b.pk, status="held", payment_plan="full").update(
+        payment_plan="deposit", amount_due_now=deposit, updated_at=timezone.now()
+    ):
+        raise PaymentError("This booking can't switch to a deposit now.")
+    b.refresh_from_db()
+    bookings.event(b, "plan", f"Switched to a deposit: {kes(deposit)} now, the balance before arrival", actor=actor)
+    return b
+
+
+# ---------- starting a payment ----------
 
 
 def _amount_for(b, purpose):
@@ -43,31 +104,64 @@ def _amount_for(b, purpose):
     return b.balance_due, purpose or "balance"
 
 
-def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None, actor=None):
-    """Returns {payment_id, method, status, amount, checkout_url?, simulated, message}. Raises PaymentError."""
+def _open_push(b, phone, purpose, amount):
+    """The same prompt sent under 2 minutes ago and still unanswered (a different amount is a new request:
+    if the phone is still showing the first one, Daraja answers 1001 and we hand that one back instead)."""
+    return (
+        Payment.objects.filter(
+            booking=b,
+            method="mpesa",
+            purpose=purpose,
+            amount=amount,
+            phone=phone,
+            status="pending",
+            created_at__gt=timezone.now() - OPEN_PUSH_WINDOW,
+        )
+        .order_by("-id")
+        .first()
+    )
+
+
+def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None, actor=None, plan=None):
+    """Returns {payment_id, method, status, amount, purpose, checkout_url?, simulated, message}.
+    Raises PaymentError (with .failure_code and .suggest, see PaymentError.as_dict) when it can't start.
+    plan="deposit" first switches a held pay-in-full booking to paying its deposit now.
+    purpose="change" with amount=X charges exactly X (a reservation change applied once it's paid)."""
     b = Booking.objects.select_related("guest", "unit").get(pk=booking.pk)
     phone = phone or b.guest.phone
     method = method or ("mpesa" if is_kenyan(phone) else "card")
     if method not in ("mpesa", "card"):
         raise PaymentError("Choose M-Pesa or card.")
     if method == "mpesa" and not is_kenyan(phone):
-        raise PaymentError("M-Pesa needs a Kenyan (+254) number - please pay by card.")
+        raise PaymentError("M-Pesa needs a Kenyan (+254) number - please pay by card.", suggest="card")
     if b.status not in ("held", "confirmed", "checked_in"):
         raise PaymentError("This booking can't take payments.")
     if b.status == "held" and not b.hold_active:
         raise PaymentError("The hold on this home has expired - please book again.")
+    if plan == "deposit":
+        switch_to_deposit(b, actor=actor)
     default_amount, default_purpose = _amount_for(b, purpose)
     amount = int(amount if amount is not None else default_amount)
     purpose = purpose or default_purpose
     if amount <= 0:
         raise PaymentError("There's nothing left to pay.")
 
-    # "Guest taps Pay twice": reuse a request made in the last minute instead of sending a second prompt
-    recent = Payment.objects.filter(
-        booking=b, method=method, amount=amount, status="pending", created_at__gt=timezone.now() - timedelta(seconds=60)
-    ).first()
-    if recent:
-        return _result(recent, {"status": "pending", "message": "A payment request is already waiting on your phone."})
+    if method == "mpesa":
+        # One prompt at a time: Safaricom answers a second push to a phone still showing one with 1001
+        open_push = _open_push(b, phone, purpose, amount)
+        if open_push:
+            return _result(open_push, {"status": "pending", "message": OPEN_PUSH_MESSAGE})
+    else:
+        # "Guest taps Pay twice": reuse the card page made in the last minute instead of opening a second one
+        recent = Payment.objects.filter(
+            booking=b,
+            method="card",
+            amount=amount,
+            status="pending",
+            created_at__gt=timezone.now() - timedelta(seconds=60),
+        ).first()
+        if recent:
+            return _result(recent, {"status": "pending", "message": "A payment request is already waiting."})
 
     provider = mpesa_provider() if method == "mpesa" else card_provider()
     p = Payment.objects.create(
@@ -76,12 +170,30 @@ def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None
     try:
         res = provider.request(p)
     except PaymentError as e:
-        p.status, p.failure_reason = "failed", str(e)[:200]
-        p.save(update_fields=["status", "failure_reason", "updated_at"])
-        bookings.event(b, "payment_failed", f"{p.get_method_display()} request failed: {e}")
+        code = e.failure_code or ""
+        if code == "1001":  # the phone is busy with a prompt we already sent: keep that one
+            other = (
+                Payment.objects.filter(booking=b, method="mpesa", status="pending").exclude(pk=p.pk).order_by("-id")
+            ).first()
+            if other:
+                p.delete()
+                return _result(other, {"status": "pending", "message": OPEN_PUSH_MESSAGE})
+        p.status, p.failure_code, p.failure_reason = "failed", code, str(e)[:200]
+        p.save(update_fields=["status", "failure_code", "failure_reason", "raw", "updated_at"])
+        bookings.event(b, "payment_failed", f"{p.get_method_display()} request failed: {e}", code=code)
+        info = public_failure(p)
+        e.failure_code, e.suggest = info["failure_code"], e.suggest or info["suggest"]
         raise
     bookings.event(b, "payment_requested", f"{p.get_method_display()} request for {kes(amount)} sent ({purpose})")
-    return _result(p, res, simulated=provider.simulated)
+    # Providers answer in their own words ("Success. Request accepted for processing"); guests get ours.
+    guest_msg = (
+        f"Check your phone for the M-Pesa prompt of {kes(amount)} and enter your PIN."
+        if method == "mpesa"
+        else f"Finish paying {kes(amount)} on the secure card page."
+    )
+    return _result(
+        p, {**res, "message": guest_msg, "provider_message": res.get("message", "")}, simulated=provider.simulated
+    )
 
 
 def _checkout_url(p):
@@ -105,6 +217,7 @@ def _result(p, res, simulated=None):
         "purpose": p.purpose,
         "checkout_url": res.get("checkout_url") or _checkout_url(p),
         "message": res.get("message", ""),
+        "provider_message": res.get("provider_message", ""),
         "simulated": simulated if simulated is not None else p.provider == "simulate",
     }
 
@@ -131,6 +244,9 @@ def start_remote_payment(booking):
     return {**r, "text": f"Check your phone for an M-Pesa prompt for {kes(r['amount'])}."}
 
 
+# ---------- settling ----------
+
+
 def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amount=None):
     """Settle a payment exactly once. Safe to call repeatedly (duplicate callbacks, retries, the simulator)."""
     outcome = None
@@ -140,12 +256,14 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
             if p.status == "success":
                 return p.booking
             if amount is not None and int(float(amount)) < p.amount:
-                p.status, p.failure_reason = "failed", f"Amount mismatch: got {amount}, expected {p.amount}"
+                p.status, p.failure_code = "failed", ""
+                p.failure_reason = f"Amount mismatch: got {amount}, expected {p.amount}"
                 p.raw = [*p.raw, {"callback": raw or {}}]
-                p.save(update_fields=["status", "failure_reason", "raw", "updated_at"])
+                p.save(update_fields=["status", "failure_code", "failure_reason", "raw", "updated_at"])
                 outcome = "mismatch"
             else:
                 p.status, p.completed_at = "success", timezone.now()
+                p.failure_code = p.failure_reason = ""  # a late success outranks an earlier failure
                 if transaction_id and not p.transaction_id:
                     p.transaction_id = transaction_id
                 p.provider_ref = (provider_ref or p.provider_ref or "")[:80]
@@ -176,6 +294,8 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
                         b.status = "refund_due"
                         b.save(update_fields=["status", "updated_at"])
                         outcome = "refund_due"
+                elif p.purpose == "change" and b.status in ("confirmed", "checked_in"):
+                    outcome = "change"  # pays for a new total that isn't applied yet: not an overpayment
                 else:
                     outcome = "extra"
     except IntegrityError:
@@ -189,6 +309,11 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
     b = p.booking
     if outcome == "confirm":
         bookings.confirm(b)
+        b.refresh_from_db()
+        bookings.refund_overpayment(b, reason="Paid more than the bill")  # a Paybill payment can be any amount
+        _invoice_quietly(b)
+    elif outcome == "change":
+        _apply_change(p)
     elif outcome == "refund_due":
         from apps.safety.services import raise_alert
 
@@ -200,10 +325,13 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
             booking=b,
             dedupe=f"refund-due:{p.pk}",
         )
+        if p.status == "success":  # a ledger entry Amina can mark as sent, which then closes the booking
+            refund(b, p.amount, reason="Paid after the hold lapsed and the dates were re-let", queue=True)
     elif outcome == "extra":
         b.refresh_from_db()
         balance_line = f"Balance due: {kes(b.balance_due)}." if b.balance_due else "You're fully paid - thank you!"
         bookings.send_guest(b, "payment_received", amount=kes(p.amount), balance_line=balance_line)
+        bookings.refund_overpayment(b, reason="Paid more than the bill (duplicate payment)")
     elif outcome == "mismatch":
         from apps.safety.services import raise_alert
 
@@ -214,7 +342,7 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
             booking=b,
             dedupe=f"mismatch:{p.pk}",
         )
-    if outcome in ("confirm", "extra", "refund_due"):
+    if outcome in ("confirm", "extra", "refund_due", "change"):
         record(
             "payment",
             f"{p.get_method_display()} {kes(p.amount)} received for {b.ref}",
@@ -225,30 +353,159 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
     return b
 
 
-def on_failure(payment, reason="", raw=None):
+def _apply_change(p):
+    """A paid reservation change: the payment is already counted in amount_paid; bookings applies the change."""
+    hook = getattr(bookings, "on_change_paid", None)
+    if hook is None:
+        log.warning("change payment %s settled but bookings.on_change_paid isn't available", p.pk)
+        return
+    try:
+        hook(p)
+    except Exception:
+        log.exception("applying the change paid by payment %s failed", p.pk)
+        from apps.safety.services import raise_alert
+
+        raise_alert(
+            "payment",
+            f"{kes(p.amount)} received for a change to {p.booking.ref}, but the change couldn't be applied - "
+            "check the reservation.",
+            severity="high",
+            booking=p.booking,
+            dedupe=f"change-paid:{p.pk}",
+        )
+
+
+def _invoice_quietly(b):
+    """Issue the tax invoice once a stay is confirmed; invoicing never gets in the way of settling a payment."""
+    from .invoices import get_or_issue
+
+    try:
+        get_or_issue(b)
+    except Exception:
+        log.exception("issuing the invoice for %s failed", b.ref)
+
+
+def on_mpesa_result(payment, code, *, desc="", raw=None, amount=None, receipt=""):
+    """The single path for an STK prompt's final answer: the Daraja callback, STK Query reconciliation and the
+    Demo Lab's simulated result codes all land here. ResultCode 0 settles; anything else fails it with the
+    code kept for the guest's message."""
+    code = "" if code is None else str(code).strip()
+    if code == "0":
+        receipt = str(receipt or "")
+        paybill = (
+            Payment.objects.filter(provider="c2b", transaction_id=receipt).exclude(pk=payment.pk).first()
+            if receipt
+            else None
+        )
+        if paybill:  # the same M-Pesa transaction already arrived as a Paybill confirmation and was credited
+            Payment.objects.filter(pk=payment.pk, status__in=("pending", "failed", "expired")).update(
+                status="cancelled",
+                failure_reason=f"Same M-Pesa payment as Paybill {receipt}",
+                updated_at=timezone.now(),
+            )
+            return paybill.booking
+        return on_success(payment, provider_ref=receipt, raw=raw, amount=amount)
+    entry = MPESA_RESULTS.get(code)
+    return on_failure(payment, entry["reason"] if entry else (desc or "failed"), raw=raw, code=code)
+
+
+def on_failure(payment, reason="", raw=None, code=""):
+    code = str(code or "").strip()[:12]
     with transaction.atomic():
         p = Payment.objects.select_for_update().get(pk=payment.pk)
         if p.status != "pending":
             return p
-        p.status, p.failure_reason = "failed", (reason or "declined")[:200]
+        p.status, p.failure_code = "failed", code
+        p.failure_reason = (reason or (MPESA_RESULTS.get(code) or {}).get("reason") or "declined")[:200]
         if raw:
             p.raw = [*p.raw, {"callback": raw}]
-        p.save(update_fields=["status", "failure_reason", "raw", "updated_at"])
+        p.save(update_fields=["status", "failure_code", "failure_reason", "raw", "updated_at"])
     b = Booking.objects.select_related("guest", "unit", "unit__area").get(pk=p.booking_id)
-    bookings.event(b, "payment_failed", f"{p.get_method_display()} payment failed: {p.failure_reason}")
+    bookings.event(b, "payment_failed", f"{p.get_method_display()} payment failed: {p.failure_reason}", code=code)
     if b.status == "held" and b.channel != "web":
-        bookings.send_guest(b, "payment_failed", reason=p.failure_reason)
+        _tell_remote_guest(b, p)
     return p
 
 
-def refund(booking, amount, *, reason="", actor=None, method=None):
-    """Simulated payments refund instantly; real ones are queued for Amina to send (M-Pesa B2C / card reversal)."""
+def _tell_remote_guest(b, p):
+    """SMS for guests who booked by SMS / USSD / voice: the reason in their language, plus Paybill when the
+    prompt couldn't reach their phone."""
+    body = messaging.render("payment_failed", b.lang, **bookings.guest_context(b), reason=sms_reason(p, b.lang))
+    number = paybill_number()
+    if number and public_failure(p)["suggest"] == "paybill":
+        body += " " + messaging.render("paybill_hint", b.lang, amount=kes(p.amount), paybill=number, ref=b.ref)
+    messaging.send(b.guest.phone, body, booking=b, kind="payment_failed")
+
+
+# ---------- what the guest sees about a failed payment ----------
+
+NOT_FAILED = {"failure_code": None, "failure_message": None, "retryable": False, "suggest": None}
+
+
+def public_failure(payment):
+    """{failure_code, failure_message, retryable, suggest} for the trip page's payments list."""
+    p = payment
+    if p.status != "failed":
+        return dict(NOT_FAILED)
+    b = p.booking
+    code = p.failure_code or None
+    if p.failure_reason.startswith("Amount mismatch"):
+        return {"failure_code": code, "failure_message": MISMATCH, "retryable": False, "suggest": None}
+    entry = result_for(code) if p.method == "mpesa" else {"retryable": True, "suggest": "retry", "message": CARD_FAILED}
+    suggest = _suggest(p, b, code, entry["suggest"])
+    ctx = {"amount": kes(p.amount), "deposit_option": "", "hold_note": ""}
+    if suggest == "deposit":
+        deposit = deposit_amount(b)
+        ctx["deposit_option"] = f", pay only the {SiteSettings.load().deposit_percent}% deposit ({kes(deposit)})"
+    if b.status == "held" and b.hold_active:
+        minutes = max(1, math.ceil((b.hold_expires_at - timezone.now()).total_seconds() / 60))
+        ctx["hold_note"] = f" Your home is still held for {minutes} more minute{'s' if minutes != 1 else ''}."
+    return {
+        "failure_code": code,
+        "failure_message": entry["message"].format_map(ctx),
+        "retryable": bool(entry["retryable"]) and _can_retry(p, b),
+        "suggest": suggest,
+    }
+
+
+def _suggest(p, b, code, default):
+    if p.method != "mpesa":
+        return default
+    if code == "1":  # top up, or pay less now
+        return "deposit" if p.purpose != "change" and deposit_amount(b) else "card"
+    if code in ("1025", "1037"):  # the prompt can't reach the phone: Paybill doesn't need it to
+        return "paybill" if paybill_number() and p.purpose != "change" else "retry"
+    if code == "2001":  # a second wrong PIN in a row: stop before M-Pesa locks the account
+        previous = (
+            Payment.objects.filter(booking_id=p.booking_id, method="mpesa", pk__lt=p.pk)
+            .order_by("-pk")
+            .values_list("failure_code", flat=True)
+            .first()
+        )
+        return "card" if previous == "2001" else "retry"
+    return default
+
+
+def _can_retry(p, b):
+    if p.purpose == "change":
+        return b.status in ("confirmed", "checked_in")
+    if b.status == "held":
+        return bool(b.hold_active)
+    return b.status in ("confirmed", "checked_in") and b.balance_due > 0
+
+
+# ---------- refunds ----------
+
+
+def refund(booking, amount, *, reason="", actor=None, method=None, queue=False):
+    """Simulated payments refund instantly; real ones - and any queue=True refund - wait for Amina to send them
+    (M-Pesa B2C / card reversal) and mark them as sent."""
     b = booking
     last = b.payments.filter(status="success").order_by("-id").first()
     method = method or (
         "card" if last and last.method == "card" else "mpesa_b2c" if last and last.method == "mpesa" else "manual"
     )
-    simulated = last is not None and last.provider == "simulate"
+    simulated = last is not None and last.provider == "simulate" and not queue
     r = Refund.objects.create(
         booking=b,
         payment=last,
@@ -260,7 +517,7 @@ def refund(booking, amount, *, reason="", actor=None, method=None):
         completed_at=timezone.now() if simulated else None,
     )
     if simulated:
-        _apply_refund(b, amount)
+        _refund_sent(r)
     else:
         from apps.safety.services import raise_alert
 
@@ -282,14 +539,44 @@ def mark_refund_sent(r, provider_ref="", actor=None):
         return r
     r.status, r.provider_ref, r.completed_at = "success", provider_ref[:80], timezone.now()
     r.save(update_fields=["status", "provider_ref", "completed_at"])
-    _apply_refund(r.booking, r.amount)
+    _refund_sent(r)
     bookings.event(
         r.booking,
         "refund",
         f"Refund {kes(r.amount)} marked as sent{' (' + provider_ref + ')' if provider_ref else ''}",
         actor=actor,
     )
+    from apps.safety.models import Alert
+    from apps.safety.services import resolve
+
+    for alert in Alert.objects.filter(
+        kind="payment",
+        booking=r.booking,
+        status__in=("open", "acknowledged"),
+        summary__startswith=f"Refund to send: {kes(r.amount)} ",
+    ):
+        resolve(alert, actor, f"Refund sent{' (' + provider_ref + ')' if provider_ref else ''}")
+    # Instant refunds were already announced in the cancellation SMS; a manual one gets its own receipt.
+    sw = r.booking.lang == "sw"
+    destination = {
+        "mpesa_b2c": "M-Pesa yako" if sw else "your M-Pesa",
+        "card": "kadi yako" if sw else "your card",
+    }.get(r.method, "akaunti yako" if sw else "you")
+    reference = f" (ref {provider_ref})" if provider_ref else ""
+    bookings.send_guest(
+        r.booking, "refund_sent", amount=kes(r.amount), destination=destination, reference_line=reference
+    )
     return r
+
+
+def _refund_sent(r):
+    _apply_refund(r.booking, r.amount)
+    from .invoices import sync_credit_notes
+
+    try:
+        sync_credit_notes(r.booking, refund=r)
+    except Exception:
+        log.exception("credit note for refund %s failed", r.pk)
 
 
 def _apply_refund(b, amount):
@@ -315,17 +602,158 @@ def record_manual_payment(booking, amount, method="cash", reference="", actor=No
     return on_success(p, provider_ref=reference or f"{method.upper()}-{p.pk}")
 
 
+# ---------- reconciliation ----------
+
+
 def reconcile_pending():
-    """Ask the provider about STK pushes with no callback after 2 minutes; expire very old ones."""
-    provider = mpesa_provider()
-    for p in Payment.objects.filter(
-        status="pending", method="mpesa", created_at__lt=timezone.now() - timedelta(minutes=2)
-    )[:20]:
-        res = provider.query(p) if p.transaction_id else None
-        code = str((res or {}).get("ResultCode", ""))
-        if code == "0":
-            on_success(p, raw=res)
-        elif code and code not in ("", "None"):
-            on_failure(p, FAILURE_TEXT.get(code, (res or {}).get("ResultDesc", "failed")), raw=res)
-        elif p.created_at < timezone.now() - timedelta(minutes=30):
-            on_failure(p, "no confirmation received")
+    """Ask the provider about prompts and card checkouts with no callback after 2 minutes; expire old ones."""
+    cutoff = timezone.now() - timedelta(minutes=2)
+    mpesa = Payment.objects.filter(status="pending", method="mpesa", created_at__lt=cutoff).exclude(
+        provider__in=("c2b", "manual")
+    )
+    for p in mpesa.order_by("created_at")[:20]:
+        reconcile_payment(p)
+    if settings.PAYSTACK_SECRET_KEY:
+        cards = Payment.objects.filter(status="pending", method="card", provider="paystack", created_at__lt=cutoff)
+        for p in cards.order_by("created_at")[:20]:
+            reconcile_payment(p)
+
+
+def reconcile_payment(p):
+    """Ask the provider about one pending payment and settle it if the answer is final."""
+    if p.method == "card":
+        if p.provider == "paystack":
+            settle_card(p, PaystackCard().query(p))
+        return
+    res = mpesa_provider().query(p) if p.transaction_id else None
+    code = str((res or {}).get("ResultCode", "")).strip()
+    if code and code != "None":  # still processing: Daraja answers with an errorCode and no ResultCode
+        on_mpesa_result(p, code, desc=(res or {}).get("ResultDesc", ""), raw=res)
+    elif p.created_at < timezone.now() - timedelta(minutes=30):
+        on_failure(p, NO_CONFIRMATION)
+
+
+def settle_card(p, res):
+    """Apply Paystack's Verify Transaction answer: only a verified success, in KES, for the full amount counts."""
+    data = res.get("data") if isinstance(res, dict) and res.get("status") else None
+    if not isinstance(data, dict):
+        if p.created_at < timezone.now() - timedelta(hours=24):
+            on_failure(p, NO_CONFIRMATION)
+        return p
+    state = data.get("status")
+    if state == "success":
+        currency = str(data.get("currency") or "KES").upper()
+        if currency != "KES":
+            from apps.safety.services import raise_alert
+
+            on_failure(p, f"Paid in {currency}, expected KES", raw=data)
+            raise_alert(
+                "payment",
+                f"Card payment for {p.booking.ref} was made in {currency}, not KES - check it in Paystack.",
+                severity="high",
+                booking=p.booking,
+                dedupe=f"currency:{p.pk}",
+            )
+            return p
+        on_success(
+            p,
+            transaction_id=str(data.get("id") or "") or None,
+            provider_ref=str(data.get("reference") or p.checkout_token or ""),
+            raw=data,
+            amount=int(data.get("amount") or 0) / 100,
+        )
+    elif state in ("failed", "reversed"):
+        on_failure(p, str(data.get("gateway_response") or f"card payment {state}"), raw=data)
+    elif state == "abandoned" and p.created_at < timezone.now() - timedelta(minutes=30):
+        on_failure(p, "card checkout not completed", raw=data)
+    return p
+
+
+# ---------- host ledger ----------
+
+
+def outstanding_balances():
+    """Confirmed and in-house stays that still owe money, the soonest due first (due = the balance due date)."""
+    s, t = SiteSettings.load(), today()
+    qs = Booking.objects.filter(
+        status__in=("confirmed", "checked_in"), total__gt=F("amount_paid") - F("amount_refunded")
+    ).select_related("guest", "unit")
+    rows = []
+    for b in qs:
+        if b.balance_due <= 0:
+            continue
+        due_on = b.check_in - timedelta(days=s.balance_due_days)
+        rows.append(
+            {
+                "ref": b.ref,
+                "guest": b.guest.display_name,
+                "phone": b.guest.phone,
+                "unit": b.unit.name,
+                "check_in": b.check_in,
+                "balance_due": b.balance_due,
+                "due_on": due_on,
+                "overdue": t > due_on,
+            }
+        )
+    rows.sort(key=lambda r: (r["due_on"], r["check_in"], r["ref"]))
+    return rows
+
+
+def month_bounds(month):
+    """'2026-11' -> (start, end) as aware Kenya-time datetimes. Raises ValueError for anything else."""
+    year, mon = (int(x) for x in str(month).split("-"))
+    start = timezone.make_aware(datetime(year, mon, 1))
+    return start, timezone.make_aware(datetime(year + mon // 12, mon % 12 + 1, 1))
+
+
+LEDGER_COLUMNS = ["date", "ref", "guest", "phone", "method", "purpose", "receipt", "gross", "refunded", "net", "status"]
+
+
+def ledger_rows(start, end):
+    """Money in (payments received) and out (refunds sent) between start and end, by the day it moved."""
+    when = Q(completed_at__gte=start, completed_at__lt=end) | Q(
+        completed_at__isnull=True, created_at__gte=start, created_at__lt=end
+    )
+    rows = []
+    for p in Payment.objects.filter(when, status="success").select_related("booking", "booking__guest"):
+        g, at = p.booking.guest, p.completed_at or p.created_at
+        method = p.get_method_display() + (" Paybill" if p.provider == "c2b" else "")
+        rows.append(
+            (
+                at,
+                [
+                    timezone.localtime(at).date().isoformat(),
+                    p.booking.ref,
+                    g.display_name,
+                    p.phone or g.phone,
+                    method,
+                    p.get_purpose_display(),
+                    p.provider_ref,
+                    p.amount,
+                    0,
+                    p.amount,
+                    "paid",
+                ],
+            )
+        )
+    for r in Refund.objects.filter(when, status="success").select_related("booking", "booking__guest"):
+        g, at = r.booking.guest, r.completed_at or r.created_at
+        rows.append(
+            (
+                at,
+                [
+                    timezone.localtime(at).date().isoformat(),
+                    r.booking.ref,
+                    g.display_name,
+                    g.phone,
+                    r.get_method_display(),
+                    "Refund",
+                    r.provider_ref,
+                    0,
+                    r.amount,
+                    -r.amount,
+                    "refunded",
+                ],
+            )
+        )
+    return [row for _, row in sorted(rows, key=lambda x: x[0])]

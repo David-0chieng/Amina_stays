@@ -54,6 +54,8 @@ def alert_action(request, pk, action):
         services.acknowledge(a, request.user)
     elif action == "resolve":
         services.resolve(a, request.user, request.data.get("note", ""))
+    else:
+        return Response({"error": "Unknown action - use ack or resolve."}, status=400)
     return Response(alert_dict(a))
 
 

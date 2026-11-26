@@ -14,12 +14,13 @@ from django.utils import timezone
 
 from apps.accounts.services import get_or_create_user
 from apps.bookings import services as bookings
-from apps.core.models import SiteSettings
-from apps.core.utils import first_name, spoken_digits, today, weekend_start
+from apps.core.models import OnceMarker, SiteSettings
+from apps.core.utils import first_name, is_kenyan, spoken_digits, today, weekend_start
 from apps.messaging import services as messaging
 from apps.properties.services import available_units
 from apps.properties.services import quote as price_quote
 
+from . import deferred
 from .models import VoiceSession
 
 log = logging.getLogger("amina.voice")
@@ -31,6 +32,7 @@ T = {
         "back": "Welcome back{name}. ",
         "when": "When would you like to stay? Press 1 for tonight. Press 2 for tomorrow. Press 3 for this weekend. Press 4 to choose your dates by text message.",
         "nights": "How many nights? Press a number from 1 to 7.",
+        "min_stay": "The homes free then need a stay of at least {nights} nights.",
         "guests": "How many guests? Press a number from 1 to 8.",
         "by_text": "We have sent you a text message. Just reply with your dates, for example 5 December for 3 nights. Asante, goodbye.",
         "none": "Sorry, nothing is free for those dates. We have added you to our waiting list and will text you if something opens up. Goodbye.",
@@ -44,6 +46,7 @@ T = {
         "booking": "Your booking at {unit} runs from {check_in} to {check_out}. Reference {ref}. Status: {status}. ",
         "booking_opts": "Press 1 to hear the directions. Press 2 to receive your door code by text message. Press 0 for the main menu.",
         "directions": "{unit}. {directions}. Look out for {landmark}. We have also sent the directions by text message. Goodbye.",
+        "directions_early": "{unit} is in {area}. The full directions and Wi-Fi details are shared by text message 2 days before you arrive. Goodbye.",
         "code_sent": "We have sent your door code by text message. Goodbye.",
         "code_later": "Your door code will arrive by text message on the morning of {check_in}. Goodbye.",
         "ask": "Press 1 to be connected to Amina now. Press 2 to leave her a voice message.",
@@ -65,6 +68,7 @@ T = {
         "back": "Karibu tena{name}. ",
         "when": "Ungependa kukaa lini? Bonyeza 1 kwa leo usiku. Bonyeza 2 kwa kesho. Bonyeza 3 kwa wikendi hii. Bonyeza 4 kuchagua tarehe kwa ujumbe mfupi.",
         "nights": "Usiku ngapi? Bonyeza nambari kati ya 1 na 7.",
+        "min_stay": "Nyumba zilizo wazi zinahitaji angalau usiku {nights}.",
         "guests": "Wageni wangapi? Bonyeza nambari kati ya 1 na 8.",
         "by_text": "Tumekutumia ujumbe mfupi. Jibu na tarehe zako, kwa mfano 5 Desemba usiku 3. Asante, kwaheri.",
         "none": "Samahani, hakuna nafasi kwa tarehe hizo. Tumekuweka kwenye orodha ya kusubiri. Kwaheri.",
@@ -78,6 +82,7 @@ T = {
         "booking": "Nafasi yako ni {unit} kuanzia {check_in} hadi {check_out}. Nambari ya kumbukumbu {ref}. ",
         "booking_opts": "Bonyeza 1 kusikia maelekezo. Bonyeza 2 kupata nambari ya mlango kwa ujumbe mfupi. Bonyeza 0 kurudi.",
         "directions": "{unit}. {directions}. Tafuta {landmark}. Tumekutumia maelekezo kwa ujumbe mfupi pia. Kwaheri.",
+        "directions_early": "{unit} iko {area}. Maelekezo kamili na Wi-Fi yatatumwa kwa ujumbe mfupi siku 2 kabla ya kufika. Kwaheri.",
         "code_sent": "Tumekutumia nambari ya mlango kwa ujumbe mfupi. Kwaheri.",
         "code_later": "Nambari ya mlango itakuja kwa ujumbe mfupi asubuhi ya {check_in}. Kwaheri.",
         "ask": "Bonyeza 1 kuunganishwa na Amina sasa. Bonyeza 2 kumwachia ujumbe wa sauti.",
@@ -162,6 +167,7 @@ class Call:
         self.s.save(update_fields=["state", "updated_at"])
 
     def main_menu(self, prefix=""):
+        self.st.pop("retry_guests", None)  # a new booking attempt asks for the guests again
         self.save(step="main")
         return ask(prefix + tr(self.lang, "main"), self.lang)
 
@@ -239,16 +245,28 @@ class Call:
         from datetime import date
 
         ci = date.fromisoformat(self.st["check_in"])
+        guests = self.st.pop("retry_guests", None)  # asked again after a minimum-stay miss
         self.save(step="guests", check_out=(ci + timedelta(days=int(self.d))).isoformat())
+        if guests:
+            return self.offer(guests)
         return ask(tr(self.lang, "guests"), self.lang)
 
     def step_guests(self):
         if not (self.d.isdigit() and 1 <= int(self.d) <= 8):
             return ask(tr(self.lang, "invalid") + " " + tr(self.lang, "guests"), self.lang)
+        return self.offer(int(self.d))
+
+    def offer(self, guests):
         from datetime import date
 
-        ci, co, guests = date.fromisoformat(self.st["check_in"]), date.fromisoformat(self.st["check_out"]), int(self.d)
-        units = list(available_units(ci, co, guests=guests)[:4])
+        ci, co = date.fromisoformat(self.st["check_in"]), date.fromisoformat(self.st["check_out"])
+        nights = (co - ci).days
+        free = list(available_units(ci, co, guests=guests))
+        units = [u for u in free if u.min_nights <= nights <= u.max_nights][:4]  # only homes the hold accepts
+        longer = [u.min_nights for u in free if nights < u.min_nights <= 7]
+        if not units and longer:
+            self.save(step="nights", retry_guests=guests)
+            return ask(tr(self.lang, "min_stay", nights=min(longer)) + " " + tr(self.lang, "nights"), self.lang)
         if not units:
             user, _ = get_or_create_user(self.phone, channel="voice")
             bookings.add_to_waitlist(user, ci, co, guests=guests, channel="voice")
@@ -271,7 +289,6 @@ class Call:
     def step_pick(self):
         from datetime import date
 
-        from apps.payments.services import start_remote_payment
         from apps.properties.models import Unit
 
         opts = self.st.get("options", [])
@@ -291,13 +308,10 @@ class Call:
             )
         except bookings.BookingError as e:
             return end(str(e), self.lang)
-        pay = start_remote_payment(b)
         self.save(step="done", ref=b.ref)
-        pay_line = tr(self.lang, "pay_card" if pay.get("method") == "card" else "pay_mpesa")
-        return end(
-            tr(self.lang, "held", name=unit.name, total=b.total, pay=pay_line if not pay.get("error") else pay["text"]),
-            self.lang,
-        )
+        deferred.after_response(deferred.push_payment, b.pk)  # never wait on Daraja inside a voice callback
+        pay_line = tr(self.lang, "pay_mpesa" if is_kenyan(b.guest.phone) else "pay_card")
+        return end(tr(self.lang, "held", name=unit.name, total=b.total, pay=pay_line), self.lang)
 
     def prices(self):
         from apps.bookings.models import Addon
@@ -340,10 +354,13 @@ class Call:
     def step_booking(self):
         from apps.bookings.models import Booking
 
-        b = Booking.objects.filter(ref=self.st.get("ref")).select_related("unit").first()
+        b = Booking.objects.filter(ref=self.st.get("ref")).select_related("unit", "unit__area").first()
         if not b:
             return self.main_menu()
         if self.d == "1":
+            # like the trip page and USSD: directions and Wi-Fi open 48 h before check-in, on every channel
+            if not bookings.details_visible(b):
+                return end(tr(self.lang, "directions_early", unit=b.unit.name, area=b.unit.area.name), self.lang)
             bookings.send_guest(b, "directions")
             return end(
                 tr(
@@ -397,6 +414,10 @@ class Call:
         return dial(tr(self.lang, "connecting"), [s.host_contact], self.lang)
 
     def step_done(self):
+        return end(tr(self.lang, "recorded"), self.lang)
+
+    def step_record(self):
+        # Africa's Talking posts the recording to the Record callbackUrl: thank the caller, don't replay the menu
         return end(tr(self.lang, "recorded"), self.lang)
 
 
@@ -470,14 +491,27 @@ def call_ended(session, data):
     session.duration_seconds = int(float(data.get("durationInSeconds") or 0))
     session.hangup_cause = (data.get("hangupCause") or "")[:40]
     session.save(update_fields=["ended_at", "duration_seconds", "hangup_cause"])
-    if session.direction != "inbound" or not st.get("dialed_host"):
+    if session.direction == "outbound":
+        if _unanswered(data):
+            _missed_outbound(session, data)
+        return
+    if not st.get("dialed_host"):
         return
     if int(float(data.get("dialDurationInSeconds") or 0)) > 0:
         return
     phone, lang = session.phone, st.get("lang", "en")
     s = SiteSettings.load()
     if st.get("step") == "help":
-        escalate(phone, "voice-missed")  # Amina didn't pick up the bridged call: ring her phone now
+        from apps.safety.models import Alert
+        from apps.safety.services import recall
+
+        alert = Alert.objects.filter(pk=st.get("alert_id")).first()
+        if alert is not None and alert.status != "open":
+            return  # Amina has already acknowledged it
+        if alert is not None:
+            recall(alert)  # Amina didn't pick up the bridged call: ring her phone now, same emergency
+        else:
+            escalate(phone, "voice-missed")
         messaging.send(
             phone,
             "Amina didn't answer yet - we're calling her again now. If you are in danger call 999 or 112."
@@ -498,6 +532,52 @@ def call_ended(session, data):
         )
 
 
+# Africa's Talking's last notification for an outbound call that nobody picked up: callSessionState NotAnswered
+# (Expired once its 6 hours of retries run out) and/or a hangupCause other than NORMAL_CLEARING.
+UNANSWERED_STATES = {"NotAnswered", "Busy", "Failed", "Expired"}
+UNANSWERED_CAUSES = {
+    "NO_ANSWER",
+    "USER_BUSY",
+    "CALL_REJECTED",
+    "NO_USER_RESPONSE",
+    "SUBSCRIBER_ABSENT",
+    "UNALLOCATED_NUMBER",
+    "NORMAL_TEMPORARY_FAILURE",
+    "RECOVERY_ON_TIMER_EXPIRE",
+    "SERVICE_UNAVAILABLE",
+    "USER_NOT_REGISTERED",
+}
+
+
+def _unanswered(data):
+    state = str(data.get("callSessionState") or "")
+    cause = str(data.get("hangupCause") or "").upper()
+    return state in UNANSWERED_STATES or cause in UNANSWERED_CAUSES
+
+
+def _missed_outbound(session, data):
+    """A call we placed wasn't answered. An SOS call climbs the escalation ladder now instead of waiting for the
+    3-minute timer; the arrival welcome call becomes a welcome SMS (once)."""
+    if session.session_id and not OnceMarker.mark(f"voice-unanswered:{session.session_id}"):
+        return  # the same final notification, delivered twice
+    st = session.state
+    why = data.get("callSessionState") or data.get("hangupCause") or "not answered"
+    if st.get("purpose") == "alert":
+        from apps.safety.models import Alert
+        from apps.safety.services import call_next
+
+        alert = Alert.objects.filter(pk=st.get("alert_id")).first()
+        if alert is not None:
+            call_next(alert, why=f"call not answered ({why})")
+    elif st.get("purpose") == "welcome":
+        from apps.bookings.models import Booking
+
+        b = Booking.objects.filter(ref=st.get("ref")).select_related("guest", "unit", "unit__area").first()
+        if b is not None and OnceMarker.mark(f"welcome-call-missed:{b.ref}"):
+            bookings.send_guest(b, "welcome_call_missed")
+            bookings.event(b, "welcome_call", f"Welcome call not answered ({why}) - welcome SMS sent instead")
+
+
 def voicemail(session, url):
     if session.state.get("voicemail_sent"):
         return
@@ -513,6 +593,19 @@ def voicemail(session, url):
     )
 
 
+def _placed_for(client_request_id):
+    """Our outbound calls carry clientRequestId 'alert-<alert id>' (SOS) or 'welcome-<booking ref>'."""
+    kind, _, key = str(client_request_id or "").partition("-")
+    if kind == "alert" and key.isdigit():
+        return {"purpose": "alert", "alert_id": int(key)}
+    if kind == "welcome" and key:
+        from apps.bookings.models import Booking
+
+        lang = Booking.objects.filter(ref=key).values_list("lang", flat=True).first()
+        return {"purpose": "welcome", "ref": key, "lang": lang or "en"}
+    return None
+
+
 def handle(data):
     """Entry point for the AT voice callback. Returns XML (or '' for the final notification)."""
     sid = data.get("sessionId") or ""
@@ -521,8 +614,8 @@ def handle(data):
     session, created = VoiceSession.objects.get_or_create(
         session_id=sid, defaults={"phone": phone or "", "direction": "outbound" if outbound else "inbound"}
     )
-    if created and outbound and str(data.get("clientRequestId", "")).startswith("alert-"):
-        session.state = {"purpose": "alert", "alert_id": int(str(data["clientRequestId"]).split("-")[1])}
+    if created and outbound and (state := _placed_for(data.get("clientRequestId"))):
+        session.state = state  # a call we placed that wasn't pre-registered (e.g. it was never answered)
         session.save(update_fields=["state"])
     if not session.phone and phone:
         session.phone = phone

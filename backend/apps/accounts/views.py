@@ -1,4 +1,6 @@
 from django.contrib.auth import login, logout
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
@@ -95,6 +97,11 @@ def me(request):
     if not request.user.is_authenticated:
         return Response({"error": "Please log in with your phone number."}, status=401)
     u, d = request.user, request.data
+    if d.get("email"):
+        try:
+            validate_email(str(d["email"]).strip())
+        except ValidationError:
+            return Response({"error": "Please enter a valid email address."}, status=400)
     for field, limit in (("name", 80), ("email", 254)):
         if field in d:
             setattr(u, field, str(d[field] or "")[:limit].strip())

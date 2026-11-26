@@ -12,6 +12,8 @@ class Alert(models.Model):
         ("conflict", "Calendar conflict"),
         ("security", "Security / fraud"),
         ("payment", "Payment problem"),
+        ("compliance", "Compliance"),
+        ("sms", "SMS delivery"),
     ]
     SEVERITY = [("critical", "Critical"), ("high", "High"), ("medium", "Medium"), ("low", "Low")]
     STATUS = [("open", "Open"), ("acknowledged", "Acknowledged"), ("resolved", "Resolved")]

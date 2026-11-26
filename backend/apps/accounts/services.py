@@ -159,16 +159,30 @@ def export_data(user):
             {"ref": r.booking.ref, "rating": r.rating, "comment": r.comment}
             for r in user.reviews.select_related("booking")
         ],
+        "waitlist": [
+            {
+                "home": w.unit.name if w.unit else None,
+                "area": w.area.name if w.area else None,
+                "check_in": w.check_in.isoformat(),
+                "check_out": w.check_out.isoformat(),
+                "guests": w.guests,
+                "status": w.status,
+            }
+            for w in user.waitlist.select_related("unit", "area")
+        ],
     }
 
 
 def erase(user):
-    """Erasure request: wipe what we don't have to keep. Guest-register records (name + ID) stay for the
-    5 years the tourism regulations require and are erased automatically after that."""
+    """Erasure request: wipe what we don't have to keep. Guest-register records (name + ID) of real stays are kept
+    for the 5 years the tourism regulations require and erased automatically after that; register lines of
+    bookings that never became a stay (cancelled, expired, unpaid) are erased now."""
+    from apps.bookings.models import BookingGuest
     from apps.messaging.models import Message
     from apps.properties.models import Wishlist
 
-    has_register = user.bookings.filter(status__in=("confirmed", "checked_in", "completed")).exists()
+    stays = ("confirmed", "checked_in", "completed")
+    has_register = user.bookings.filter(status__in=stays).exists()
     user.email = ""
     user.marketing_opt_in = False
     user.sms_opt_out_at = user.sms_opt_out_at or timezone.now()
@@ -178,7 +192,11 @@ def erase(user):
         user.name = ""
         user.id_type, user.id_number_enc, user.id_last4 = "", "", ""
     user.save()
+    BookingGuest.objects.filter(booking__guest=user).exclude(booking__status__in=(*stays, "held")).update(
+        full_name="[erased]", id_type="", id_number_enc="", id_last4="", nationality=""
+    )
     Wishlist.objects.filter(user=user).delete()
+    user.waitlist.all().delete()
     Message.objects.filter(phone=user.phone).update(body="[erased at guest's request]")
     record("guest", f"Erasure request processed for {user.phone}", phone=user.phone)
     return {"erased": True, "register_kept": has_register}

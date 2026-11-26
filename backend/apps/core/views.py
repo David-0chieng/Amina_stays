@@ -24,6 +24,8 @@ def health(request):
 
 @api_view(["GET"])
 def config(request):
+    from apps.payments.services import paybill_config
+
     s = SiteSettings.load()
     return Response(
         {
@@ -47,6 +49,7 @@ def config(request):
                 "card": settings.CARD_PROVIDER,
                 "simulated": settings.MPESA_PROVIDER == "simulate" or settings.CARD_PROVIDER == "simulate",
             },
+            "paybill": paybill_config(),  # Lipa na M-Pesa fallback when a prompt can't get through (None = off)
             "currencies": {"USD": float(s.usd_rate), "EUR": float(s.eur_rate), "GBP": float(s.gbp_rate)},
             "deposit_percent": s.deposit_percent,
             "hold_minutes": s.hold_minutes,
@@ -113,9 +116,11 @@ def host_settings(request):
 def channels(request):
     """Africa's Talking integration status + the exact callback URLs to paste into the AT dashboard."""
     from apps.comms import at
+    from apps.payments.c2b import c2b_urls
 
     base = settings.PUBLIC_URL.rstrip("/")
     prefix = f"{base}/at/{settings.AT_WEBHOOK_SECRET}" if settings.AT_WEBHOOK_SECRET else f"{base}/at"
+    paybill = c2b_urls()  # Daraja C2B (Paybill/Till), registered by manage.py register_c2b
     last = {
         k: Activity.objects.filter(kind=k).values_list("created_at", flat=True).first()
         for k in ("sms", "ussd", "voice", "payment")
@@ -187,10 +192,14 @@ def channels(request):
                     "ready": settings.MPESA_PROVIDER != "simulate",
                     "detail": "simulated for the demo"
                     if settings.MPESA_PROVIDER == "simulate"
+                    else f"{settings.MPESA_PROVIDER} - run manage.py register_c2b once"
+                    if settings.MPESA_PROVIDER == "daraja"
                     else settings.MPESA_PROVIDER,
                     "callbacks": {
                         "AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
                         "Daraja": f"{base}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+                        "Paybill validation": paybill["validation"],
+                        "Paybill confirmation": paybill["confirmation"],
                     },
                 },
             ],
@@ -305,6 +314,8 @@ def _demo_guard():
 
 @api_view(["POST"])
 def demo_pay(request, ref):
+    """Settle the newest pending payment as the provider would. Body {"result": <M-Pesa ResultCode>} other than 0
+    fails it instead, through the same code path as a Daraja callback carrying that code."""
     if (blocked := _demo_guard()) is not None:
         return blocked
     from apps.bookings.models import Booking
@@ -312,16 +323,62 @@ def demo_pay(request, ref):
     from apps.payments.models import Payment
 
     b = get_object_or_404(Booking, ref=ref.upper())
-    p = Payment.objects.filter(booking=b, status="pending").order_by("-id").first()
+    data = request.data if hasattr(request.data, "get") else {}
+    try:
+        result = int(data.get("result") or 0)
+    except (TypeError, ValueError):
+        return Response({"error": "Give an M-Pesa result code, e.g. 1032."}, status=400)
+    pending = Payment.objects.filter(booking=b, status="pending").order_by("-id")
+    p = (pending.filter(method="mpesa").first() if result else None) or pending.first()
     if not p:
         try:
             payments.start_payment(b)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
-        p = Payment.objects.filter(booking=b, status="pending").order_by("-id").first()
+        p = pending.first()
+        if p is None:
+            return Response({"error": "There's no payment to settle."}, status=400)
+    if result:
+        desc = "Simulated in the Demo Lab"
+        payments.on_mpesa_result(p, result, desc=desc, raw={"ResultCode": result, "ResultDesc": desc})
+        p.refresh_from_db()
+        b.refresh_from_db()
+        return Response(
+            {
+                "ok": True,
+                "ref": b.ref,
+                "status": b.status,
+                "failure_code": p.failure_code or None,
+                "failure_message": payments.public_failure(p)["failure_message"],
+            }
+        )
     payments.on_success(p, transaction_id=f"DEMO{p.pk}", provider_ref=f"DEMO{p.pk:06d}")
     b.refresh_from_db()
     return Response({"ref": b.ref, "status": b.status, "paid": b.amount_paid})
+
+
+@api_view(["POST"])
+def demo_c2b(request):
+    """A Lipa na M-Pesa Paybill payment, as Daraja's C2B confirmation would deliver it: {ref, amount?, phone?}.
+    The amount defaults to what's due now; a ref that matches no booking lands in the host's Unmatched queue."""
+    if (blocked := _demo_guard()) is not None:
+        return blocked
+    from apps.payments import c2b
+    from apps.payments.providers import PaymentError
+
+    data = request.data if hasattr(request.data, "get") else {}
+    try:
+        t = c2b.simulate(str(data.get("ref") or "").strip(), amount=data.get("amount"), phone=data.get("phone"))
+    except PaymentError as e:
+        return Response({"error": str(e)}, status=400)
+    return Response(
+        {
+            "trans_id": t.trans_id,
+            "matched": t.status == "matched",
+            "ref": t.booking.ref if t.booking_id else None,
+            "amount": t.amount,
+        }
+    )
 
 
 @api_view(["POST"])
@@ -345,22 +402,26 @@ def demo_advance(request, ref):
     b = get_object_or_404(Booking.objects.select_related("unit", "guest", "unit__area"), ref=ref.upper())
     step = request.data.get("step")
     result = "ok"
-    if step in ("pre_arrival", "directions", "id_request", "welcome_check", "checkout_reminder", "mid_stay"):
-        bookings.send_guest(b, step, clean_price="KES 1,500")
-    elif step == "code":
-        result = bookings.release_code(b, force=bool(request.data.get("force")))
-    elif step == "checkout":
-        bookings.check_out(b, channel="demo")
-    elif step == "review":
-        if b.status == "checked_in":
+    try:
+        if step in ("pre_arrival", "directions", "id_request", "welcome_check", "checkout_reminder", "mid_stay"):
+            # sent as it would be on its real date, so the day-before directions carry the real Wi-Fi and route
+            bookings.send_guest(b, step, reveal=True, clean_price="KES 1,500")
+        elif step == "code":  # the time machine may release ahead of the real arrival day
+            result = bookings.release_code(b, force=bool(request.data.get("force")), allow_early=True)
+        elif step == "checkout":
             bookings.check_out(b, channel="demo")
-            b.refresh_from_db()
-        from apps.core.models import OnceMarker
+        elif step == "review":
+            if b.status == "checked_in":
+                bookings.check_out(b, channel="demo")
+                b.refresh_from_db()
+            from apps.core.models import OnceMarker
 
-        OnceMarker.objects.filter(key=f"review-request:{b.ref}").delete()
-        result = request_review(b)
-    else:
-        return Response({"error": "Unknown step"}, status=400)
+            OnceMarker.objects.filter(key=f"review-request:{b.ref}").delete()
+            result = request_review(b)
+        else:
+            return Response({"error": "Unknown step"}, status=400)
+    except bookings.BookingError as e:  # e.g. checking out a stay that hasn't started
+        return Response({"error": str(e)}, status=400)
     b.refresh_from_db()
     return Response({"ref": b.ref, "status": b.status, "result": result})
 

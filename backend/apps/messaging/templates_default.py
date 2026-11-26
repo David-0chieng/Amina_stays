@@ -65,9 +65,37 @@ DEFAULTS = {
         "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) is due before arrival. Check your phone for an M-Pesa prompt or pay here: {trip_link}",
         "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) linadaiwa kabla ya kufika. Angalia ombi la M-Pesa au lipa hapa: {trip_link}",
     },
+    "balance_reminder_soon": {
+        "en": "Hi {first_name}, a quick heads-up: the balance of {balance} for {ref} ({unit}) is due on {due_date}. Pay any time by M-Pesa or card: {trip_link}",
+        "sw": "Habari {first_name}, kumbusho: salio la {balance} kwa {ref} ({unit}) linadaiwa {due_date}. Lipa wakati wowote kwa M-Pesa au kadi: {trip_link}",
+    },
+    "balance_overdue": {
+        "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) was due on {due_date} and is still unpaid. Pay by M-Pesa or card on your trip page: {trip_link}{paybill_line} Your door code is sent once it's paid.",
+        "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) lilipaswa kulipwa {due_date} na bado halijalipwa. Lipa kwa M-Pesa au kadi kwenye ukurasa wa safari yako: {trip_link}{paybill_line} Nambari ya mlango itatumwa ukishalipa.",
+    },
+    "pay_prompt_failed": {
+        "en": "We couldn't send the M-Pesa prompt for {ref} ({reason}). Reply PAY to try again, or pay by card here: {trip_link}",
+        "sw": "Hatukuweza kutuma ombi la M-Pesa kwa {ref} ({reason}). Jibu PAY kujaribu tena, au lipa kwa kadi hapa: {trip_link}",
+    },
     "late_payment_refund": {
         "en": "We received {amount} for {ref}, but {unit} was taken after your hold expired. Amina will refund you shortly. Sorry!",
         "sw": "Tumepokea {amount} kwa {ref}, lakini {unit} ilichukuliwa baada ya muda wako kuisha. Amina atakurudishia pesa hivi karibuni. Samahani!",
+    },
+    "refund_sent": {
+        "en": "Refund sent: {amount} for {ref} to {destination}{reference_line}. Reply HELP if it hasn't reached you within a day.",
+        "sw": "Marejesho yametumwa: {amount} kwa {ref} kwenda {destination}{reference_line}. Jibu MSAADA kama hayajakufikia ndani ya siku moja.",
+    },
+    "paybill_hint": {
+        "en": "Or pay {amount} by M-Pesa Paybill {paybill}, account {ref}.",
+        "sw": "Au lipa {amount} kwa M-Pesa Paybill {paybill}, akaunti {ref}.",
+    },
+    "payment_claim_matched": {
+        "en": "Thank you - we found M-Pesa payment {code} for {amount} and added it to {ref}.",
+        "sw": "Asante - tumepata malipo ya M-Pesa {code} ya {amount} na tumeyaongeza kwenye {ref}.",
+    },
+    "payment_claim_review": {
+        "en": "Thanks - we've passed M-Pesa code {code} to {host}, who will match it to {ref} shortly. Please don't pay again.",
+        "sw": "Asante - tumempa {host} nambari ya M-Pesa {code}, ataiunganisha na {ref} hivi karibuni. Tafadhali usilipe tena.",
     },
     # ---------- the guest message timeline ----------
     "pre_arrival": {
@@ -127,6 +155,10 @@ DEFAULTS = {
         "de": "Gut angekommen in {unit}, {first_name}? Antworte 1, wenn alles passt, oder sag uns, was du brauchst.",
         "fr": "Bien installe a {unit}, {first_name} ? Repondez 1 si tout va bien, ou dites-nous ce qu'il vous faut.",
     },
+    "welcome_call_missed": {
+        "en": "Karibu {first_name}! We called to welcome you to {unit} - sorry we missed you. Your door code is in our earlier SMS; directions and Wi-Fi are on your trip page: {trip_link} Reply here with any question, or HELP if it's urgent.",
+        "sw": "Karibu {first_name}! Tulikupigia kukukaribisha {unit} - samahani hatukukupata. Nambari ya mlango iko kwenye SMS yetu ya awali; maelekezo na Wi-Fi yako hapa: {trip_link} Jibu hapa na swali lolote, au MSAADA kama ni dharura.",
+    },
     "mid_stay": {
         "en": "Hope you're enjoying {area}! Fancy a mid-stay clean with fresh towels ({clean_price})? Reply CLEAN. Anything else, just reply.",
         "sw": "Tunatumaini unafurahia {area}! Ungependa usafi wa katikati ya kukaa na taulo mpya ({clean_price})? Jibu CLEAN.",
@@ -173,8 +205,24 @@ DEFAULTS = {
         "sw": "Unaukumbuka ufuo, {first_name}? Weka nafasi {unit} tena moja kwa moja upate punguzo la 10% kwa KARIBU10: {link} Jibu STOP kujiondoa.",
     },
     "waitlist_offer": {
-        "en": "Good news! {unit} ({price}/night) is free {dates}. Reply BOOK to grab it - first reply wins.",
-        "sw": "Habari njema! {unit} ({price}/usiku) iko wazi {dates}. Jibu BOOK kuichukua - wa kwanza kujibu anapata.",
+        "en": "Good news! {unit} ({price}/night) is free {dates}. Book it here: {link} - or reply BOOK. First to book gets it.",
+        "sw": "Habari njema! {unit} ({price}/usiku) iko wazi {dates}. Weka nafasi hapa: {link} - au jibu BOOK. Wa kwanza kuweka anaipata.",
+    },
+    "waitlist_joined": {
+        "en": "You're on the waitlist for {unit}, {dates}. We'll text you the moment it opens up.",
+        "sw": "Uko kwenye orodha ya kusubiri ya {unit}, {dates}. Tutakutumia ujumbe mara tu itakapokuwa wazi.",
+    },
+    "change_requested": {
+        "en": "{ref}: change to {new_dates} ({nights} night{s}, {guests} guest{gs}). New total {new_total} ({difference}). {next_step}",
+        "sw": "{ref}: mabadiliko hadi {new_dates} (usiku {nights}, wageni {guests}). Jumla mpya {new_total} ({difference}). {next_step}",
+    },
+    "change_applied": {
+        "en": "Done! {ref} at {unit} is now {dates} ({nights} night{s}, {guests} guest{gs}). New total {total}.{refund_line}{balance_note} {trip_link}",
+        "sw": "Imekamilika! {ref} katika {unit} sasa ni {dates} (usiku {nights}, wageni {guests}). Jumla mpya {total}.{refund_line}{balance_note} {trip_link}",
+    },
+    "change_declined": {
+        "en": "Sorry - we couldn't change {ref} to {new_dates}. Your booking stays as it was: {dates}.{refund_line}",
+        "sw": "Samahani - hatukuweza kubadilisha {ref} hadi {new_dates}. Nafasi yako inabaki kama ilivyokuwa: {dates}.{refund_line}",
     },
     "cancelled_by_host": {
         "en": "We're very sorry - Amina has had to cancel {ref} ({unit}, {dates}).{refund_line}{goodwill_line}",
@@ -264,6 +312,10 @@ DEFAULTS = {
     "taken": {
         "en": "Sorry, someone just grabbed that one. Reply BOOK to see what's still free.",
         "sw": "Samahani, mtu ameichukua sasa hivi. Jibu BOOK kuona zilizobaki.",
+    },
+    "min_stay": {
+        "en": "{unit} is free then, but has a minimum stay of {nights} nights. Reply with your dates for {nights} nights or more, e.g. '{example} for {nights} nights'.",
+        "sw": "{unit} iko wazi, lakini inahitaji angalau usiku {nights}. Jibu na tarehe za usiku {nights} au zaidi, mf. '{example} usiku {nights}'.",
     },
     "price_list": {
         "en": "Our homes (per night, from): {list}. Reply BOOK with your dates to check availability.",
@@ -389,6 +441,8 @@ DESCRIPTIONS = {
     "pre_arrival": "3 days before arrival: breakfast, ETA and travel questions",
     "id_request": "Asks for the guest-register ID if it's missing",
     "balance_due": "Requests the balance for deposit bookings",
+    "balance_reminder_soon": "A week before arrival: the balance and its due date (booked more than a week ahead)",
+    "balance_overdue": "Balance still unpaid after its due date, before arrival",
     "pay_link": "Card payment link Amina sends from a reservation",
     "directions": "Day before arrival: directions, landmark, Wi-Fi",
     "checkin_code": "Arrival morning: the door code",

@@ -176,25 +176,27 @@ def parse_dates(text, ref=None):
         if m[4]:
             co = _safe(int(m[4]), int(m[5]), int(m[6]))
     if not ci:  # "5-8 dec", "5 to 8 december", "from 5th to 8th dec"
-        m = re.search(
+        for m in re.finditer(
             r"(\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|until|till|hadi|–)\s*(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})",
             t,
-        )
-        if (m and m[3][:4] in MONTHS) or (m and m[3][:3] in MONTHS):
-            month = MONTHS.get(m[3][:4]) or MONTHS.get(m[3][:3])
-            ci, co = _date(int(m[1]), month, ref), _date(int(m[2]), month, ref)
-            if ci and co and co <= ci:
-                co = None
-    if not ci:  # "5 dec", "5th of december", "dec 5"
-        m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})\b", t)
-        month = (MONTHS.get(m[2][:4]) or MONTHS.get(m[2][:3])) if m else None
-        if m and month:
-            ci = _date(int(m[1]), month, ref)
-        else:
-            m = re.search(r"\b([a-zäéûô]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\b", t)
-            month = (MONTHS.get(m[1][:4]) or MONTHS.get(m[1][:3])) if m else None
-            if m and month:
+        ):
+            month = _month(m[3])
+            if month:
+                ci, co = _date(int(m[1]), month, ref), _date(int(m[2]), month, ref)
+                if ci and co and co <= ci:
+                    co = None
+                break
+    # "5 dec", "5th of december", "dec 5" - the first number+word pair isn't always the date ("2 people on 5 dec")
+    if not ci:
+        for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?([a-zäéûô]{3,9})\b", t):
+            if month := _month(m[2]):
+                ci = _date(int(m[1]), month, ref)
+                break
+    if not ci:
+        for m in re.finditer(r"\b([a-zäéûô]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\b", t):
+            if month := _month(m[1]):
                 ci = _date(int(m[2]), month, ref)
+                break
     if not ci:  # "5/12" or "05/12/2026" (day first, as in Kenya)
         m = re.search(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", t)
         if m and 1 <= int(m[2]) <= 12:
@@ -224,6 +226,10 @@ def _safe(y, m, d):
         return date(y, m, d)
     except ValueError:
         return None
+
+
+def _month(word):
+    return MONTHS.get(word[:4]) or MONTHS.get(word[:3])
 
 
 def parse_area(text, areas):
@@ -260,4 +266,5 @@ def looks_like_booking(text):
     if BOOKING_WORDS.search(text or ""):
         return True
     ci, co = parse_dates(text or "")
-    return bool(ci and co and parse_guests(text or ""))  # "Diani 12 Dec - 15 Dec, 2 of us"
+    # "Diani 12 Dec - 15 Dec, 2 of us" / "Old Town 5 Dec 1 night"
+    return bool(ci and co and (parse_guests(text or "") or parse_nights(text or "")))

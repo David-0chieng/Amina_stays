@@ -52,8 +52,14 @@ def is_available(unit, check_in, check_out, exclude_booking_id=None):
     )
 
 
-def available_units(check_in, check_out, *, area=None, guests=None, qs=None):
+def available_units(check_in, check_out, *, area=None, guests=None, qs=None, bookable=False):
+    """Homes free for [check_in, check_out). bookable=True also applies each home's minimum and maximum stay, so
+    the list holds only homes a booking would accept (web search). The phone channels apply that rule themselves on
+    the full list, which also tells them which free homes need a longer stay."""
     qs = (qs if qs is not None else Unit.objects.filter(status="active")).select_related("area")
+    if bookable:
+        nights = (check_out - check_in).days
+        qs = qs.filter(min_nights__lte=nights, max_nights__gte=nights)
     qs = qs.annotate(
         _busy=Exists(_booking_overlap(OuterRef("pk"), check_in, check_out)),
         _blocked=Exists(_block_overlap(OuterRef("pk"), check_in, check_out)),
@@ -118,7 +124,8 @@ def nightly_rates(unit, check_in, check_out):
 
 
 def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, payment_plan="full"):
-    """All-in price for a stay. addons: [{"addon": Addon, "quantity": int, "details": {}}]."""
+    """All-in price for a stay. addons: [{"addon": Addon, "quantity": int, "details": {}}].
+    On-request add-ons (requires_approval) are listed under "pending" and left out of the total until approved."""
     s = SiteSettings.load()
     t = ref_today or today()
     rates = nightly_rates(unit, check_in, check_out)
@@ -127,9 +134,10 @@ def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, p
     lines = []
     if n:
         avg = round(accommodation / n)
-        lines.append(
-            {"label": f"{kes(avg)} x {n} night{'s' if n != 1 else ''}", "amount": accommodation, "kind": "nights"}
-        )
+        nights = f"{n} night{'s' if n != 1 else ''}"
+        # "KES 9,008 x 3 nights" next to KES 27,025 reads as a sum error, so averages only multiply when exact
+        label = f"{kes(avg)} x {nights}" if avg * n == accommodation else f"{nights} (avg. {kes(avg)})"
+        lines.append({"label": label, "amount": accommodation, "kind": "nights"})
 
     discount, discount_label = 0, ""
     if n >= 28 and unit.monthly_discount:
@@ -159,23 +167,25 @@ def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, p
     if unit.cleaning_fee:
         lines.append({"label": "Cleaning fee", "amount": unit.cleaning_fee, "kind": "cleaning"})
 
-    addons_total, addon_lines = 0, []
+    addons_total, addon_lines, pending_lines = 0, [], []
     for item in addons or []:
         a, qty = item["addon"], max(1, int(item.get("quantity") or 1))
         amount = a.price_for(n, guests, qty)
-        addons_total += amount
         unit_word = {
             "per_guest_night": f"{qty} guest{'s' if qty != 1 else ''} x {n} morning{'s' if n != 1 else ''}",
             "per_night": f"{n} night{'s' if n != 1 else ''}",
         }.get(a.pricing, f"x{qty}" if qty > 1 else "")
-        addon_lines.append(
-            {
-                "label": f"{a.name}{' (' + unit_word + ')' if unit_word else ''}",
-                "amount": amount,
-                "kind": "addon",
-                "code": a.code,
-            }
-        )
+        line = {
+            "label": f"{a.name}{' (' + unit_word + ')' if unit_word else ''}",
+            "amount": amount,
+            "kind": "addon",
+            "code": a.code,
+        }
+        if a.requires_approval:  # on request: charged only once Amina approves it
+            pending_lines.append(line)
+            continue
+        addons_total += amount
+        addon_lines.append(line)
     lines.extend(addon_lines)
 
     taxable = accommodation - discount + unit.cleaning_fee + addons_total
@@ -206,6 +216,7 @@ def quote(unit, check_in, check_out, *, guests=1, addons=None, ref_today=None, p
         "deposit_available": lead > s.balance_due_days and s.deposit_percent < 100,
         "balance_due_date": (check_in - timedelta(days=s.balance_due_days)).isoformat(),
         "lines": lines,
+        "pending": pending_lines,
         "currency": "KES",
         "approx": {
             "USD": round(total / float(s.usd_rate)),

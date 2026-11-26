@@ -9,16 +9,18 @@ from django.utils import timezone
 
 
 def normalize_phone(raw):
-    """Normalise to E.164. Kenyan local formats (07.., 01.., 2547.., 7..) become +2547/+2541..."""
+    """Normalise to E.164. Kenyan local formats (07.., 01.., 2547.., 7..) become +2547/+2541...
+    A trunk 0 written after the country code ('+254 (0)712…', '+2540712…') is dropped, as it isn't dialled."""
     if not raw:
         return None
-    p = re.sub(r"[\s\-().]", "", str(raw))
+    p = re.sub(r"\(0\)", "", str(raw))
+    p = re.sub(r"[\s\-().]", "", p)
     if p.startswith("00"):
         p = "+" + p[2:]
     if re.fullmatch(r"0[17]\d{8}", p):
         p = "+254" + p[1:]
-    elif re.fullmatch(r"254[17]\d{8}", p):
-        p = "+" + p
+    elif re.fullmatch(r"\+?2540?[17]\d{8}", p):
+        p = "+254" + p[-9:]
     elif re.fullmatch(r"[17]\d{8}", p):
         p = "+254" + p
     return p if re.fullmatch(r"\+\d{9,15}", p) else None

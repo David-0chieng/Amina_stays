@@ -74,8 +74,11 @@ def insights(request):
 @permission_classes([IsHost])
 def tra_return(request):
     month = request.query_params.get("month") or (today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-    year, mon = (int(x) for x in month.split("-"))
-    r = services.tra_return(year, mon)
+    try:
+        year, mon = (int(x) for x in month.split("-"))
+        r = services.tra_return(year, mon)
+    except ValueError:
+        return Response({"error": "Choose a month as YYYY-MM, e.g. 2026-10."}, status=400)
     if request.query_params.get("export") == "csv":  # not ?format=, which DRF reserves for content negotiation
         resp = HttpResponse(content_type="text/csv")
         resp["Content-Disposition"] = f'attachment; filename="tra-return-{month}.csv"'

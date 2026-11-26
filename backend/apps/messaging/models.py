@@ -56,6 +56,9 @@ class Message(models.Model):
     failure_reason = models.CharField(max_length=120, blank=True)
     cost = models.CharField(max_length=20, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(
+        null=True, blank=True, help_text="Queued: retry from then. Sending: the worker's lease runs out then."
+    )
     sent_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -65,6 +68,14 @@ class Message(models.Model):
 
     class Meta:
         ordering = ["id"]
+        constraints = [
+            # Africa's Talking retries a webhook it thinks we missed: one inbound row per provider message id
+            models.UniqueConstraint(
+                fields=["provider_id"],
+                condition=models.Q(direction="in") & ~models.Q(provider_id=""),
+                name="message_inbound_provider_id_unique",
+            )
+        ]
 
     def __str__(self):
         return f"{self.direction} {self.phone}: {self.body[:40]}"

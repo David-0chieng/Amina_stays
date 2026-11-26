@@ -67,6 +67,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 
 class StaffSerializer(serializers.ModelSerializer):
+    # declared (not the model's unique field) so a former staff member or a guest can be (re-)added: create() reuses the account
+    phone = serializers.CharField(max_length=20)
     unit_ids = serializers.PrimaryKeyRelatedField(
         source="assigned_units", many=True, required=False, queryset=Unit.objects.all()
     )
@@ -83,6 +85,9 @@ class StaffSerializer(serializers.ModelSerializer):
         phone = normalize_phone(value)
         if not phone:
             raise serializers.ValidationError("Enter a valid phone number.")
+        other = User.objects.filter(phone=phone).exclude(pk=getattr(self.instance, "pk", None)).first()
+        if other and (self.instance is not None or other.role == "owner"):
+            raise serializers.ValidationError("This number already belongs to someone else.")
         return phone
 
     def validate_role(self, value):

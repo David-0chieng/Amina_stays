@@ -11,10 +11,11 @@ import re
 import string
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 
 from django.conf import settings
-from django.db import close_old_connections, transaction
-from django.db.models import F
+from django.db import IntegrityError, close_old_connections, transaction
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.core.models import SiteSettings
@@ -49,6 +50,15 @@ def render(key, lang="en", **ctx):
     ctx.setdefault("host", s.host_name)
     out = string.Formatter().vformat(body, (), _Safe(ctx))
     return re.sub(r"[ \t]{2,}", " ", out).strip()
+
+
+def placeholder_error(text):
+    """Why text Amina typed can't be used as a message (a stray '{' or '}', '{0}'), or None if it's fine."""
+    try:
+        string.Formatter().vformat(text or "", (), _Safe())
+    except (ValueError, IndexError, KeyError, AttributeError) as e:
+        return f"Check the {{placeholders}}: {e}. Write them like {{first_name}}, or remove the braces."
+    return None
 
 
 # ---------- GSM-7 hygiene (one stray smart quote turns a 160-char SMS into 70-char segments) ----------
@@ -109,24 +119,45 @@ def _guest(phone):
 
 
 def record_inbound(phone, body, *, channel="sms", booking=None, provider_id="", sender="guest", handled="pending"):
+    """Save a guest's message. Africa's Talking re-delivers a webhook it thinks we missed: a provider id we already
+    hold returns that first message with .duplicate = True and changes nothing, so it is never answered twice."""
+    provider_id = (provider_id or "")[:80]
+    if provider_id and (first := _first_inbound(provider_id)):
+        return first
     guest = _guest(phone)
     thread = get_thread(phone, guest)
-    msg = Message.objects.create(
-        thread=thread,
-        phone=phone,
-        booking=booking,
-        direction="in",
-        channel=channel,
-        sender=sender,
-        body=body or "",
-        status="received",
-        handled=handled,
-        provider_id=provider_id,
-    )
+    try:
+        with transaction.atomic():
+            msg = Message.objects.create(
+                thread=thread,
+                phone=phone,
+                booking=booking,
+                direction="in",
+                channel=channel,
+                sender=sender,
+                body=body or "",
+                status="received",
+                handled=handled,
+                provider_id=provider_id,
+            )
+    except IntegrityError:  # the same webhook, delivered twice at once
+        first = _first_inbound(provider_id) if provider_id else None
+        if first is None:
+            raise
+        return first
+    msg.duplicate = False
     Thread.objects.filter(pk=thread.pk).update(
         unread=F("unread") + 1, last_message_at=msg.created_at, last_preview=(body or "")[:160], status="open"
     )
     return msg
+
+
+def _first_inbound(provider_id):
+    first = Message.objects.filter(direction="in", provider_id=provider_id).first()
+    if first is not None:
+        first.duplicate = True
+        log.info("ignored a repeated inbound message %s from %s", provider_id, first.phone)
+    return first
 
 
 def mark(msg, handled, kind=""):
@@ -218,6 +249,22 @@ def _suppressed(phone):
     return User.objects.filter(phone=phone, tags__contains=["seed"]).exists()
 
 
+# Africa's Talking answers every recipient with a statusCode: 100 Processed, 101 Sent and 102 Queued are accepted.
+SMS_ACCEPTED = (100, 101, 102)
+SMS_UNDELIVERABLE = {  # final: sending the same message again can't help
+    402: "Sender ID not registered with this network (402 InvalidSenderId)",
+    403: "Not a valid mobile number (403 InvalidPhoneNumber)",
+    404: "This number can't receive SMS (404 UnsupportedNumberType)",
+    406: "The guest has blocked our SMS - they can text START to opt back in (406 UserInBlacklist)",
+}
+SMS_NO_CREDIT = 405  # InsufficientBalance: Amina has to top up the Africa's Talking account
+MAX_ATTEMPTS = 3  # sends in all; after the third the message stays failed
+RETRY_BACKOFF = (timedelta(minutes=1), timedelta(minutes=5))  # 5xx, 407, network: the waits before sends 2 and 3
+SENDING_LEASE = timedelta(minutes=2)  # a 'sending' row older than this lost its worker
+NO_CREDIT_RETRY = timedelta(minutes=30)  # booking messages wait out a 405 (not counted as attempts)...
+NO_CREDIT_GIVE_UP = timedelta(hours=24)  # ...for a day at most
+
+
 def dispatch(message_id):
     from apps.comms import at
 
@@ -227,11 +274,13 @@ def dispatch(message_id):
             return
         msg.status = "sending"
         msg.attempts += 1
-        msg.save(update_fields=["status", "attempts"])
+        msg.next_attempt_at = timezone.now() + SENDING_LEASE
+        msg.save(update_fields=["status", "attempts", "next_attempt_at"])
     if _suppressed(msg.phone):
-        msg.status, msg.sent_at = "logged", timezone.now()
-        msg.save(update_fields=["status", "sent_at"])
+        msg.status, msg.sent_at, msg.next_attempt_at = "logged", timezone.now(), None
+        msg.save(update_fields=["status", "sent_at", "next_attempt_at"])
         return msg
+    msg.next_attempt_at = None
     try:
         if msg.channel == "whatsapp":
             res = at.send_whatsapp(msg.phone, msg.body)
@@ -243,34 +292,120 @@ def dispatch(message_id):
                 status = "logged"
             else:
                 r = (res.get("recipients") or [{}])[0]
-                code = int(r.get("statusCode") or 0)
-                status = "sent" if code in (100, 101, 102) else "failed"
+                code = _status_code(r)
                 msg.provider_id = str(r.get("messageId", ""))[:80]
                 msg.provider_status = str(r.get("status", ""))[:40]
                 msg.cost = str(r.get("cost", ""))[:20]
-                if status == "failed":
-                    msg.failure_reason = (r.get("status") or res.get("message") or "rejected")[:120]
+                status = (
+                    "sent"
+                    if code in SMS_ACCEPTED
+                    else _refused(msg, code, str(r.get("status") or res.get("message") or "rejected"))
+                )
         msg.status = status
-        msg.sent_at = timezone.now()
-    except Exception as e:  # network/HTTP error: retry later from the scheduler
-        msg.failure_reason = str(e)[:120]
-        msg.status = "failed" if msg.attempts >= 3 else "queued"
-        log.warning("send failed (%s/3) to %s: %s", msg.attempts, msg.phone, e)
-    msg.save(update_fields=["status", "sent_at", "provider_id", "provider_status", "cost", "failure_reason"])
+        if status != "queued":
+            msg.sent_at = timezone.now()
+        if status in ("sent", "logged"):
+            msg.failure_reason = ""  # an earlier attempt's error no longer applies
+    except Exception as e:  # network/HTTP error: try again after a pause
+        msg.status = _retry_later(msg, str(e))
+        log.warning("send failed (%s/%s) to %s: %s", msg.attempts, MAX_ATTEMPTS, msg.phone, e)
+    msg.save(
+        update_fields=[
+            "status",
+            "sent_at",
+            "provider_id",
+            "provider_status",
+            "cost",
+            "failure_reason",
+            "attempts",
+            "next_attempt_at",
+        ]
+    )
     return msg
 
 
+def _status_code(recipient):
+    try:
+        return int(recipient.get("statusCode") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _refused(msg, code, provider_status):
+    """The message's next status after Africa's Talking refused it (anything but 100-102)."""
+    if code in SMS_UNDELIVERABLE:
+        msg.failure_reason = SMS_UNDELIVERABLE[code]
+        if code == 406:
+            _blocked_by_recipient(msg.phone)
+        return "failed"
+    if code == SMS_NO_CREDIT:
+        _no_credit_alert()
+        reason = "Africa's Talking balance too low (405 InsufficientBalance)"
+        if msg.is_marketing:
+            msg.failure_reason = f"{reason} - promotions are not retried"
+            return "failed"
+        if msg.created_at < timezone.now() - NO_CREDIT_GIVE_UP:
+            msg.failure_reason = f"{reason} for a whole day - not sent"
+            return "failed"
+        msg.attempts -= 1  # waiting for a top-up doesn't use up one of its retries
+        msg.failure_reason = f"{reason} - waiting for a top-up"
+        msg.next_attempt_at = timezone.now() + NO_CREDIT_RETRY
+        return "queued"
+    if code == 407 or 500 <= code <= 599:  # CouldNotRoute, gateway errors: usually gone in minutes
+        return _retry_later(msg, f"{provider_status or 'Gateway error'} ({code})")
+    msg.failure_reason = provider_status[:120]
+    return "failed"
+
+
+def _retry_later(msg, reason):
+    msg.failure_reason = reason[:120]
+    if msg.attempts >= MAX_ATTEMPTS:
+        msg.next_attempt_at = None
+        return "failed"
+    msg.next_attempt_at = timezone.now() + RETRY_BACKOFF[msg.attempts - 1]
+    return "queued"
+
+
+def _blocked_by_recipient(phone):
+    """406 UserInBlacklist: the number opted out at the network (STOP to our sender ID). Promotions stop here too,
+    and the activity feed says why; texting START opts them back in."""
+    from apps.accounts.models import User
+    from apps.core.activity import record
+
+    if User.objects.filter(phone=phone, sms_opt_out_at__isnull=True).update(sms_opt_out_at=timezone.now()):
+        record(
+            "guest",
+            f"{phone} has blocked our SMS at the network (406 UserInBlacklist) - marked as opted out",
+            phone=phone,
+            reason="UserInBlacklist",
+        )
+
+
+def _no_credit_alert():
+    from apps.core.utils import today
+    from apps.safety.services import raise_alert
+
+    raise_alert(
+        "sms",
+        "Africa's Talking balance is too low - SMS aren't going out. Top up the account: booking messages wait "
+        "and go out after the top-up, promotions are dropped.",
+        source="system",
+        dedupe=f"at-no-credit:{today()}",
+        notify=False,  # an SMS to Amina can't go out either
+    )
+
+
 def dispatch_pending():
-    stale = timezone.now() - timezone.timedelta(seconds=20)
+    now = timezone.now()
+    ready = Q(next_attempt_at__isnull=True, created_at__lt=now - timedelta(seconds=20)) | Q(next_attempt_at__lte=now)
     ids = list(
-        Message.objects.filter(status="queued", created_at__lt=stale, attempts__lt=3).values_list("id", flat=True)[:50]
+        Message.objects.filter(ready, status="queued", attempts__lt=MAX_ATTEMPTS).values_list("id", flat=True)[:50]
     )
     for mid in ids:
         dispatch(mid)
-    # a 'sending' row older than 2 minutes means a worker died mid-flight
-    Message.objects.filter(
-        status="sending", created_at__lt=timezone.now() - timezone.timedelta(minutes=2), attempts__lt=3
-    ).update(status="queued")
+    # a 'sending' row whose lease ran out means a worker died mid-flight
+    lapsed = Q(next_attempt_at__lt=now) | Q(next_attempt_at__isnull=True, created_at__lt=now - SENDING_LEASE)
+    Message.objects.filter(lapsed, status="sending", attempts__lt=MAX_ATTEMPTS).update(status="queued")
     return len(ids)
 
 

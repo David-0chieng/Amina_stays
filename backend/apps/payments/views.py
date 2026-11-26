@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import hmac
 import json
@@ -5,17 +6,21 @@ import logging
 
 from django.conf import settings
 from django.db.models import Q
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from apps.core.api import IsHost
+from apps.bookings.models import Booking
+from apps.core.api import IsGuest, IsHost
+from apps.core.utils import today
 
-from . import services
-from .models import Payment, Refund
+from . import c2b, invoices, services
+from .models import C2BTransaction, Payment, Refund
+from .providers import PaymentError, PaystackCard
+from .results import code_from_text
 
 log = logging.getLogger("amina.payments")
 
@@ -27,9 +32,14 @@ def _secret_ok(secret):
 
 def _json(request):
     try:
-        return json.loads(request.body or b"{}")
+        data = json.loads(request.body or b"{}")
     except ValueError:
         return request.POST.dict()
+    return data if isinstance(data, dict) else {}
+
+
+def _err(e, status=400):
+    return Response({"error": str(e)}, status=status)
 
 
 @csrf_exempt
@@ -41,7 +51,7 @@ def at_callback(request, secret=""):
     d = _json(request)
     meta = d.get("requestMetadata") or d.get("metadata") or {}
     p = Payment.objects.filter(transaction_id=d.get("transactionId")).first() if d.get("transactionId") else None
-    if p is None and meta.get("paymentId"):
+    if p is None and str(meta.get("paymentId", "")).isdigit():
         p = Payment.objects.filter(pk=meta["paymentId"], method="mpesa").first()
     if p is None:
         log.warning("AT payment callback for unknown transaction: %s", d)
@@ -57,7 +67,8 @@ def at_callback(request, secret=""):
                 amount=value or None,
             )
         elif d.get("status") == "Failed":
-            services.on_failure(p, d.get("description", "failed"), raw=d)
+            description = d.get("description", "failed")
+            services.on_failure(p, description, raw=d, code=code_from_text(description))
     except Exception:
         log.exception("AT payment callback failed")
     return HttpResponse("OK")
@@ -70,22 +81,43 @@ def daraja_callback(request, secret=""):
     if not _secret_ok(secret if secret != "cb" else ""):
         return HttpResponseForbidden("bad secret")
     cb = (_json(request).get("Body") or {}).get("stkCallback") or {}
-    p = Payment.objects.filter(transaction_id=cb.get("CheckoutRequestID")).first()
+    checkout_id = cb.get("CheckoutRequestID")
+    # never filter on a missing id: transaction_id=None would match any payment Daraja never saw
+    p = Payment.objects.filter(transaction_id=checkout_id).first() if checkout_id else None
     if p is None:
         log.warning("Daraja callback for unknown request: %s", cb)
         return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
     items = {i.get("Name"): i.get("Value") for i in (cb.get("CallbackMetadata") or {}).get("Item", [])}
     try:
-        if str(cb.get("ResultCode")) == "0":
-            services.on_success(
-                p, provider_ref=str(items.get("MpesaReceiptNumber", "")), raw=cb, amount=items.get("Amount")
-            )
-        else:
-            services.on_failure(
-                p, services.FAILURE_TEXT.get(str(cb.get("ResultCode")), cb.get("ResultDesc", "failed")), raw=cb
-            )
+        services.on_mpesa_result(
+            p,
+            cb.get("ResultCode"),
+            desc=cb.get("ResultDesc", ""),
+            raw=cb,
+            amount=items.get("Amount"),
+            receipt=str(items.get("MpesaReceiptNumber") or ""),
+        )
     except Exception:
         log.exception("Daraja callback failed")
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+@csrf_exempt
+@require_POST
+def c2b_callback(request, kind, secret):
+    """Daraja C2B (Paybill/Till): register .../c2b/validation/<secret> and .../c2b/confirmation/<secret>."""
+    if not hmac.compare_digest(secret or "", c2b.callback_secret()):
+        return HttpResponseForbidden("bad secret")
+    payload = _json(request)
+    if kind == "validation":
+        code = c2b.validate(payload)
+        return JsonResponse({"ResultCode": code, "ResultDesc": "Accepted" if code == "0" else "Rejected"})
+    if kind != "confirmation":
+        raise Http404
+    try:
+        c2b.receive(payload)
+    except Exception:
+        log.exception("C2B confirmation failed: %s", payload)
     return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
 
 
@@ -98,15 +130,19 @@ def paystack_webhook(request):
         return HttpResponseForbidden("bad signature")
     event = _json(request)
     data = event.get("data") or {}
-    p = Payment.objects.filter(checkout_token=data.get("reference"), method="card").first()
+    reference = data.get("reference")
+    p = Payment.objects.filter(checkout_token=reference, method="card").first() if reference else None
     if p and event.get("event") == "charge.success" and data.get("status") == "success":
-        services.on_success(
-            p,
-            transaction_id=str(data.get("id")),
-            provider_ref=data.get("reference", ""),
-            raw=data,
-            amount=(data.get("amount") or 0) / 100,
-        )
+        if p.provider == "paystack":  # a webhook only says "look": the money counts once Verify Transaction agrees
+            services.settle_card(p, PaystackCard().query(p))
+        elif str(data.get("currency") or "KES").upper() == "KES":
+            services.on_success(
+                p,
+                transaction_id=str(data.get("id")),
+                provider_ref=data.get("reference", ""),
+                raw=data,
+                amount=(data.get("amount") or 0) / 100,
+            )
     return HttpResponse("OK")
 
 
@@ -136,6 +172,7 @@ def card_checkout(request, token):
                     services.on_failure(p, "card declined")
         p.refresh_from_db()
         b.refresh_from_db()
+    change = p.change_requests.order_by("-id").first() if p.purpose == "change" else None
     return Response(
         {
             "ref": b.ref,
@@ -144,6 +181,8 @@ def card_checkout(request, token):
             "check_out": b.check_out,
             "amount": p.amount,
             "currency": p.currency,
+            "purpose": p.purpose,
+            "change": {"check_in": change.new_check_in, "check_out": change.new_check_out} if change else None,
             "status": p.status,
             "booking_status": b.status,
             "expires_at": b.hold_expires_at if b.status == "held" else None,
@@ -153,12 +192,66 @@ def card_checkout(request, token):
     )
 
 
+# ---------- guest: tax invoice, "I've paid" ----------
+
+
+def _booking_for(request, ref):
+    """The guest's own booking, or any booking for the host; 404 for everyone else."""
+    b = get_object_or_404(Booking.objects.select_related("guest", "unit"), ref=ref.upper())
+    if b.guest_id != request.user.pk and not getattr(request.user, "is_host", False):
+        raise Http404
+    return b
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsGuest])
+def invoice(request, ref):
+    b = _booking_for(request, ref)
+    inv = invoices.get_or_issue(b)
+    if inv is None:
+        return _err("An invoice is issued once the booking is confirmed.", 404)
+    if request.method == "PATCH":
+        d = request.data
+        try:
+            invoices.update_buyer(inv, name=d.get("buyer_name"), kra_pin=d.get("buyer_kra_pin"))
+        except invoices.InvoiceError as e:
+            return _err(e)
+    return Response(invoices.invoice_for(b))
+
+
+@api_view(["POST"])
+@permission_classes([IsGuest])
+def claim(request, ref):
+    b = _booking_for(request, ref)
+    try:
+        return Response(c2b.claim(b, request.data.get("code"), channel="web", actor=request.user))
+    except PaymentError as e:
+        return _err(e)
+
+
 # ---------- host ledger ----------
+
+
+def _month(request):
+    month = request.query_params.get("month") or today().strftime("%Y-%m")
+    start, end = services.month_bounds(month)  # ValueError for anything but YYYY-MM
+    return start, end
 
 
 @api_view(["GET"])
 @permission_classes([IsHost])
 def ledger(request):
+    if request.query_params.get("export") == "csv":  # not ?format=, which DRF reserves for content negotiation
+        try:
+            start, end = _month(request)
+        except ValueError:
+            return _err("Choose a month as YYYY-MM, e.g. 2026-10.")
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = f'attachment; filename="ledger-{start:%Y-%m}.csv"'
+        w = csv.writer(resp)
+        w.writerow(services.LEDGER_COLUMNS)
+        w.writerows(services.ledger_rows(start, end))
+        return resp
     q = request.query_params.get("q", "").strip()
     qs = Payment.objects.select_related("booking", "booking__guest", "booking__unit").order_by("-id")
     if request.query_params.get("status"):
@@ -181,6 +274,7 @@ def ledger(request):
                     "status": p.status,
                     "provider": p.provider,
                     "reference": p.provider_ref,
+                    "failure_code": p.failure_code or None,
                     "failure_reason": p.failure_reason,
                     "created_at": p.created_at,
                     "completed_at": p.completed_at,
@@ -202,6 +296,8 @@ def ledger(request):
                 }
                 for r in refunds
             ],
+            "outstanding": services.outstanding_balances(),
+            "unmatched": c2b.unmatched_rows(),
         }
     )
 
@@ -210,5 +306,44 @@ def ledger(request):
 @permission_classes([IsHost])
 def refund_sent(request, pk):
     r = get_object_or_404(Refund, pk=pk)
-    services.mark_refund_sent(r, provider_ref=request.data.get("reference", ""), actor=request.user)
+    services.mark_refund_sent(r, provider_ref=str(request.data.get("reference") or ""), actor=request.user)
     return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([IsHost])
+def match_unmatched(request, pk):
+    t = get_object_or_404(C2BTransaction, pk=pk)
+    try:
+        p = c2b.match(t, str(request.data.get("ref") or ""), actor=request.user)
+    except PaymentError as e:
+        return _err(e)
+    b = Booking.objects.get(pk=p.booking_id)
+    return Response({"ok": True, "ref": b.ref, "status": b.status, "payment_id": p.pk})
+
+
+@api_view(["GET"])
+@permission_classes([IsHost])
+def host_invoices(request):
+    """The month's sales register: every invoice and credit note issued (?export=csv for the accountant)."""
+    try:
+        start, end = _month(request)
+    except ValueError:
+        return _err("Choose a month as YYYY-MM, e.g. 2026-10.")
+    rows, totals = invoices.register(start, end)
+    if request.query_params.get("export") == "csv":
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = f'attachment; filename="sales-register-{start:%Y-%m}.csv"'
+        w = csv.writer(resp)
+        w.writerow(invoices.REGISTER_COLUMNS)
+        w.writerows([r[c] for c in invoices.REGISTER_COLUMNS] for r in rows)
+        w.writerow(["total", "", "", "", "", "", "", totals["net"], totals["vat"], totals["levy"], totals["total"], ""])
+        return resp
+    return Response(
+        {
+            "month": f"{start:%Y-%m}",
+            "invoices": [r for r in rows if r["type"] == "invoice"],
+            "credit_notes": [r for r in rows if r["type"] == "credit_note"],
+            "totals": totals,
+        }
+    )

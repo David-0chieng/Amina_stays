@@ -2,7 +2,8 @@
 
 M-Pesa:  simulate (default, auto-succeeds) | daraja (Safaricom Daraja STK push, the production path)
          | africastalking (AT Mobile Checkout — now onboarding-gated, kept for accounts that have it)
-Card:    simulate (hosted test page, no card data) | paystack (hosted checkout, webhook HMAC-verified)
+Card:    simulate (hosted test page, no card data) | paystack (hosted checkout; webhook HMAC-verified, then
+         confirmed with Verify Transaction before it counts)
 Card numbers never touch this server: guests are always sent to a hosted page.
 """
 
@@ -21,7 +22,16 @@ log = logging.getLogger("amina.payments")
 
 
 class PaymentError(Exception):
-    pass
+    """A payment that couldn't start. failure_code is the M-Pesa result code when there is one; suggest is the
+    next step for the guest (retry | card | deposit | wait | paybill)."""
+
+    def __init__(self, message="", *, failure_code=None, suggest=None):
+        super().__init__(message)
+        self.failure_code = failure_code or None
+        self.suggest = suggest or None
+
+    def as_dict(self):
+        return {"error": str(self), "failure_code": self.failure_code, "suggest": self.suggest}
 
 
 def _callback_base():
@@ -126,7 +136,12 @@ class DarajaMpesa:
             raise PaymentError(f"M-Pesa is unreachable ({e})") from e
         payment.raw = [*payment.raw, {"request": data}]
         if str(data.get("ResponseCode")) != "0":
-            raise PaymentError(data.get("errorMessage") or data.get("ResponseDescription") or "STK push rejected")
+            # e.g. {"errorCode": "500.001.1001", "errorMessage": "Unable to lock subscriber, ..."}
+            code = str(data.get("errorCode") or "").rsplit(".", 1)[-1]
+            raise PaymentError(
+                data.get("errorMessage") or data.get("ResponseDescription") or "STK push rejected",
+                failure_code=code if code in ("1001", "1025", "1037") else None,
+            )
         payment.transaction_id = data["CheckoutRequestID"]
         payment.save(update_fields=["transaction_id", "raw"])
         return {"status": "pending", "message": data.get("CustomerMessage", "")}
@@ -233,7 +248,20 @@ class PaystackCard:
         return {"status": "pending", "checkout_url": data["data"]["authorization_url"]}
 
     def query(self, payment):
-        return None
+        """Paystack Verify Transaction: the transaction as Paystack sees it ({"status": true, "data": {...}}),
+        or None when it can't be asked."""
+        if not settings.PAYSTACK_SECRET_KEY or not payment.checkout_token:
+            return None
+        try:
+            with httpx.Client(timeout=15) as c:
+                r = c.get(
+                    f"https://api.paystack.co/transaction/verify/{payment.checkout_token}",
+                    headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
+                )
+            return r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            log.warning("Paystack verify failed: %s", e)
+            return None
 
 
 def mpesa_provider():

@@ -208,7 +208,9 @@ class BlockSerializer(serializers.ModelSerializer):
         read_only_fields = ["feed", "created_at"]
 
     def validate(self, attrs):
-        if attrs["end_date"] <= attrs["start_date"]:
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end and end <= start:
             raise serializers.ValidationError("End date must be after the start date.")
         return attrs
 

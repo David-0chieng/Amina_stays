@@ -40,5 +40,8 @@ def host_reviews(request):
 @permission_classes([IsHost])
 def respond(request, pk):
     r = get_object_or_404(Review, pk=pk)
-    services.respond(r, (request.data.get("text") or "").strip(), request.user)
+    text = str(request.data.get("text") or "").strip()
+    if not text:
+        return Response({"error": "Write a reply first."}, status=400)
+    services.respond(r, text, request.user)
     return Response({"ok": True})

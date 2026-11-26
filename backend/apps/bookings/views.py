@@ -15,8 +15,16 @@ from apps.payments.providers import PaymentError
 from apps.properties.models import Unit
 
 from . import services
-from .models import Addon, Booking, BookingAddon, BookingGuest
-from .serializers import AddonSerializer, BookingCreateSerializer, reservation_row, trip_card, trip_dict
+from .models import ACTIVE_STATUSES, Addon, Booking, BookingAddon, BookingGuest, ChangeRequest, Waitlist
+from .serializers import (
+    AddonSerializer,
+    BookingCreateSerializer,
+    change_dict,
+    reservation_row,
+    trip_card,
+    trip_dict,
+    waitlist_entry,
+)
 
 
 def _mine(request, ref):
@@ -27,6 +35,24 @@ def _mine(request, ref):
 
 def _err(e, status=400):
     return Response({"error": str(e)}, status=status)
+
+
+def _booking_err(e, status=400):
+    """A BookingError as {error} - plus its code when it has one (e.g. "available", "unavailable")."""
+    code = getattr(e, "code", None)
+    return Response({"error": str(e), **({"code": code} if code else {})}, status=status)
+
+
+def _payment_error(e):
+    """{error, failure_code, suggest} for a payment that couldn't start."""
+    as_dict = getattr(e, "as_dict", None)
+    if callable(as_dict):
+        return as_dict()
+    return {"error": str(e), "failure_code": getattr(e, "failure_code", None), "suggest": getattr(e, "suggest", None)}
+
+
+def _truthy(value):
+    return value is True or str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 # ---------- guest ----------
@@ -99,7 +125,7 @@ def bookings(request):
     try:
         pay = payments.start_payment(b, method=d.get("payment_method"))
     except PaymentError as e:
-        pay = {"error": str(e)}
+        pay = _payment_error(e)
     return Response({"booking": trip_dict(b), "payment": pay}, status=201)
 
 
@@ -131,11 +157,32 @@ def booking_detail(request, ref):
 @api_view(["POST"])
 @permission_classes([IsGuest])
 def pay(request, ref):
+    """Pay what's due. plan="deposit" switches a held pay-in-full booking to its deposit first (when the stay allows
+    one). Whatever start_payment returns is passed through; a payment that can't start is {error, failure_code,
+    suggest} with 400."""
     b = _mine(request, ref)
+    plan = "deposit" if request.data.get("plan") == "deposit" and b.payment_plan != "deposit" else None
+    amount = request.data.get("amount")
+    if amount in (None, "") or plan:
+        amount = None
+    else:
+        # guests may pay more than the minimum but never pick less: a 1-shilling payment must not confirm a hold
+        low, high = (
+            (b.amount_due_now - b.amount_paid, b.total - b.amount_paid) if b.status == "held" else (1, b.balance_due)
+        )
+        try:
+            amount = int(amount)
+        except (TypeError, ValueError):
+            return _err("Enter the amount in Kenyan shillings.")
+        if high <= 0:
+            amount = None  # nothing is due: start_payment says so
+        elif not low <= amount <= high:
+            return _err(f"Choose an amount between {kes(low)} and {kes(high)}.")
     try:
-        return Response(payments.start_payment(b, method=request.data.get("method"), amount=request.data.get("amount")))
+        extra = {"plan": plan} if plan else {}
+        return Response(payments.start_payment(b, method=request.data.get("method"), amount=amount, **extra))
     except PaymentError as e:
-        return _err(e)
+        return Response(_payment_error(e), status=400)
 
 
 @api_view(["GET", "POST"])
@@ -145,7 +192,7 @@ def cancel(request, ref):
     if request.method == "GET":
         return Response(services.refund_quote(b))
     try:
-        return Response(services.cancel(b, by="guest", reason=request.data.get("reason", "")[:200]))
+        return Response(services.cancel(b, by="guest", reason=str(request.data.get("reason") or "")[:200]))
     except services.BookingError as e:
         return _err(e)
 
@@ -256,13 +303,133 @@ def review(request, ref):
     b = _mine(request, ref)
     if b.status != "completed":
         return _err("You can review once your stay is complete.")
+    if hasattr(b, "review"):
+        return _err("You've already reviewed this stay - thank you!")
     d = request.data
-    rating = int(d.get("rating") or 0)
+    try:
+        rating = int(d.get("rating") or 0)
+    except (TypeError, ValueError):
+        rating = 0
     if not 1 <= rating <= 5:
         return _err("Choose a rating from 1 to 5 stars.")
     record_rating(
         b, rating, channel="web", comment=(d.get("comment") or "")[:2000], categories=d.get("categories") or {}
     )
+    b.refresh_from_db()
+    return Response(trip_dict(b))
+
+
+# ---------- waitlist ----------
+
+
+@api_view(["POST"])
+@permission_classes([IsGuest])
+def waitlist_join(request):
+    d = request.data
+    unit = Unit.objects.filter(slug=str(d.get("slug") or ""), status="active").select_related("area").first()
+    if unit is None:
+        return _err("We couldn't find that home.", 404)
+    try:
+        adults, children = int(d.get("adults") or 1), int(d.get("children") or 0)
+    except (TypeError, ValueError):
+        return _err("Choose how many guests are coming.")
+    try:
+        w, created = services.join_waitlist(
+            request.user,
+            unit,
+            parse_date(d.get("check_in")),
+            parse_date(d.get("check_out")),
+            adults=adults,
+            children=children,
+        )
+    except services.BookingError as e:
+        return _booking_err(e)
+    return Response(waitlist_entry(w), status=201 if created else 200)
+
+
+@api_view(["GET"])
+@permission_classes([IsGuest])
+def my_waitlist(request):
+    return Response([waitlist_entry(w) for w in services.guest_waitlist(request.user)])
+
+
+@api_view(["DELETE"])
+@permission_classes([IsGuest])
+def my_waitlist_remove(request, pk):
+    get_object_or_404(Waitlist, pk=pk, guest=request.user).delete()
+    return Response(status=204)
+
+
+# ---------- changing a stay ----------
+
+
+def _change_args(src, b):
+    """check_in, check_out, adults, children from a request; anything left out stays as booked."""
+    check_in = parse_date(src.get("check_in")) if src.get("check_in") else b.check_in
+    check_out = parse_date(src.get("check_out")) if src.get("check_out") else b.check_out
+    if check_in is None or check_out is None:
+        raise ValueError("bad date")
+    adults = b.adults if src.get("adults") in (None, "") else int(src.get("adults"))
+    children = b.children if src.get("children") in (None, "") else int(src.get("children"))
+    if adults < 0 or children < 0:
+        raise ValueError("negative guests")
+    return check_in, check_out, adults, children
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsGuest])
+def change(request, ref):
+    """GET: price a change (?check_in=&check_out=&adults=&children=). POST: ask for it -> {change, payment, trip}."""
+    b = _mine(request, ref)
+    try:
+        check_in, check_out, adults, children = _change_args(
+            request.query_params if request.method == "GET" else request.data, b
+        )
+    except (TypeError, ValueError):
+        return _err("Choose valid dates (YYYY-MM-DD) and numbers of guests.")
+    if request.method == "GET":
+        return Response(services.change_quote(b, check_in, check_out, adults, children))
+    method = request.data.get("method")
+    try:
+        c, payment = services.request_change(
+            b,
+            check_in=check_in,
+            check_out=check_out,
+            adults=adults,
+            children=children,
+            note=str(request.data.get("note") or ""),
+            channel="web",
+            method=method if method in ("mpesa", "card") else None,
+            actor=request.user,
+        )
+    except services.BookingError as e:
+        return _booking_err(e)
+    b.refresh_from_db()
+    return Response({"change": change_dict(c), "payment": payment, "trip": trip_dict(b)}, status=201)
+
+
+@api_view(["POST"])
+@permission_classes([IsGuest])
+def change_pay(request, ref, pk):
+    b = _mine(request, ref)
+    c = get_object_or_404(ChangeRequest, pk=pk, booking=b)
+    method = request.data.get("method")
+    try:
+        result = services.pay_change(c, method if method in ("mpesa", "card") else None)
+    except services.BookingError as e:
+        return _err(e)
+    return Response(result, status=400 if result.get("error") else 200)
+
+
+@api_view(["POST"])
+@permission_classes([IsGuest])
+def change_cancel(request, ref, pk):
+    b = _mine(request, ref)
+    c = get_object_or_404(ChangeRequest, pk=pk, booking=b)
+    try:
+        services.cancel_change(c, actor=request.user)
+    except services.BookingError as e:
+        return _err(e)
     b.refresh_from_db()
     return Response(trip_dict(b))
 
@@ -302,8 +469,25 @@ def host_reservations(request):
 
 
 def _host_create(request):
+    """Walk-in / phone booking. payment_plan "deposit" charges only the deposit by M-Pesa or card; price_override is
+    the accommodation price for the whole stay (levy, VAT and cleaning added as usual) and needs override_reason."""
+    from apps.core.models import SiteSettings
+
     d = request.data
     unit = get_object_or_404(Unit, pk=d.get("unit"))
+    plan = "deposit" if d.get("payment_plan") == "deposit" else "full"
+    override, reason = d.get("price_override"), str(d.get("override_reason") or "").strip()
+    if override in (None, ""):
+        override = None
+    else:
+        try:
+            override = int(override)
+        except (TypeError, ValueError):
+            override = 0
+        if override <= 0:
+            return _err("Enter the price for the whole stay in KES.")
+        if not reason:
+            return _err("Say why the price was changed - it goes on the booking's timeline.")
     try:
         guest, _ = get_or_create_user(d.get("phone"), name=d.get("name", ""), channel="walk_in")
         b = services.create_hold(
@@ -319,6 +503,9 @@ def _host_create(request):
             addons=d.get("addons") or [],
             actor=request.user,
             special_requests=d.get("notes", ""),
+            payment_plan=plan,
+            price_override=override,
+            override_reason=reason,
         )
     except (services.BookingError, AuthError) as e:
         return _err(e, 409)
@@ -328,19 +515,22 @@ def _host_create(request):
         if mode == "cash":
             payments.record_manual_payment(b, int(d.get("amount") or b.total), method="cash", actor=request.user)
         elif mode == "mpesa":
-            result = payments.start_payment(b, method="mpesa", actor=request.user)
+            result = payments.start_payment(b, method="mpesa", actor=request.user)  # the deposit on a deposit plan
         elif mode == "card":
             result = payments.start_payment(b, method="card", actor=request.user)
-            messaging.send(
-                guest.phone,
-                f"Pay {b.total:,} KES for {b.ref} securely here: {result.get('checkout_url')}",
-                booking=b,
-                kind="hold_card",
+            body = messaging.render(
+                "hold_card",
+                b.lang,
+                **services.guest_context(b),
+                amount=kes(result["amount"]),
+                minutes=SiteSettings.load().hold_minutes,
+                link=result.get("checkout_url") or "",
             )
+            messaging.send(guest.phone, body, booking=b, kind="hold_card")
         else:
             services.confirm(b, actor=request.user)  # pay on arrival
     except PaymentError as e:
-        result = {"error": str(e)}
+        result = _payment_error(e)
     b.refresh_from_db()
     return Response({"booking": trip_dict(b, host=True), "payment": result}, status=201)
 
@@ -352,26 +542,51 @@ def host_reservation(request, ref):
     if request.method == "PATCH":
         for field in ("host_notes", "arrival_eta", "special_requests", "vehicle_plate", "arrival_mode"):
             if field in request.data:
-                setattr(b, field, str(request.data[field] or ""))
+                value = str(request.data[field] or "")
+                limit = Booking._meta.get_field(field).max_length  # None for text fields
+                setattr(b, field, value[:limit] if limit else value)
         b.save()
     return Response(trip_dict(b, host=True))
+
+
+RESENDABLE = (
+    "booking_confirmed",
+    "pre_arrival",
+    "id_request",
+    "directions",
+    "checkin_code",
+    "local_tips",
+    "welcome_check",
+    "checkout_reminder",
+)
 
 
 @api_view(["POST"])
 @permission_classes([IsHost])
 def host_action(request, ref, action):
+    from apps.payments.models import Payment
+
     b = get_object_or_404(Booking.objects.select_related("unit", "unit__area", "guest"), ref=ref.upper())
     d, user = request.data, request.user
     try:
         if action == "cancel":
-            services.cancel(b, by="host", reason=d.get("reason", ""), actor=user, refund_amount=d.get("refund_amount"))
+            services.cancel(
+                b, by="host", reason=str(d.get("reason") or ""), actor=user, refund_amount=d.get("refund_amount")
+            )
         elif action == "record-payment":
+            try:
+                amount = int(d.get("amount") or b.balance_due)
+            except (TypeError, ValueError):
+                amount = 0
+            method = d.get("method") or "cash"
+            if b.status not in (*ACTIVE_STATUSES, "completed"):
+                return _err("This booking can't take payments.")
+            if amount <= 0:
+                return _err("Enter the amount received.")
+            if method not in dict(Payment.METHODS):
+                return _err("Choose cash, bank transfer, M-Pesa or card.")
             payments.record_manual_payment(
-                b,
-                int(d.get("amount") or b.balance_due),
-                method=d.get("method", "cash"),
-                reference=d.get("reference", ""),
-                actor=user,
+                b, amount, method=method, reference=str(d.get("reference") or ""), actor=user
             )
         elif action == "request-payment":
             result = payments.start_payment(b, method=d.get("method"), amount=d.get("amount"), actor=user)
@@ -386,10 +601,23 @@ def host_action(request, ref, action):
         elif action == "check-out":
             services.check_out(b, by="host", channel="console", actor=user)
         elif action == "confirm":
+            if b.status not in ("held", "confirmed"):
+                return _err(f"This booking is {b.get_status_display().lower()} and can't be confirmed.")
             services.confirm(b, actor=user)
         elif action == "resend":
-            key = d.get("template", "booking_confirmed")
-            services.send_guest(b, key, balance_note="")
+            key = d.get("template") or "booking_confirmed"
+            if key not in RESENDABLE:
+                return _err("That message can't be resent from here.")
+            if b.status not in ("confirmed", "checked_in"):
+                return _err("Messages can be resent once the booking is confirmed.")
+            if (
+                key == "checkin_code"
+                and not b.access_codes.filter(revoked_at__isnull=True, sent_at__isnull=False).exists()
+            ):
+                return _err("The door code hasn't been released yet.")
+            note = messaging.render("balance_note", b.lang, **services.guest_context(b)) if b.balance_due else ""
+            # Amina resending chooses to share: directions and Wi-Fi go out even before the 48-hour reveal
+            services.send_guest(b, key, reveal=True, balance_note=f" {note}" if note else "")
         elif action == "verify-id":
             b.guest.id_verified_at = timezone.now()
             b.guest.save(update_fields=["id_verified_at"])
@@ -397,10 +625,15 @@ def host_action(request, ref, action):
         elif action == "message":
             from apps.comms.smsbot import reply_as_host
 
-            reply_as_host(b.guest.phone, d.get("text", "")[:600], user=user)
+            text = str(d.get("text") or "").strip()
+            if not text:
+                return _err("Write a message first.")
+            reply_as_host(b.guest.phone, text[:600], user=user)
         else:
             return _err("Unknown action.", 404)
-    except (services.BookingError, PaymentError) as e:
+    except PaymentError as e:
+        return Response(_payment_error(e), status=400)
+    except services.BookingError as e:
         return _err(e)
     record("booking", f"{action.replace('-', ' ').capitalize()} on {b.ref}", booking=b, actor=user)
     b.refresh_from_db()
@@ -415,28 +648,69 @@ def decide_request(request, pk):
     return Response(trip_dict(ba.booking, host=True))
 
 
+@api_view(["POST"])
+@permission_classes([IsHost])
+def decide_change(request, pk):
+    c = get_object_or_404(ChangeRequest.objects.select_related("booking"), pk=pk)
+    try:
+        services.decide_change(c, _truthy(request.data.get("approve")), actor=request.user)
+    except services.BookingError as e:
+        return _booking_err(e)
+    b = Booking.objects.select_related("unit", "unit__area", "guest").get(pk=c.booking_id)
+    return Response(trip_dict(b, host=True))
+
+
+def _stay(adults, children, check_in, check_out):
+    return {"check_in": check_in, "check_out": check_out, "adults": adults, "children": children}
+
+
 @api_view(["GET"])
 @permission_classes([IsHost])
 def pending_requests(request):
-    rows = BookingAddon.objects.filter(status="requested").select_related(
+    """Extras and date changes waiting for Amina's yes or no (kind "addon" | "change"), oldest first."""
+    rows = BookingAddon.objects.filter(status="requested", booking__status__in=ACTIVE_STATUSES).select_related(
         "booking", "booking__guest", "booking__unit", "addon"
     )
-    return Response(
-        [
-            {
-                "id": r.pk,
-                "addon": r.addon.name,
-                "code": r.addon.code,
-                "ref": r.booking.ref,
-                "unit": r.booking.unit.name,
-                "guest": r.booking.guest.display_name,
-                "details": r.details,
-                "total": r.total,
-                "created_at": r.created_at,
-            }
-            for r in rows
-        ]
+    items = [
+        {
+            "id": r.pk,
+            "kind": "addon",
+            "addon": r.addon.name,
+            "code": r.addon.code,
+            "ref": r.booking.ref,
+            "unit": r.booking.unit.name,
+            "guest": r.booking.guest.display_name,
+            "details": r.details,
+            "total": r.total,
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
+    changes = ChangeRequest.objects.filter(status="pending_host", booking__status__in=ACTIVE_STATUSES).select_related(
+        "booking", "booking__guest", "booking__unit"
     )
+    items += [
+        {
+            "id": c.pk,
+            "kind": "change",
+            "addon": "Date change",
+            "code": "change",
+            "ref": c.booking.ref,
+            "unit": c.booking.unit.name,
+            "guest": c.booking.guest.display_name,
+            "details": {"note": c.note},
+            "total": c.delta,
+            "created_at": c.created_at,
+            "change": {
+                "old": _stay(c.old_adults, c.old_children, c.old_check_in, c.old_check_out),
+                "new": _stay(c.new_adults, c.new_children, c.new_check_in, c.new_check_out),
+                "delta": c.delta,
+                "refund_amount": c.refund_amount,
+            },
+        }
+        for c in changes
+    ]
+    return Response(sorted(items, key=lambda x: x["created_at"]))
 
 
 class HostAddonViewSet(viewsets.ModelViewSet):

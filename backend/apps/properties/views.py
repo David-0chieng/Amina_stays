@@ -65,7 +65,7 @@ def listings(request):
     guests = int(p.get("guests") or 0) or None
     qs = Unit.objects.filter(status="active").select_related("area").prefetch_related("photos")
     if ci:
-        qs = services.available_units(ci, co, area=p.get("area"), guests=guests, qs=qs)
+        qs = services.available_units(ci, co, area=p.get("area"), guests=guests, qs=qs, bookable=True)
     else:
         if p.get("area"):
             qs = qs.filter(Q(area__slug=p["area"]) | Q(area__name__iexact=p["area"]))
@@ -167,8 +167,12 @@ def quote(request, slug):
     problems = []
     if ci < today():
         problems.append("Check-in can't be in the past.")
+    elif (ci - today()).days > 540:
+        problems.append("We take bookings up to 18 months ahead.")
     if q["nights"] < unit.min_nights:
         problems.append(f"Minimum stay is {unit.min_nights} nights.")
+    if q["nights"] > unit.max_nights:
+        problems.append(f"Stays here are up to {unit.max_nights} nights.")
     if guests > unit.max_guests:
         problems.append(f"This home sleeps up to {unit.max_guests} guests.")
     available = services.is_available(unit, ci, co)
@@ -204,6 +208,13 @@ def listing_reviews(request, slug):
     )
 
 
+def _offered(addon, unit):
+    """Some extras are home-specific, and breakfast needs a home that serves it."""
+    if addon.units.exists() and not addon.units.filter(pk=unit.pk).exists():
+        return False
+    return addon.category != "breakfast" or unit.breakfast_available
+
+
 @api_view(["GET"])
 def addons(request):
     from apps.bookings.models import Addon
@@ -211,9 +222,7 @@ def addons(request):
     qs = Addon.objects.filter(active=True).prefetch_related("units")
     slug = request.query_params.get("listing")
     unit = Unit.objects.filter(slug=slug).first() if slug else None
-    return Response(
-        [addon_dict(a) for a in qs if not unit or not a.units.exists() or a.units.filter(pk=unit.pk).exists()]
-    )
+    return Response([addon_dict(a) for a in qs if not unit or _offered(a, unit)])
 
 
 def ical_export(request, token):

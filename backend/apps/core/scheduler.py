@@ -2,12 +2,14 @@
 runs one pass (cron-friendly). Interval jobs remember their last run in JobRun; daily jobs claim a
 per-day OnceMarker so a restart never repeats the morning digest."""
 
+import contextlib
 import logging
 import time
 import traceback
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import connection, transaction
 from django.utils import timezone
 
 from .models import JobRun, OnceMarker
@@ -26,12 +28,16 @@ def _release_codes():
     from apps.bookings.services import release_code
     from apps.core.models import SiteSettings
     from apps.core.utils import at_local, today
+    from apps.safety.services import balance_unpaid_on_arrival
 
     s, t, now = SiteSettings.load(), today(), timezone.now()
     released = 0
     for b in Booking.objects.filter(status="confirmed", check_in__lte=t, check_out__gt=t):
         if b.check_in < t or now >= at_local(t, s.code_release_time):
-            released += release_code(b) == "released"
+            outcome = release_code(b)  # "too_early" (not check-in day yet) simply waits for its day
+            if outcome == "waiting_balance":
+                balance_unpaid_on_arrival(b)
+            released += outcome == "released"
     return released
 
 
@@ -137,6 +143,25 @@ def _levy_reminder():
     return 1
 
 
+def _balance_ladder():
+    from apps.messaging.automations import run_balance_ladder
+
+    return run_balance_ladder()
+
+
+def _licence_reminder():
+    from apps.safety.services import licence_reminder
+
+    return licence_reminder()
+
+
+def _changes_expire():
+    from apps.bookings import services as bookings
+
+    expire = getattr(bookings, "expire_stale_changes", None)  # date changes / extensions (bookings app)
+    return expire() if expire else 0
+
+
 # (key, every-N-seconds | "daily@HH:MM", function)
 JOBS = [
     ("expire_holds", 0, _expire_holds),
@@ -146,12 +171,15 @@ JOBS = [
     ("auto_checkout", 0, _auto_checkout),
     ("reviews", 0, _reviews),
     ("alert_followups", 0, _followups),
+    ("changes_expire", 0, _changes_expire),
     ("payments_reconcile", 120, _reconcile),
     ("ical_sync", 900, _ical),
     ("host_digest", "daily@07:00", _digest),
     ("gate_list", "daily@07:30", _gate),
     ("kitchen_sheet", "daily@18:00", _kitchen),
     ("levy_reminder", "daily@09:00", _levy_reminder),
+    ("licence_reminder", "daily@09:00", _licence_reminder),
+    ("balance_ladder", "daily@10:00", _balance_ladder),
     ("retention", "daily@03:00", _retention),
 ]
 
@@ -170,8 +198,6 @@ def _due(key, schedule, now):
 def run_due(only=None):
     """One scheduler pass. A Postgres advisory lock makes overlapping schedulers (two terminals,
     two containers) skip instead of double-running jobs."""
-    from django.db import connection
-
     with connection.cursor() as cur:
         cur.execute("SELECT pg_try_advisory_lock(%s)", [ADVISORY_LOCK_ID])
         if not cur.fetchone()[0]:
@@ -185,6 +211,25 @@ def run_due(only=None):
 
 
 ADVISORY_LOCK_ID = 4_206_2026
+
+
+def _contained():
+    """Inside an outer transaction (an atomic request, a test) each job gets a savepoint, so one whose SQL fails
+    can't poison the rest of the pass or the advisory unlock. The scheduler loop itself runs in autocommit and keeps
+    it: jobs make network calls (SMS, M-Pesa, iCal) that must not sit inside, or be rolled back with, a transaction."""
+    return transaction.atomic() if connection.in_atomic_block else contextlib.nullcontext()
+
+
+def _plain(result):
+    """Job results go back as JSON (the Demo Lab's 'run now', `tick`): a count for a list of things done, text for
+    anything else that isn't a plain value."""
+    if result is None or isinstance(result, bool | int | float | str):
+        return result
+    if isinstance(result, list | tuple | set):
+        return len(result)
+    if isinstance(result, dict):
+        return {str(k): _plain(v) for k, v in result.items()}
+    return str(result)
 
 
 def _run_due(only=None):
@@ -203,7 +248,8 @@ def _run_due(only=None):
             continue
         run, _ = JobRun.objects.get_or_create(key=key)
         try:
-            results[key] = fn()
+            with _contained():
+                results[key] = _plain(fn())
             run.last_ok, run.last_error = True, ""
         except Exception as e:
             log.error("job %s failed: %s", key, e)

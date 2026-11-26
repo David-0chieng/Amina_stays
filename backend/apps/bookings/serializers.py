@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.models import SiteSettings
-from apps.core.utils import at_local, kes
+from apps.core.utils import kes, today
 from apps.properties.models import Unit
 
 from . import services
@@ -27,29 +27,115 @@ GUEST_EVENT_KINDS = {
     "arrival",
     "expired",
     "reinstated",
+    "change",
+    "plan",
 }
 
 
 def price_lines(b):
     lines = []
+    kept = services.kept_amount(b)  # money a date change kept under the cancellation policy
+    nights_amount = b.accommodation_amount - kept
     if b.nights:
         lines.append(
             {
-                "label": f"{kes(round(b.accommodation_amount / b.nights))} x {b.nights} night{'s' if b.nights != 1 else ''}",
-                "amount": b.accommodation_amount,
+                "label": f"{kes(round(nights_amount / b.nights))} x {b.nights} night{'s' if b.nights != 1 else ''}",
+                "amount": nights_amount,
             }
         )
     if b.discount_amount:
         lines.append({"label": "Stay discount", "amount": -b.discount_amount})
+    if kept:
+        lines.append({"label": services.KEPT_LABEL, "amount": kept})
     if b.cleaning_fee:
         lines.append({"label": "Cleaning fee", "amount": b.cleaning_fee})
-    for a in b.addons.exclude(status__in=("declined", "cancelled")).select_related("addon"):
-        lines.append({"label": a.addon.name + (" (requested)" if a.status == "requested" else ""), "amount": a.total})
+    for a in b.addons.filter(status__in=services.COUNTED_ADDON_STATUSES).select_related("addon"):
+        lines.append({"label": a.addon.name, "amount": a.total})
     if b.levy_amount:
         lines.append({"label": "Tourism levy", "amount": b.levy_amount})
     if b.vat_amount:
         lines.append({"label": "VAT", "amount": b.vat_amount})
     return lines
+
+
+def pending_lines(b):
+    """Extras awaiting Amina's approval: shown to the guest, not part of the total (levy is added on approval)."""
+    return [
+        {"label": a.addon.name, "amount": a.total} for a in b.addons.filter(status="requested").select_related("addon")
+    ]
+
+
+NO_FAILURE = {"failure_code": None, "failure_message": None, "retryable": True, "suggest": None}
+
+
+def _payments(b):
+    """Newest first, each with what the guest should know if it failed (payments.public_failure)."""
+    from apps.payments import services as payments
+
+    failure = getattr(payments, "public_failure", None)
+    out = []
+    for p in b.payments.order_by("-created_at", "-id"):
+        info = (failure(p) if failure else None) or {}
+        out.append(
+            {
+                "id": p.pk,
+                "method": p.method,
+                "method_label": p.get_method_display(),
+                "amount": p.amount,
+                "status": p.status,
+                "purpose": p.purpose,
+                "created_at": p.created_at,
+                "reference": p.provider_ref,
+                **{k: info.get(k, default) for k, default in NO_FAILURE.items()},
+            }
+        )
+    return out
+
+
+def change_dict(c):
+    return {
+        "id": c.pk,
+        "status": c.status,
+        "status_label": c.get_status_display(),
+        "old": {
+            "check_in": c.old_check_in,
+            "check_out": c.old_check_out,
+            "adults": c.old_adults,
+            "children": c.old_children,
+        },
+        "new": {
+            "check_in": c.new_check_in,
+            "check_out": c.new_check_out,
+            "adults": c.new_adults,
+            "children": c.new_children,
+        },
+        "delta": c.delta,
+        "refund_amount": c.refund_amount,
+        "pay_now": c.pay_now,
+        "requested_by": c.requested_by,
+        "created_at": c.created_at,
+        "expires_at": c.expires_at,
+    }
+
+
+def waitlist_entry(w):
+    unit = services.waitlist_unit(w)
+    area = w.area or (unit.area if unit else None)
+    return {
+        "id": w.pk,
+        "status": w.status,
+        "unit": {"slug": unit.slug, "name": unit.name, "area": unit.area.name, "photo": unit.cover_photo}
+        if unit
+        else None,
+        "area": {"slug": area.slug, "name": area.name} if area else None,
+        "check_in": w.check_in,
+        "check_out": w.check_out,
+        "nights": (w.check_out - w.check_in).days,
+        "guests": w.guests or (w.adults + w.children),
+        "created_at": w.created_at,
+        "offered_at": w.offered_at,
+        "book_url": services.book_url(w),
+    }
 
 
 def _addon(ba):
@@ -71,9 +157,8 @@ def trip_dict(b, *, host=False):
     u = b.unit
     now = timezone.now()
     confirmed = b.status in ("confirmed", "checked_in", "completed")
-    checkin_dt = at_local(b.check_in, services.effective_checkin_time(b))
-    reveal_at = checkin_dt - timedelta(hours=48)
-    details_visible = host or (b.status in ("confirmed", "checked_in") and now >= reveal_at) or b.status == "checked_in"
+    reveal_at = services.details_reveal_at(b)
+    details_visible = host or services.details_visible(b, now)
     code = b.access_codes.filter(revoked_at__isnull=True).first()
     breakfast = b.addons.filter(addon__code="breakfast").exclude(status__in=("declined", "cancelled")).first()
     checkin = {
@@ -102,6 +187,7 @@ def trip_dict(b, *, host=False):
     if code and (host or (b.status == "checked_in" and code.sent_at)):
         checkin.update(code=code.code, code_valid_from=code.valid_from, code_valid_until=code.valid_until)
     review = getattr(b, "review", None) if hasattr(b, "review") else None
+    balance_due_date = b.check_in - timedelta(days=s.balance_due_days)
     data = {
         "ref": b.ref,
         "status": b.status,
@@ -129,15 +215,18 @@ def trip_dict(b, *, host=False):
         "guests": b.guests_count,
         "price": {
             "lines": price_lines(b),
+            "pending": pending_lines(b),
             "total": b.total,
             "amount_paid": b.amount_paid,
             "amount_refunded": b.amount_refunded,
+            "refund_pending": sum(r.amount for r in b.refunds.all() if r.status == "pending"),
             "balance_due": b.balance_due,
             "amount_due_now": b.amount_due_now,
             "payment_status": b.payment_status,
             "payment_status_label": b.get_payment_status_display(),
             "payment_plan": b.payment_plan,
-            "balance_due_date": b.check_in - timedelta(days=s.balance_due_days),
+            "balance_due_date": balance_due_date,
+            "balance_overdue": b.status == "confirmed" and b.balance_due > 0 and today() > balance_due_date,
         },
         "addons": [_addon(a) for a in b.addons.select_related("addon")],
         "breakfast": {
@@ -147,19 +236,7 @@ def trip_dict(b, *, host=False):
         }
         if breakfast
         else None,
-        "payments": [
-            {
-                "id": p.pk,
-                "method": p.method,
-                "method_label": p.get_method_display(),
-                "amount": p.amount,
-                "status": p.status,
-                "purpose": p.purpose,
-                "created_at": p.created_at,
-                "reference": p.provider_ref,
-            }
-            for p in b.payments.all()
-        ],
+        "payments": _payments(b),
         "arrival": {
             "eta": b.arrival_eta,
             "mode": b.arrival_mode,
@@ -195,6 +272,8 @@ def trip_dict(b, *, host=False):
         "can_add_extras": b.status in ("confirmed", "checked_in"),
         "can_pay": (b.status == "held" and bool(b.hold_active))
         or (b.status in ("confirmed", "checked_in") and b.balance_due > 0),
+        "can_change": services.can_change(b),
+        "changes": [change_dict(c) for c in b.changes.all()[:5]],
         "timeline": [
             {"kind": e.kind, "text": e.text, "created_at": e.created_at, "channel": e.channel}
             for e in b.events.all()

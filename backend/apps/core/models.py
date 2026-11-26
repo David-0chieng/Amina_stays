@@ -25,6 +25,10 @@ class SiteSettings(models.Model):
     balance_due_days = models.PositiveIntegerField(
         default=1, help_text="Balance is requested this many days before arrival"
     )
+    instant_changes = models.BooleanField(
+        default=True,
+        help_text="Guests can change or extend into free nights and pay the difference instantly; off = you approve each change",
+    )
     tourism_levy_percent = models.DecimalField(max_digits=4, decimal_places=2, default=2)
     vat_percent = models.DecimalField(max_digits=4, decimal_places=2, default=0)
 

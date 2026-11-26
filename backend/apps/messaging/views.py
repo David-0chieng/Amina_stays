@@ -1,3 +1,5 @@
+import re
+
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, viewsets
@@ -166,6 +168,8 @@ def inbox_reply(request, pk):
     if not text:
         return Response({"error": "Write a reply first."}, status=400)
     channel = request.data.get("channel") or "sms"
+    if channel not in ("sms", "whatsapp", "web"):
+        return Response({"error": "Reply by SMS, WhatsApp or the web chat."}, status=400)
     reply_as_host(t.phone, text[:1000], user=request.user, channel=channel)
     record("message", f"Reply to {t.guest.display_name if t.guest else t.phone}", phone=t.phone, actor=request.user)
     return Response(_thread_payload(t))
@@ -209,6 +213,8 @@ def template_edit(request, key, lang):
     body = (request.data.get("body") or "").strip()
     if not body:
         return Response({"error": "The message can't be empty."}, status=400)
+    if problem := services.placeholder_error(body):
+        return Response({"error": problem}, status=400)
     Template.objects.update_or_create(key=key, lang=lang, defaults={"body": body[:1500]})
     record("message", f"Template '{key}' ({lang}) updated", actor=request.user)
     return Response({"key": key, "lang": lang, "body": body, "segments": services.sms_segments(services.to_gsm(body))})
@@ -222,6 +228,22 @@ class AutomationSerializer(serializers.ModelSerializer):
         model = Automation
         fields = "__all__"
         read_only_fields = ["key"]
+
+    def validate_send_time(self, value):
+        # every automation is timed from this: one bad value would stop the whole message timeline
+        if value and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value):
+            raise serializers.ValidationError("Use a 24-hour time like 09:30, or leave it blank.")
+        return value
+
+    def validate(self, attrs):
+        if self.instance is not None and self.instance.key == "balance_due":  # timed by the balance due date
+            days = SiteSettings.load().balance_due_days
+            if attrs.get("offset_days", -days) != -days or attrs.get("anchor", "check_in") != "check_in":
+                raise serializers.ValidationError(
+                    f"The balance is due {days} day{'s' if days != 1 else ''} before arrival - change that in "
+                    "Settings and this message follows it."
+                )
+        return attrs
 
 
 class AutomationViewSet(viewsets.ModelViewSet):
@@ -258,6 +280,12 @@ class FAQSerializer(serializers.ModelSerializer):
         model = FAQ
         fields = "__all__"
         read_only_fields = ["hits"]
+
+    def validate(self, attrs):
+        for field in ("answer_en", "answer_sw", "answer_fr", "answer_de"):
+            if problem := services.placeholder_error(attrs.get(field)):
+                raise serializers.ValidationError({field: problem})
+        return attrs
 
 
 class FAQViewSet(viewsets.ModelViewSet):
@@ -326,6 +354,8 @@ def broadcasts(request):
         )
     d = request.data
     audience = d.get("audience")
+    if audience not in dict(Broadcast.AUDIENCES):
+        return Response({"error": "Choose who the message is for."}, status=400)
     unit = Unit.objects.filter(pk=d.get("unit")).first() if d.get("unit") else None
     phones = services.audience_phones(audience, unit)
     if d.get("preview"):

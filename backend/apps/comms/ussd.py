@@ -2,7 +2,8 @@
 we replay it through a cursor, so the menu is stateless and survives any number of workers.
 
 Conventions: 0 = back, 00 = main menu, 98 = more. Every screen stays within Safaricom's 160
-characters, and we answer well inside AT's 10-second window (SMS go through the outbox).
+characters, and we answer well inside AT's 10-second window (SMS go through the outbox, and M-Pesa
+prompts are pushed after the screen has gone back - see comms.deferred).
 """
 
 import logging
@@ -17,11 +18,13 @@ from apps.bookings.models import Addon, BookingAddon
 from apps.core.activity import record
 from apps.core.api import STAFF_ROLES
 from apps.core.models import SiteSettings
-from apps.core.utils import first_name, kes, nice_date, same_phone, today, weekend_start
+from apps.core.utils import first_name, is_kenyan, kes, same_phone, today, weekend_start
 from apps.messaging import services as messaging
 from apps.properties.models import Area, PriceOverride, Unit
 from apps.properties.services import available_units, from_price
 from apps.properties.services import quote as price_quote
+
+from . import deferred
 
 log = logging.getLogger("amina.ussd")
 LIMIT = 160
@@ -47,6 +50,7 @@ S = {
         "when_opts": ["Tonight", "Tomorrow", "This weekend", "Next weekend", "Enter date"],
         "ddmm": "Enter check-in date as DDMM, e.g. 0512",
         "nights": "How many nights? (1-14)",
+        "min_stay": "Homes free then need {n}+ nights. How many nights? ({n}-14)",
         "guests": "How many guests? (1-8)",
         "pick": "Pick a home ({dates}):",
         "more": "98. More",
@@ -60,7 +64,8 @@ S = {
         "held": "Holding {unit} ({ref}). {pay}",
         "invalid": "Invalid choice.",
         "no_booking": "No active booking for this number. Dial again and choose 1 to book.",
-        "mine": "{ref} {unit}\n{dates}\n{status}. Paid {paid} of {total}",
+        "mine": "{ref} {unit}\n{dates} {status}\nPaid {paid} of {total}",
+        "status": {"held": "Awaiting payment", "confirmed": "Confirmed", "checked_in": "Checked in"},
         "mine_opts": ["Resend check-in info", "Pay balance", "Late checkout", "Cancel booking"],
         "sent": "Sent to you by SMS.",
         "cancel_q": "{text}",
@@ -69,6 +74,7 @@ S = {
         "bf_menu": "Breakfast ({price}/person/day):",
         "bf_people": "For how many people? (1-{max})",
         "bf_saved": "Breakfast saved: {summary}. Kitchen told.",
+        "bf_unavailable": "Breakfast isn't available at this home.",
         "issue_q": "What's wrong?",
         "issue_opts": [
             "No water",
@@ -91,6 +97,10 @@ S = {
         "sos": "Amina is being alerted and called now. If you are in danger call 999 or 112.",
         "unit_info": "{name}, {area}: {beds} bed, sleeps {guests}. From {price}/night.{bf} Details sent by SMS.",
         "late_q": "Late checkout ({price}) is requested from Amina. You'll get an SMS.",
+        "prompt": "Check your phone for the M-Pesa prompt of {amount}.",
+        "card_link": "We'll text you a secure card payment link for {amount}.",
+        "paid_up": "You're fully paid - asante!",
+        "hold_gone": "Your hold has expired. Dial again to book.",
     },
     "sw": {
         "welcome": "Karibu Amina Stays",
@@ -112,6 +122,7 @@ S = {
         "when_opts": ["Leo usiku", "Kesho", "Wikendi hii", "Wikendi ijayo", "Andika tarehe"],
         "ddmm": "Andika tarehe kama SSMM, mf. 0512",
         "nights": "Usiku ngapi? (1-14)",
+        "min_stay": "Nyumba zilizo wazi zinahitaji usiku {n}+. Usiku ngapi? ({n}-14)",
         "guests": "Wageni wangapi? (1-8)",
         "pick": "Chagua nyumba ({dates}):",
         "more": "98. Zaidi",
@@ -125,7 +136,8 @@ S = {
         "held": "Tumekuwekea {unit} ({ref}). {pay}",
         "invalid": "Chaguo si sahihi.",
         "no_booking": "Hakuna nafasi kwa nambari hii. Piga tena uchague 1.",
-        "mine": "{ref} {unit}\n{dates}\n{status}. Umelipa {paid} kati ya {total}",
+        "mine": "{ref} {unit}\n{dates} {status}\nUmelipa {paid} kati ya {total}",
+        "status": {"held": "Inasubiri malipo", "confirmed": "Imethibitishwa", "checked_in": "Umeingia"},
         "mine_opts": ["Tuma maelezo tena", "Lipa salio", "Kutoka baadaye", "Ghairi"],
         "sent": "Tumekutumia kwa SMS.",
         "cancel_q": "{text}",
@@ -134,6 +146,7 @@ S = {
         "bf_menu": "Kifungua kinywa ({price}/mtu/siku):",
         "bf_people": "Kwa watu wangapi? (1-{max})",
         "bf_saved": "Kimehifadhiwa: {summary}.",
+        "bf_unavailable": "Kifungua kinywa hakipatikani katika nyumba hii.",
         "issue_q": "Tatizo ni nini?",
         "issue_opts": [
             "Hakuna maji",
@@ -156,6 +169,10 @@ S = {
         "sos": "Amina anaarifiwa na kupigiwa sasa. Ukiwa hatarini piga 999 au 112.",
         "unit_info": "{name}, {area}: vyumba {beds}, wageni {guests}. Kuanzia {price}/usiku.{bf} Maelezo kwa SMS.",
         "late_q": "Ombi la kutoka baadaye ({price}) limetumwa kwa Amina. Utapata SMS.",
+        "prompt": "Angalia simu yako upate ombi la M-Pesa la {amount}.",
+        "card_link": "Tutakutumia kiungo salama cha kulipa {amount} kwa kadi kwa SMS.",
+        "paid_up": "Umelipa yote - asante!",
+        "hold_gone": "Muda wa kukushikilia umeisha. Piga tena uweke nafasi.",
     },
 }
 ISSUE_CATEGORIES = ["water", "power", "wifi", "ac", "cleanliness", "lock", "security", "other"]
@@ -170,10 +187,6 @@ class Reply(Exception):
 
 def fit(text, limit=LIMIT - 4):
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
-
-
-def menu(title, options, start=1):
-    return "\n".join([title] + [f"{i}. {o}" for i, o in enumerate(options, start)])
 
 
 class Cursor:
@@ -211,22 +224,43 @@ class Ussd:
     # ---------- primitives ----------
     def choose(self, title, options, per_page=None):
         """Numbered list with paging. Returns the 0-based index chosen."""
-        per_page = per_page or len(options)
+        pages = self._pages(title, options, per_page or len(options))
         page = 0
         while True:
-            chunk = options[page * per_page : (page + 1) * per_page]
-            more = (page + 1) * per_page < len(options)
-            screen = menu(title, chunk, start=page * per_page + 1) + (f"\n{self.t['more']}" if more else "")
+            more = page + 1 < len(pages)
+            items = "".join(pages[page]) + (f"\n{self.t['more']}" if more else "")
             tok = self.c.take()
             if tok is None:
-                raise Reply(fit(screen, LIMIT - 4) if len(screen) > LIMIT - 4 else screen)
+                raise Reply(self._screen(title, items))
             if tok == "98" and more:
                 page += 1
                 continue
             if tok.isdigit() and 1 <= int(tok) <= len(options):
                 return int(tok) - 1
             if not self.c.has_more():
-                raise Reply(fit(f"{self.t['invalid']}\n{screen}"))
+                raise Reply(self._screen(title, items, invalid=True))
+
+    def _pages(self, title, options, per_page):
+        """Split the numbered options into pages that each fit one screen next to (the start of) the title."""
+        lines = [f"\n{i}. {o}" for i, o in enumerate(options, 1)]
+        keep = min(len(title), 30)
+        if len(lines) <= per_page and keep + sum(map(len, lines)) <= LIMIT - 4:
+            return [lines]
+        room = LIMIT - 4 - keep - len(f"\n{self.t['more']}")
+        pages = [[]]
+        for line in lines:
+            if pages[-1] and (len(pages[-1]) >= per_page or sum(map(len, pages[-1])) + len(line) > room):
+                pages.append([])
+            pages[-1].append(line)
+        return pages
+
+    def _screen(self, title, items, invalid=False):
+        """Title + options within the limit: only the title is ever shortened, never an option."""
+        room = LIMIT - 4 - len(items)
+        if invalid:
+            both = f"{self.t['invalid']}\n{title}"
+            title = both if len(both) <= room else self.t["invalid"]
+        return fit(title, room) + items
 
     def number(self, prompt, lo, hi):
         while True:
@@ -281,13 +315,19 @@ class Ussd:
         w = self.choose(self.t["when"], self.t["when_opts"])
         t = today()
         if w == 4:
-            ci = self._ddmm(self.text(self.t["ddmm"]))
+            ci = self.check_in_date()
         else:
             ci = [t, t + timedelta(days=1), weekend_start(t), weekend_start(t) + timedelta(days=7)][w]
         nights = self.number(self.t["nights"], 1, 14)
         guests = self.number(self.t["guests"], 1, 8)
-        co = ci + timedelta(days=nights)
-        units = list(available_units(ci, co, area=area.slug if area else None, guests=guests)[:9])
+        while True:
+            co = ci + timedelta(days=nights)
+            free = list(available_units(ci, co, area=area.slug if area else None, guests=guests))
+            units = [u for u in free if u.min_nights <= nights <= u.max_nights][:9]  # only homes the hold accepts
+            longer = [u.min_nights for u in free if u.min_nights > nights]
+            if units or not longer or min(longer) > 14:
+                break
+            nights = self.number(self.t["min_stay"].format(n=min(longer)), min(longer), 14)
         if not units:
             bookings.add_to_waitlist(self.user, ci, co, area=area, guests=guests, channel="ussd")
             self.end(self.t["none"])
@@ -337,21 +377,35 @@ class Ussd:
             )
         except bookings.BookingError as e:
             self.end(str(e))
-        from apps.payments.services import start_remote_payment
+        self.end(self.t["held"].format(unit=unit.name, ref=b.ref, pay=self.pay_line(b)))
 
-        pay = start_remote_payment(b)
-        self.end(self.t["held"].format(unit=unit.name, ref=b.ref, pay=pay["text"]))
+    def pay_line(self, b):
+        """What to say about paying now. The M-Pesa prompt itself is pushed once this screen has gone back
+        (comms.deferred): a slow Daraja call must never eat the session's few seconds."""
+        due = max(0, b.amount_due_now - b.amount_paid) if b.status == "held" else b.balance_due
+        if due <= 0:
+            return self.t["paid_up"]
+        if b.status == "held" and not b.hold_active:
+            return self.t["hold_gone"]
+        deferred.after_response(deferred.push_payment, b.pk)
+        return self.t["prompt" if is_kenyan(b.guest.phone) else "card_link"].format(amount=kes(due))
 
-    def _ddmm(self, tok):
-        m = re.fullmatch(r"(\d{1,2})[/.-]?(\d{2})", tok or "")
-        if not m:
-            self.end(self.t["invalid"])
+    def check_in_date(self):
+        """Check-in typed as DDMM ('0512'); a day already past means next year. A typo is asked again."""
         t = today()
-        try:
-            d = date(t.year, int(m[2]), int(m[1]))
-        except ValueError:
-            self.end(self.t["invalid"])
-        return d if d >= t else date(t.year + 1, d.month, d.day)
+        while True:
+            tok = self.c.take()
+            if tok is None:
+                raise Reply(self.t["ddmm"])
+            m = re.fullmatch(r"(\d{1,2})[/.-]?(\d{2})", tok)
+            if m:
+                try:
+                    d = date(t.year, int(m[2]), int(m[1]))
+                    return d if d >= t else d.replace(year=t.year + 1)
+                except ValueError:
+                    pass
+            if not self.c.has_more():
+                raise Reply(f"{self.t['invalid']} {self.t['ddmm']}")
 
     def prices(self):
         units = list(Unit.objects.filter(status="active").select_related("area"))
@@ -386,8 +440,8 @@ class Ussd:
         head = self.t["mine"].format(
             ref=b.ref,
             unit=b.unit.name[:18],
-            dates=f"{nice_date(b.check_in, self.lang)}-{nice_date(b.check_out, self.lang)}",
-            status=b.get_status_display()[:14],
+            dates=f"{b.check_in:%d/%m}-{b.check_out:%d/%m}",
+            status=self.t["status"].get(b.status, b.get_status_display()),
             paid=kes(b.amount_paid),
             total=kes(b.total),
         )
@@ -396,24 +450,21 @@ class Ussd:
             if b.status == "checked_in":
                 bookings.send_guest(b, "checkin_code")
             elif b.status == "confirmed":
+                # directions and Wi-Fi open 48 h before check-in, as on the trip page; until then the confirmation
                 bookings.send_guest(
-                    b, "directions" if (b.check_in - today()).days <= 2 else "booking_confirmed", balance_note=""
+                    b, "directions" if bookings.details_visible(b) else "booking_confirmed", balance_note=""
                 )
             else:
                 bookings.send_guest(b, "status")
             self.end(self.t["sent"])
         if choice == 1:
-            from apps.payments.services import start_remote_payment
-
-            self.end(
-                start_remote_payment(b)["text"]
-                if (b.balance_due or b.status == "held")
-                else "You're fully paid - asante!"
-            )
+            self.end(self.pay_line(b))
         if choice == 2:
+            from .smsbot import addon_defaults
+
             late = Addon.objects.filter(code="late_checkout", active=True).first()
             try:
-                bookings.add_addon(b, "late_checkout", channel="ussd")
+                bookings.add_addon(b, "late_checkout", channel="ussd", details=addon_defaults("late_checkout"))
             except bookings.BookingError as e:
                 self.end(str(e))
             self.end(self.t["late_q"].format(price=kes(late.price) if late else ""))
@@ -429,14 +480,19 @@ class Ussd:
     def breakfast(self):
         b = bookings.current_booking(self.phone)
         bf = Addon.objects.filter(code="breakfast", active=True).first()
-        if not b or not bf:
+        if not b:
             self.end(self.t["no_booking"])
+        if not bf or not b.unit.breakfast_available:
+            self.end(self.t["bf_unavailable"])
         idx = self.choose(self.t["bf_menu"].format(price=kes(bf.price)), self.t["bf_opts"])
         if idx == 4:
             bookings.set_breakfast(b, None, channel="ussd")
             self.end(self.t["bf_saved"].format(summary="-"))
         people = self.number(self.t["bf_people"].format(max=b.guests_count), 1, max(1, b.guests_count))
-        ba = bookings.set_breakfast(b, BF_STYLES[idx], people=people, channel="ussd")
+        try:
+            ba = bookings.set_breakfast(b, BF_STYLES[idx], people=people, channel="ussd")
+        except bookings.BookingError as e:
+            self.end(str(e))
         self.end(self.t["bf_saved"].format(summary=bookings.breakfast_summary(ba)))
 
     def problem(self):

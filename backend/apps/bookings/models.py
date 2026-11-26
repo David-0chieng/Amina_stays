@@ -134,7 +134,11 @@ class Booking(models.Model):
 
     @property
     def balance_due(self):
-        return max(0, self.total - self.amount_paid)
+        if self.status in ("cancelled", "expired"):
+            return 0  # nothing is owed on a stay that isn't happening
+        # money handed back on a live stay (its bill went down) no longer pays for it
+        refunded = self.amount_refunded if self.status in (*ACTIVE_STATUSES, "completed") else 0
+        return max(0, self.total - (self.amount_paid - refunded))
 
     @property
     def hold_active(self):
@@ -292,6 +296,8 @@ class Waitlist(models.Model):
     check_in = models.DateField()
     check_out = models.DateField()
     guests = models.PositiveSmallIntegerField(default=0)
+    adults = models.PositiveSmallIntegerField(default=0, help_text="0 = not asked (SMS/USSD/voice give a head count)")
+    children = models.PositiveSmallIntegerField(default=0)
     channel = models.CharField(max_length=10, default="sms")
     status = models.CharField(max_length=8, choices=STATUS, default="waiting")
     offered_unit = models.ForeignKey(
@@ -302,3 +308,60 @@ class Waitlist(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+
+
+class ChangeRequest(models.Model):
+    """A guest (or Amina) moving, shortening, extending or resizing a confirmed stay.
+
+    Priced with the normal quote at request time (snapshot in `pricing`); applied in one transaction that
+    re-checks availability. delta > 0 waits for payment, delta <= 0 applies at once and refunds the reduction
+    under the cancellation policy; when instant changes are off, Amina approves first."""
+
+    STATUS = [
+        ("pending_host", "Waiting for Amina"),
+        ("pending_payment", "Waiting for payment"),
+        ("applied", "Changed"),
+        ("declined", "Declined"),
+        ("expired", "Expired"),
+        ("cancelled", "Withdrawn"),
+    ]
+    PENDING = ("pending_host", "pending_payment")
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="changes")
+    requested_by = models.CharField(max_length=5, choices=[("guest", "Guest"), ("host", "Host")], default="guest")
+    channel = models.CharField(max_length=12, blank=True)
+    old_check_in = models.DateField()
+    old_check_out = models.DateField()
+    old_adults = models.PositiveSmallIntegerField(default=1)
+    old_children = models.PositiveSmallIntegerField(default=0)
+    new_check_in = models.DateField()
+    new_check_out = models.DateField()
+    new_adults = models.PositiveSmallIntegerField(default=1)
+    new_children = models.PositiveSmallIntegerField(default=0)
+    old_total = models.PositiveIntegerField(default=0)
+    new_total = models.PositiveIntegerField(default=0)
+    delta = models.IntegerField(default=0, help_text="new_total - old_total; positive = the guest pays more")
+    refund_amount = models.PositiveIntegerField(default=0)
+    pricing = models.JSONField(default=dict, blank=True, help_text="Quoted nightly prices, fees and price lines")
+    status = models.CharField(max_length=16, choices=STATUS, default="pending_host", db_index=True)
+    payment = models.ForeignKey(
+        "payments.Payment", null=True, blank=True, on_delete=models.SET_NULL, related_name="change_requests"
+    )
+    note = models.CharField(max_length=300, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    expires_at = models.DateTimeField(null=True, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+
+    def __str__(self):
+        return f"C{self.pk} {self.booking_id} {self.status}"
+
+    @property
+    def pay_now(self):
+        return max(0, self.delta) if self.status in self.PENDING else 0
