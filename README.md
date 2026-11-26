@@ -18,6 +18,8 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 
 **Research first.** We studied Airbnb, Booking.com, Vrbo, Agoda and Trip.com, small-host operations, Kenyan regulation and Africa's Talking's real limits before writing code, then compared every guest and host flow end to end with Airbnb, Hospitable and Hostaway. See [docs/RESEARCH.md](docs/RESEARCH.md) for the problem → solution matrix, and [docs/research/](docs/research/) for the eight full briefs with sources.
 
+**Run it on your machine:** [Windows](#windows) · [Linux](#linux) · [Docker, any system](#any-system-docker). You don't need any API keys: SMS, voice and payments are simulated.
+
 ---
 
 ## For the judges
@@ -167,7 +169,20 @@ If the database isn't running after a restart, start it with `sudo service postg
    & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE amina OWNER amina;"
    ```
 
-3. In the project folder, copy the local settings (demo mode and the database address), then set up and start the API:
+3. Start everything from the project folder:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+   ```
+
+   This works like `scripts/dev.sh` on Linux. The first run installs the dependencies, creates the tables and loads the demo data. After that, the API (port 8000), the scheduler and the website (port 3000) run in this window until you press Ctrl+C. Add `-Reseed` to reset the demo data.
+
+If you have Docker Desktop, you can skip installing PostgreSQL and step 2. When nothing is listening on port 5432, `scripts\dev.ps1` starts the database in a container.
+
+<details>
+<summary>Windows step by step, instead of <code>scripts\dev.ps1</code></summary>
+
+1. In the project folder, copy the local settings (demo mode and the database address), then set up and start the API:
 
    ```powershell
    Copy-Item .env.example .env
@@ -178,22 +193,21 @@ If the database isn't running after a restart, start it with `sudo service postg
    uv run python manage.py runserver
    ```
 
-4. In a second PowerShell window, from the project folder, start the scheduler. It sends reminders, door codes and automated messages:
+2. In a second PowerShell window, from the project folder, start the scheduler. It sends reminders, door codes and automated messages:
 
    ```powershell
    cd backend
    uv run python manage.py run_scheduler
    ```
 
-5. In a third window, from the project folder, start the website:
+3. In a third window, from the project folder, start the website:
 
    ```powershell
    cd frontend
    npm install
    npm run dev
    ```
-
-If you have Docker Desktop, you can skip installing PostgreSQL and step 2: `docker compose up -d db` creates the same database.
+</details>
 
 ### Open the app
 
@@ -292,7 +306,7 @@ frontend/                Next.js 16 (App Router), Tailwind CSS v4, TanStack Quer
   src/app/host           host console
   src/components         UI kit, site, host and demo components
 docs/                    research synthesis, architecture, full research briefs
-scripts/                 dev.sh (run everything), db.sh (local PostgreSQL); bash: Linux, macOS, WSL
+scripts/                 dev.sh (run everything on Linux, macOS, WSL), dev.ps1 (the same on Windows), db.sh (local PostgreSQL)
 ```
 
 More: [Architecture](docs/ARCHITECTURE.md) · [Research](docs/RESEARCH.md) · [Project brief](<AMINA-STAYS_Project_Brief (2).pdf>)
