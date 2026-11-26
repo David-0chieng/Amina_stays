@@ -36,14 +36,31 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
   return <label className={cn("mb-1.5 block text-[13px] font-semibold text-ink", className)} {...props} />;
 }
 
+type ControlProps = { id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean | "true" | "false" };
+
+const LABELLABLE = new Set<unknown>([Input, Textarea, Select, "input", "select", "textarea"]);
+
+/** Label + control + hint/error. A single child control gets an id so the label, hint and error are announced with it. */
 export function Field({
   label, hint, error, children, className,
 }: { label?: React.ReactNode; hint?: React.ReactNode; error?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  const autoId = React.useId();
+  const child = React.isValidElement<ControlProps>(children) && LABELLABLE.has(children.type) ? children : null;
+  const id = child?.props.id ?? autoId;
+  const descId = `${id}-desc`;
+  const note = error || hint;
+  const control = child
+    ? React.cloneElement(child, {
+        id,
+        "aria-describedby": [child.props["aria-describedby"], note ? descId : null].filter(Boolean).join(" ") || undefined,
+        "aria-invalid": error ? true : child.props["aria-invalid"],
+      })
+    : children;
   return (
     <div className={className}>
-      {label && <Label>{label}</Label>}
-      {children}
-      {error ? <p className="mt-1.5 text-[13px] text-danger">{error}</p> : hint ? <p className="mt-1.5 text-[13px] text-ink-2">{hint}</p> : null}
+      {label && <Label htmlFor={child ? id : undefined}>{label}</Label>}
+      {control}
+      {error ? <p id={descId} className="mt-1.5 text-[13px] text-danger">{error}</p> : hint ? <p id={descId} className="mt-1.5 text-[13px] text-ink-2">{hint}</p> : null}
     </div>
   );
 }

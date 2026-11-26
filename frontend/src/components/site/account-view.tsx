@@ -1,7 +1,7 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { Download, Globe, LogOut, Megaphone, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BellRing, Download, Globe, LogOut, Megaphone, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -10,15 +10,16 @@ import { toast } from "sonner";
 import { useLogout, useMe } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { SiteHeader } from "@/components/site/header";
+import { Photo } from "@/components/site/listing-card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar, Badge } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/overlays";
-import { get, patch, post } from "@/lib/api";
-import { fmtDate } from "@/lib/format";
-import type { Me } from "@/lib/types";
+import { del, get, patch, post } from "@/lib/api";
+import { fmtDate, fmtRange } from "@/lib/format";
+import type { Me, WaitlistEntry } from "@/lib/types";
 import { COUNTRIES } from "@/lib/utils";
 
 const ACCOUNT_CARDS: { icon: Icon3DName; title: string; text: string; href: string }[] = [
@@ -173,6 +174,8 @@ function Account() {
           </div>
         </section>
 
+        <WaitlistSection />
+
         <section id="data" className="mt-12 scroll-mt-24 border-t border-line-soft pt-10">
           <h2 className="flex items-center gap-2 text-[22px] font-bold"><Globe className="size-5" /> Your data</h2>
           <p className="mt-2 text-ink-2">Your rights under Kenya&apos;s Data Protection Act, 2019. Read the <Link href="/privacy" className="underline">privacy notice</Link>.</p>
@@ -203,5 +206,44 @@ function Account() {
         <Button variant="ghost" className="mt-12" onClick={logout}><LogOut className="size-4" /> Log out</Button>
       </main>
     </>
+  );
+}
+
+/** Dates the guest asked to be told about. Hidden until there is at least one. */
+function WaitlistSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["waitlist"], queryFn: () => get<WaitlistEntry[]>("/api/me/waitlist") });
+  if (!data?.length) return null;
+  async function leave(id: number) {
+    try {
+      await del(`/api/me/waitlist/${id}`);
+      qc.setQueryData<WaitlistEntry[]>(["waitlist"], (old) => old?.filter((w) => w.id !== id));
+      toast.success("Removed from the waitlist");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+  return (
+    <section id="waitlist" className="mt-12 scroll-mt-24 border-t border-line-soft pt-10">
+      <h2 className="flex items-center gap-2 text-[22px] font-bold"><BellRing className="size-5" /> Waitlist</h2>
+      <p className="mt-2 text-ink-2">We text you the moment one of these opens up — first come, first served.</p>
+      <ul className="mt-5 space-y-3">
+        {data.map((w) => (
+          <li key={w.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-line-soft p-4">
+            {w.unit?.photo && <Photo src={w.unit.photo} alt="" sizes="56px" className="size-14 shrink-0 rounded-xl object-cover" />}
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{w.unit?.name ?? `Any home in ${w.area?.name ?? "Mombasa"}`}</p>
+              <p className="text-sm text-ink-2">{fmtRange(w.check_in, w.check_out)} · {w.guests} guest{w.guests === 1 ? "" : "s"}</p>
+            </div>
+            {w.status === "offered" && w.book_url ? (
+              <Button asChild size="sm" variant="brand"><Link href={w.book_url}>It&apos;s free — book now</Link></Button>
+            ) : (
+              <Badge tone="neutral">Waiting</Badge>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => leave(w.id)}>Leave</Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -15,6 +15,7 @@ import { get, post, qs } from "@/lib/api";
 import { fmtDateTime, kes, plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { LedgerExport, OutstandingCard, UnmatchedCard } from "./payments-extras";
 import { useInvalidateHost } from "./queries";
 import type { LedgerResponse, PaymentRow, RefundRow } from "./types";
 import { Callout, ConfirmDialog, Field, Segmented, TableCard, errorMessage, humanize, reservationHref, useDebounced } from "./ui";
@@ -23,7 +24,7 @@ type StatusFilter = "" | "success" | "pending" | "failed" | "expired" | "cancell
 type MethodFilter = "all" | "mpesa" | "card" | "cash" | "bank";
 
 const STATUS_LABEL: Record<string, string> = { success: "Paid", pending: "Pending", failed: "Failed", expired: "Expired", cancelled: "Cancelled", refunded: "Refunded" };
-const PURPOSE_LABEL: Record<string, string> = { full: "Full payment", deposit: "Deposit", balance: "Balance", addon: "Add-on" };
+const PURPOSE_LABEL: Record<string, string> = { full: "Full payment", deposit: "Deposit", balance: "Balance", addon: "Add-on", change: "Date change" };
 const REFUND_STATUS: Record<string, string> = { pending: "To send", success: "Sent", failed: "Failed" };
 
 export function MethodChip({ method, label }: { method: string; label?: string }) {
@@ -117,11 +118,15 @@ export function PaymentsPage() {
             screenshot, which is easy to fake. Each receipt number below came straight from that callback.
           </Callout>
 
+          <UnmatchedCard rows={all.data?.unmatched ?? []} />
+          <OutstandingCard rows={all.data?.outstanding ?? []} />
+
           <TableCard
             title="Payments"
             description={filtered.data ? `${plural(payments.length, "payment")}${filtered.data.payments.length >= 300 ? " (latest 300)" : ""}` : undefined}
             action={
               <div className="flex flex-wrap items-center gap-2">
+                <LedgerExport />
                 <div className="relative w-full sm:w-64">
                   <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" />
                   <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ref, phone or M-Pesa receipt" aria-label="Search payments" className="h-9 pr-8 pl-9 text-sm" />

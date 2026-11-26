@@ -21,7 +21,7 @@ import type { Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ConfirmAction, Countdown, Flag, GuestAvatar, Overline, RiskChip } from "./bits";
-import { countryName, displayName, fmtPhone, LANGUAGES, smsSegments, useHostAction } from "./lib";
+import { countryName, displayName, fmtPhone, kenyaDate, LANGUAGES, smsSegments, useHostAction, useNow } from "./lib";
 
 export function ReservationView({ refId }: { refId: string }) {
   const ref = decodeURIComponent(refId).toUpperCase();
@@ -65,6 +65,7 @@ export function ReservationView({ refId }: { refId: string }) {
             <NotesCard key={t.ref} t={t} />
           </div>
           <StayCard t={t} />
+          <ChangesCard t={t} />
           <AddonsCard t={t} />
           <RegisterCard t={t} />
           <CodesCard t={t} />
@@ -434,6 +435,48 @@ function StayCard({ t }: { t: Trip }) {
   );
 }
 
+function ChangesCard({ t }: { t: Trip }) {
+  if (!t.changes?.length) return null;
+  return (
+    <Section title="Change requests" padded={false}>
+      <ul className="divide-y divide-line-soft">
+        {t.changes.map((c) => (
+          <ChangeRow key={c.id} t={t} c={c} />
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+function ChangeRow({ t, c }: { t: Trip; c: NonNullable<Trip["changes"]>[number] }) {
+  const decide = useHostAction((approve: boolean) => post(`/api/host/changes/${c.id}/decide`, { approve }), {
+    success: (_, approve) => `Change ${approve ? "approved" : "declined"} — ${displayName(t.guest?.name, t.guest?.phone)} has been told by SMS`,
+  });
+  const guests = (s: { adults: number; children: number }) => plural(s.adults + s.children, "guest");
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-5 py-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">
+          {fmtDate(c.old.check_in, "d MMM")} – {fmtDate(c.old.check_out, "d MMM")} → {fmtDate(c.new.check_in, "d MMM")} – {fmtDate(c.new.check_out, "d MMM")}
+          <span className="ml-2 font-medium text-ink-2 tabular-nums">{c.delta > 0 ? `+${kes(c.delta)}` : c.delta < 0 ? `−${kes(-c.delta)}` : "same price"}</span>
+        </p>
+        <p className="text-xs text-ink-2">
+          {guests(c.old) !== guests(c.new) ? `${guests(c.old)} → ${guests(c.new)} · ` : ""}by {c.requested_by} · {ago(c.created_at)}
+          {c.refund_amount > 0 && ` · refund ${kes(c.refund_amount)}`}
+        </p>
+      </div>
+      {c.status === "pending_host" ? (
+        <div className="flex gap-2">
+          <Button size="sm" variant="soft" disabled={decide.isPending} loading={decide.isPending && decide.variables === false} onClick={() => decide.mutate(false)}>Decline</Button>
+          <Button size="sm" variant="dark" disabled={decide.isPending} loading={decide.isPending && decide.variables === true} onClick={() => decide.mutate(true)}>Approve</Button>
+        </div>
+      ) : (
+        <Badge tone={c.status === "applied" ? "success" : c.status === "pending_payment" ? "warning" : "neutral"}>{c.status_label}</Badge>
+      )}
+    </li>
+  );
+}
+
 function AddonsCard({ t }: { t: Trip }) {
   if (!t.addons.length) return null;
   return (
@@ -664,9 +707,14 @@ function PaymentCard({ t }: { t: Trip }) {
     <section className="rounded-2xl border border-line-soft bg-white">
       <div className="flex items-center justify-between gap-3 border-b border-line-soft px-5 py-3.5">
         <h2 className="text-[15px] font-bold">Payment</h2>
-        <Badge tone={p.payment_status === "paid" ? "success" : p.payment_status === "unpaid" ? "warning" : p.payment_status.includes("refund") ? "danger" : "ocean"}>
-          {p.payment_status_label}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {["confirmed", "checked_in", "completed"].includes(t.status) && (
+            <Link href={`/trips/${t.ref}/invoice`} className="text-[13px] font-semibold text-ink-2 underline-offset-4 hover:text-ink hover:underline">Invoice</Link>
+          )}
+          <Badge tone={p.payment_status === "paid" ? "success" : p.payment_status === "unpaid" ? "warning" : p.payment_status.includes("refund") ? "danger" : "ocean"}>
+            {p.payment_status_label}
+          </Badge>
+        </div>
       </div>
       <div className="px-5 py-4">
         <ul className="space-y-2 text-sm">
@@ -680,6 +728,13 @@ function PaymentCard({ t }: { t: Trip }) {
             </li>
           ))}
         </ul>
+        {!!p.pending?.length && (
+          <ul className="mt-2 space-y-1 rounded-lg bg-surface px-3 py-2 text-[13px] text-ink-2">
+            {p.pending.map((l, i) => (
+              <li key={i} className="flex justify-between gap-4"><span>{l.label} · awaiting your OK</span><span className="tabular-nums">{kes(l.amount)}</span></li>
+            ))}
+          </ul>
+        )}
         <div className="mt-3 space-y-1.5 border-t border-line-soft pt-3 text-sm">
           <div className="flex justify-between font-bold">
             <span>Total</span>
@@ -789,6 +844,8 @@ function ActionsCard({ t }: { t: Trip }) {
   const name = displayName(g?.name, g?.phone);
   const active = ["held", "confirmed", "checked_in"].includes(t.status);
   const canRecord = !["cancelled", "expired", "refund_due"].includes(t.status);
+  const now = useNow(60_000);
+  const arrivalDay = now > 0 && kenyaDate(now) >= t.check_in;
   return (
     <section className="rounded-2xl border border-line-soft bg-white p-2">
       <h2 className="px-3 pt-2 pb-1 text-[15px] font-bold">Actions</h2>
@@ -819,7 +876,10 @@ function ActionsCard({ t }: { t: Trip }) {
           on arrival.
         </ConfirmAction>
       )}
-      {t.status === "confirmed" && (
+      {t.status === "confirmed" && !arrivalDay && (
+        <ActionRow icon={KeyRound} label={`Door code · sent ${fmtDate(t.check_in, "d MMM")}`} hint="Released automatically on the arrival morning" disabled />
+      )}
+      {t.status === "confirmed" && arrivalDay && (
         <ConfirmAction
           title="Release the door code now?"
           confirmLabel="Release code"
@@ -1079,10 +1139,17 @@ function ResendDialog({ t, trigger }: { t: Trip; trigger: React.ReactNode }) {
 
 function CancelDialog({ t, trigger }: { t: Trip; trigger: React.ReactNode }) {
   const paid = Math.max(0, t.price.amount_paid - t.price.amount_refunded);
-  const suggested = t.cancellation.refund ?? t.price.amount_paid;
   const [open, setOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
-  const [refund, setRefund] = React.useState(String(suggested));
+  // When Amina cancels, the guest gets everything back by default; the policy amount is one tap away.
+  const [refund, setRefund] = React.useState(String(paid));
+  const onOpenChange = (o: boolean) => {
+    if (o) {
+      setRefund(String(paid));
+      setReason("");
+    }
+    setOpen(o);
+  };
   const amount = refund.trim() === "" ? 0 : Number(refund);
   const invalid = !(amount >= 0) || amount > paid;
   const cancel = useHostAction(() => post(`/api/host/reservations/${t.ref}/cancel`, { reason: reason.trim(), refund_amount: amount }), {
@@ -1092,7 +1159,7 @@ function CancelDialog({ t, trigger }: { t: Trip; trigger: React.ReactNode }) {
   return (
     <FormDialog
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={onOpenChange}
       trigger={trigger}
       title={`Cancel ${t.ref}?`}
       submitLabel="Cancel booking"

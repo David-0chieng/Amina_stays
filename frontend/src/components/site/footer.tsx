@@ -80,7 +80,7 @@ export function SiteFooter() {
     },
   ];
   return (
-    <footer className="mt-16 border-t border-line-soft bg-surface pb-20 md:pb-0">
+    <footer className="mt-16 border-t border-line-soft bg-surface pb-20 md:pb-0 print:hidden">
       <div className="container-site pt-12">
         <h2 className="text-[22px] font-semibold tracking-tight">Inspiration for future getaways</h2>
         <div className="no-scrollbar mt-3 flex gap-6 overflow-x-auto border-b border-line" role="tablist">

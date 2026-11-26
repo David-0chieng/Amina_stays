@@ -336,9 +336,31 @@ export interface RefundRow {
   created_at: string;
 }
 
+export interface OutstandingRow {
+  ref: string;
+  guest: string;
+  phone: string;
+  unit: string;
+  check_in: string;
+  balance_due: number;
+  due_on: string | null;
+  overdue: boolean;
+}
+
+export interface UnmatchedRow {
+  id: number;
+  trans_id: string;
+  amount: number;
+  phone: string;
+  bill_ref: string;
+  received_at: string;
+}
+
 export interface LedgerResponse {
   payments: PaymentRow[];
   refunds: RefundRow[];
+  outstanding?: OutstandingRow[];
+  unmatched?: UnmatchedRow[];
 }
 
 // ---------- safety & compliance ----------
@@ -421,6 +443,7 @@ export interface HostSettings {
   vat_registered: boolean;
   tra_licence_number: string;
   tra_licence_expiry: string | null;
+  instant_changes?: boolean;
   odpc_registration: string;
   kra_pin: string;
   require_id_before_code: boolean;

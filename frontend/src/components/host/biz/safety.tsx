@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarX2, Check, CircleCheck, Phone, ShieldAlert, Siren, Star, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { BadgeCheck, CalendarX2, Check, CircleCheck, MessageSquareWarning, Phone, ShieldAlert, Siren, Star, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 import { toast } from "sonner";
@@ -63,7 +63,7 @@ export function SafetyPage() {
 
 type StatusFilter = "active" | "resolved" | "all";
 
-const KIND_ICON: Record<string, LucideIcon> = { sos: Siren, urgent_issue: Wrench, low_review: Star, conflict: CalendarX2, security: ShieldAlert, payment: Wallet };
+const KIND_ICON: Record<string, LucideIcon> = { sos: Siren, urgent_issue: Wrench, low_review: Star, conflict: CalendarX2, security: ShieldAlert, payment: Wallet, compliance: BadgeCheck, sms: MessageSquareWarning };
 const SEVERITY: Record<AlertItem["severity"], { stripe: string; icon: string; badge: "danger" | "brand" | "warning" | "neutral" }> = {
   critical: { stripe: "bg-danger", icon: "bg-danger text-white", badge: "danger" },
   high: { stripe: "bg-brand-500", icon: "bg-brand-50 text-brand-600", badge: "brand" },

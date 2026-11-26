@@ -12,6 +12,7 @@ import { GuestPicker, guestsLabel, type Guests } from "@/components/site/guest-p
 import { SiteHeader } from "@/components/site/header";
 import { PhoneLogin } from "@/components/site/phone-login";
 import { Photo, StarIcon, typeLabel } from "@/components/site/listing-card";
+import { FailureNotice, lastFailure, PaybillBox } from "@/components/site/payment-help";
 import { RangeCalendar, type Range } from "@/components/site/range-calendar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -224,7 +225,7 @@ export function CheckoutView({ slug }: { slug: string }) {
             </StepCard>
 
             <StepCard n={num("pay")} title="Pay and confirm" state={state("pay")}>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div role="radiogroup" aria-label="Payment method" className="grid gap-3 sm:grid-cols-2">
                 <MethodOption
                   checked={method === "mpesa"} disabled={!!me?.authenticated && !kenyan} onSelect={() => setMethod("mpesa")}
                   icon={<Icon3D name="mobile-phone" size={30} />} title="M-Pesa" text={kenyan ? `A prompt will appear on ${me?.phone}` : "Needs a Kenyan (+254) number"}
@@ -303,6 +304,14 @@ export function CheckoutView({ slug }: { slug: string }) {
                       </div>
                     ))}
                     <div className="flex justify-between border-t border-line pt-4 text-base font-semibold"><span>Total <span className="underline">KES</span></span><span>{kes(q.total)}</span></div>
+                    {!!q.pending?.length && (
+                      <div className="rounded-xl bg-surface p-3">
+                        <p className="font-medium">On request — charged only if Amina confirms</p>
+                        {q.pending.map((line) => (
+                          <div key={line.label} className="mt-1 flex justify-between gap-4 text-ink-2"><span>{line.label}</span><span className="shrink-0 whitespace-nowrap">{kes(line.amount)}</span></div>
+                        ))}
+                      </div>
+                    )}
                     {plan === "deposit" && q.deposit_available && (
                       <div className="rounded-xl bg-surface p-3">
                         <div className="flex justify-between font-medium"><span>Due today</span><span>{kes(q.deposit)}</span></div>
@@ -375,7 +384,7 @@ function PlanOption({ checked, onSelect, title, text, disabled }: { checked: boo
 
 function MethodOption({ checked, onSelect, icon, title, text, disabled }: { checked: boolean; onSelect: () => void; icon: React.ReactNode; title: string; text: string; disabled?: boolean }) {
   return (
-    <button type="button" disabled={disabled} onClick={onSelect} className={cn("flex items-start gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-40", checked ? "border-ink ring-1 ring-ink" : "border-line hover:border-ink")}>
+    <button type="button" role="radio" aria-checked={checked} disabled={disabled} onClick={onSelect} className={cn("flex items-start gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-40", checked ? "border-ink ring-1 ring-ink" : "border-line hover:border-ink")}>
       <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface">{icon}</span>
       <span><span className="block font-semibold">{title}</span><span className="block text-sm text-ink-2">{text}</span></span>
     </button>
@@ -456,21 +465,26 @@ function PaymentFlow({ result, listing }: { result: { booking: Trip; payment: Pa
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<string | null>(null);
   const status = trip?.status ?? "held";
   const p = result.payment;
   const left = trip?.hold_expires_at ? Math.max(0, Math.floor((new Date(trip.hold_expires_at).getTime() - now) / 1000)) : 0;
+  const failed = lastFailure(trip?.payments);
+  // A retry can change the amount (e.g. switching to the deposit), so show the prompt that is actually open.
+  const payAmount = trip?.payments.find((x) => x.status === "pending")?.amount ?? p.amount;
+  const [waitingSince, setWaitingSince] = React.useState(() => Date.now());
 
-  async function retry(method?: "mpesa" | "card") {
-    setBusy(true);
+  async function retry(method?: "mpesa" | "card", plan?: "deposit") {
+    setBusy(plan ? "deposit" : method ?? "mpesa");
     try {
-      const r = await post<PaymentResult>(`/api/bookings/${ref}/pay`, { method });
+      const r = await post<PaymentResult>(`/api/bookings/${ref}/pay`, { method, plan });
+      setWaitingSince(Date.now());
       if (r.method === "card" && r.checkout_url) window.location.href = r.checkout_url;
-      else toast.success("We've sent a new M-Pesa prompt to your phone.");
+      else toast.success(r.message || "We've sent a new M-Pesa prompt to your phone.");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -516,22 +530,39 @@ function PaymentFlow({ result, listing }: { result: { booking: Trip; payment: Pa
           <div className="text-center">
             <div className="relative mx-auto grid size-28 place-items-center rounded-[28px] border-4 border-ink bg-white">
               <Smartphone className="size-12" strokeWidth={1.3} />
-              <span className="absolute -top-2 -right-2 grid size-9 place-items-center rounded-full bg-brand-500 text-white animate-pulse-ring"><Spinner className="size-4 text-white" /></span>
+              {!failed && <span className="absolute -top-2 -right-2 grid size-9 place-items-center rounded-full bg-brand-500 text-white animate-pulse-ring"><Spinner className="size-4 text-white" /></span>}
             </div>
-            <h1 className="mt-8 text-[28px] font-bold tracking-tight">Check your phone</h1>
+            <h1 className="mt-8 text-[28px] font-bold tracking-tight">{failed ? "Payment not completed" : "Check your phone"}</h1>
             <p className="mx-auto mt-2 max-w-md text-lg text-ink-2">
-              Enter your M-Pesa PIN to pay <b className="text-ink">{kes(p.amount)}</b> for {listing?.name}. Your booking confirms the moment it goes through.
+              {failed
+                ? <>Nothing was charged. Your dates for {listing?.name} are still held — try again below.</>
+                : <>Enter your M-Pesa PIN to pay <b className="text-ink">{kes(payAmount)}</b> for {listing?.name}. Your booking confirms the moment it goes through.</>}
             </p>
-            {p.error && <p className="mt-4 text-danger">{p.error}</p>}
+            {p.error && !failed && <p className="mt-4 text-danger">{p.error}</p>}
+            {failed && (
+              <div className="mx-auto mt-6 max-w-md">
+                <FailureNotice payment={failed} busy={busy} onRetry={() => retry("mpesa")} onCard={() => retry("card")}
+                  onDeposit={trip?.price.payment_plan === "full" ? () => retry("mpesa", "deposit") : undefined} />
+              </div>
+            )}
             <p className="mt-6 text-sm text-ink-2">Holding your dates for <b className="text-ink tabular-nums">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> · Ref {ref}</p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button variant="soft" onClick={() => retry("mpesa")} loading={busy}>Resend M-Pesa prompt</Button>
-              <Button variant="soft" onClick={() => retry("card")} disabled={busy}>Pay by card instead</Button>
-              {config?.demo && (
-                <Button variant="ocean" onClick={async () => { await post(`/api/demo/pay/${ref}`); }}>Simulate payment (demo)</Button>
-              )}
-            </div>
-            <p className="mt-10 text-xs text-ink-2">Paybill prompts come only from M-Pesa · {fmtTime(new Date(now).toISOString())}</p>
+            {!failed && (
+              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                <Button variant="soft" onClick={() => retry("mpesa")} loading={busy === "mpesa"} disabled={!!busy}>Resend M-Pesa prompt</Button>
+                <Button variant="soft" onClick={() => retry("card")} loading={busy === "card"} disabled={!!busy}>Pay by card instead</Button>
+              </div>
+            )}
+            {config?.demo && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button variant="ocean" size="sm" onClick={async () => { await post(`/api/demo/pay/${ref}`); }}>Simulate payment (demo)</Button>
+                <Button variant="ghost" size="sm" onClick={async () => { await post(`/api/demo/pay/${ref}`, { result: 1032 }); }}>Simulate “cancelled on phone”</Button>
+                <Button variant="ghost" size="sm" onClick={async () => { await post(`/api/demo/pay/${ref}`, { result: 1 }); }}>Simulate “insufficient funds”</Button>
+              </div>
+            )}
+            {(failed || now - waitingSince > 30_000) && (
+              <div className="mx-auto mt-8 max-w-md"><PaybillBox bookingRef={ref} amount={trip?.price.amount_due_now || p.amount || 0} defaultOpen={failed?.suggest === "paybill"} /></div>
+            )}
+            <p className="mt-10 text-xs text-ink-2">The real prompt comes from M-Pesa, and we never ask you to pay a personal number · {fmtTime(new Date(now).toISOString())}</p>
           </div>
         )}
       </main>

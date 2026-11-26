@@ -160,6 +160,7 @@ export interface TodayData {
 
 export interface PendingRequest {
   id: number;
+  kind?: "addon" | "change";
   addon: string;
   code: string;
   ref: string;
@@ -168,6 +169,12 @@ export interface PendingRequest {
   details: Record<string, string>;
   total: number;
   created_at: string;
+  change?: {
+    old: { check_in: string; check_out: string; adults: number; children: number };
+    new: { check_in: string; check_out: string; adults: number; children: number };
+    delta: number;
+    refund_amount: number;
+  };
 }
 
 export interface LockRow {

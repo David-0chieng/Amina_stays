@@ -16,7 +16,10 @@ import { fmtRange, kes } from "@/lib/format";
 type CardSession = {
   ref: string; unit: string; check_in: string; check_out: string; amount: number; currency: string; status: string;
   booking_status: string; expires_at: string | null; expired: boolean; simulated: boolean;
+  purpose?: string; change?: { check_in: string; check_out: string } | null;
 };
+
+const PURPOSE: Record<string, string> = { deposit: "Deposit", balance: "Balance", addon: "Extras", change: "Date change" };
 
 /** Stand-in for a hosted card checkout (Paystack in production) so the full flow works offline. */
 export function CardPayView({ token }: { token: string }) {
@@ -51,13 +54,15 @@ export function CardPayView({ token }: { token: string }) {
         ) : error || !s ? (
           <p className="rounded-2xl bg-white p-8 text-center">This payment link isn&apos;t valid. <Link className="underline" href="/trips">Go to your trips</Link></p>
         ) : s.status === "success" ? (
-          <Result ok title="Payment successful" text={`${kes(s.amount)} paid for ${s.unit}. Your confirmation is on its way by SMS.`} href={`/trips/${s.ref}`} />
+          <Result ok title="Payment successful" text={s.purpose === "change" ? `${kes(s.amount)} paid — your stay at ${s.unit} is now ${fmtRange(s.change?.check_in ?? s.check_in, s.change?.check_out ?? s.check_out)}. Details are on their way by SMS.` : `${kes(s.amount)} paid for ${s.unit}. Your confirmation is on its way by SMS.`} href={`/trips/${s.ref}`} />
         ) : s.expired ? (
           <Result title="This checkout has expired" text="The hold on these dates ran out before payment. The home may still be free — try booking again." href="/" cta="Back to Amina Stays" />
         ) : (
           <div className="overflow-hidden rounded-2xl bg-white shadow-soft">
             <div className="border-b border-line-soft p-6">
-              <p className="text-sm text-ink-2">{s.unit} · {fmtRange(s.check_in, s.check_out)} · Ref {s.ref}</p>
+              <p className="text-sm text-ink-2">
+                {s.purpose && PURPOSE[s.purpose] ? `${PURPOSE[s.purpose]} · ` : ""}{s.unit} · {fmtRange(s.change?.check_in ?? s.check_in, s.change?.check_out ?? s.check_out)} · Ref {s.ref}
+              </p>
               <p className="mt-1 text-[32px] font-bold tracking-tight">{kes(s.amount)}</p>
               {s.status === "failed" && <p className="mt-2 flex items-center gap-2 text-sm text-danger"><XCircle className="size-4" /> Your card was declined. Try again or use another card.</p>}
             </div>

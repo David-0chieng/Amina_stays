@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { SwitchRow } from "@/components/host/biz/ui";
+import { useConfig } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -15,7 +17,7 @@ import { fmtDate, kes, plural } from "@/lib/format";
 import type { PaymentResult, Quote, Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-import { Overline } from "./bits";
+import { Overline, Segmented } from "./bits";
 import { addDaysISO, daysBetween, kenyaDate, useHostAction, useListings, useNow } from "./lib";
 
 type PayMode = "mpesa" | "card" | "cash" | "none";
@@ -57,8 +59,13 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = React.useState("");
   const [adults, setAdults] = React.useState(1);
   const [children, setChildren] = React.useState(0);
+  const { data: config } = useConfig();
   const [mode, setMode] = React.useState<PayMode>("mpesa");
   const [amount, setAmount] = React.useState("");
+  const [plan, setPlan] = React.useState<"full" | "deposit">("full");
+  const [custom, setCustom] = React.useState(false);
+  const [override, setOverride] = React.useState("");
+  const [reason, setReason] = React.useState("");
   const [tried, setTried] = React.useState(false);
 
   const unit = homes.find((h) => String(h.id) === unitId) ?? homes[0];
@@ -79,8 +86,10 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
     dates: !ci || !co ? "Choose the dates." : nights <= 0 ? "Check-out must be after check-in." : "",
     phone: phone.replace(/\D/g, "").length < 9 ? "Enter the guest's phone number." : "",
     amount: mode === "cash" && amount !== "" && Number(amount) <= 0 ? "Enter the amount received." : "",
+    override: custom && !(Number(override) > 0) ? "Enter the price for the whole stay." : "",
+    reason: custom && !reason.trim() ? "Say why — it goes on the booking's timeline." : "",
   };
-  const valid = Boolean(unit) && !errors.dates && !errors.phone && !errors.amount;
+  const valid = Boolean(unit) && !errors.dates && !errors.phone && !errors.amount && !errors.override && !errors.reason;
 
   const create = useHostAction(
     () =>
@@ -94,13 +103,16 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
         children,
         payment: mode,
         amount: mode === "cash" ? Number(amount || quote.data?.total || 0) || undefined : undefined,
+        payment_plan: mode === "mpesa" || mode === "card" ? plan : "full",
+        price_override: custom ? Number(override) : null,
+        override_reason: custom ? reason.trim() : "",
       }),
     {
       onSuccess: ({ booking, payment }) => {
         const note =
           payment?.error ??
           (mode === "mpesa"
-            ? payment?.message || "M-Pesa prompt sent to the guest's phone."
+            ? `M-Pesa prompt for ${kes(payment?.amount ?? 0)} sent to the guest's phone.`
             : mode === "card"
               ? "Card payment link sent by SMS."
               : mode === "cash"
@@ -224,6 +236,31 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
               <Input type="number" inputMode="numeric" min={0} placeholder={total ? String(total) : "0"} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </Field>
           )}
+          {(mode === "mpesa" || mode === "card") && (
+            <Segmented
+              label="Charge now"
+              size="sm"
+              value={plan}
+              onChange={setPlan}
+              options={[
+                { value: "full", label: "Full stay" },
+                { value: "deposit", label: `${config?.deposit_percent ?? 30}% deposit` },
+              ]}
+            />
+          )}
+          <div className="rounded-xl border border-line-soft p-4">
+            <SwitchRow label="Custom price" description="Repeat guest, long stay or a deal agreed on the phone." checked={custom} onCheckedChange={setCustom} />
+            {custom && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field label="Price for the stay (KES)" error={tried ? errors.override : undefined} hint="Cleaning and levy are added on top.">
+                  <Input type="number" inputMode="numeric" min={0} value={override} onChange={(e) => setOverride(e.target.value)} placeholder={quote.data ? String(quote.data.accommodation) : ""} />
+                </Field>
+                <Field label="Reason" error={tried ? errors.reason : undefined}>
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Returning guest" />
+                </Field>
+              </div>
+            )}
+          </div>
         </div>
       </form>
     </DialogContent>

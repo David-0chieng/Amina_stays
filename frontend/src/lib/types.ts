@@ -6,6 +6,7 @@ export interface Config {
   business: { name: string; host_name: string; tagline: string; email: string; tra_licence: string; checkin_time: string; checkout_time: string };
   channels: { ussd_code: string; sms_number: string; voice_number: string; whatsapp: string };
   payments: { mpesa: string; card: string; simulated: boolean };
+  paybill?: { number: string; account_hint: string } | null;
   currencies: Record<string, number>;
   deposit_percent: number;
   hold_minutes: number;
@@ -157,6 +158,8 @@ export interface Quote {
   deposit_available: boolean;
   balance_due_date: string;
   lines: QuoteLine[];
+  /** On-request extras: shown, but only charged once Amina confirms (not in total / due_now). */
+  pending?: QuoteLine[];
   approx: Record<string, number>;
   available?: boolean;
   problems?: string[];
@@ -192,6 +195,8 @@ export interface PaymentResult {
   message?: string;
   simulated?: boolean;
   error?: string;
+  failure_code?: string | null;
+  suggest?: PaymentSuggest | null;
 }
 
 export interface TripAddon {
@@ -227,16 +232,21 @@ export interface Trip {
     total: number;
     amount_paid: number;
     amount_refunded: number;
+    refund_pending?: number;
     balance_due: number;
     amount_due_now: number;
     payment_status: string;
     payment_status_label: string;
     payment_plan: string;
     balance_due_date: string;
+    balance_overdue?: boolean;
+    pending?: QuoteLine[];
   };
   addons: TripAddon[];
   breakfast: (Record<string, string> & { people: number; summary: string }) | null;
-  payments: { id: number; method: string; method_label: string; amount: number; status: string; purpose: string; created_at: string; reference: string }[];
+  payments: TripPayment[];
+  can_change?: boolean;
+  changes?: ChangeRequest[];
   arrival: { eta: string; mode: string; vehicle_plate: string; special_requests: string };
   checkin: {
     time: string;
@@ -283,6 +293,89 @@ export interface Trip {
   codes?: { code: string; provider: string; valid_from: string; valid_until: string; sent_at: string | null; revoked_at: string | null; revoke_reason: string }[];
   refunds?: { id: number; amount: number; method: string; status: string; created_at: string; reference: string }[];
   cancel_info?: { cancelled_at: string | null; by: string; reason: string };
+}
+
+export type PaymentSuggest = "retry" | "card" | "deposit" | "wait" | "paybill";
+
+export interface TripPayment {
+  id: number;
+  method: string;
+  method_label: string;
+  amount: number;
+  status: string;
+  purpose: string;
+  created_at: string;
+  reference: string;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  retryable?: boolean;
+  suggest?: PaymentSuggest | null;
+}
+
+export interface StayShape {
+  check_in: string;
+  check_out: string;
+  adults: number;
+  children: number;
+}
+
+export interface ChangeRequest {
+  id: number;
+  status: "pending_host" | "pending_payment" | "applied" | "declined" | "expired" | "cancelled";
+  status_label: string;
+  old: StayShape;
+  new: StayShape;
+  delta: number;
+  refund_amount: number;
+  pay_now: number;
+  requested_by: "guest" | "host";
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface ChangeQuote {
+  available: boolean;
+  reason: string | null;
+  nights: number;
+  old_total: number;
+  new_total: number;
+  delta: number;
+  pay_now: number;
+  refund: number;
+  policy_text: string;
+  instant: boolean;
+  lines: QuoteLine[];
+}
+
+export interface WaitlistEntry {
+  id: number;
+  status: "waiting" | "offered" | "booked" | "expired";
+  unit: { slug: string; name: string; area: string; photo: string } | null;
+  area: { slug: string; name: string } | null;
+  check_in: string;
+  check_out: string;
+  nights: number;
+  guests: number;
+  created_at: string;
+  offered_at: string | null;
+  book_url: string | null;
+}
+
+export interface Invoice {
+  number: string;
+  issued_at: string;
+  seller: { name: string; kra_pin: string; address: string; tra_licence: string; vat_registered: boolean };
+  buyer: { name: string; phone: string; kra_pin: string };
+  lines: { label: string; qty: number; unit_price: number; amount: number }[];
+  subtotal: number;
+  vat: number;
+  levy: number;
+  total: number;
+  paid: number;
+  balance: number;
+  payments: { date: string; method: string; reference: string; amount: number }[];
+  credit_notes: { number: string; date: string; amount: number; reason: string }[];
+  etims: { status: string; invoice_no: string | null };
 }
 
 export interface TripCard {

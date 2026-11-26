@@ -66,6 +66,7 @@ const SECTIONS: { id: string; title: string; description: string; icon: React.Co
       { key: "hold_minutes", label: "Hold dates while paying", kind: "int", after: "minutes", help: "Long enough to finish the M-Pesa PIN prompt." },
       { key: "deposit_percent", label: "Deposit", kind: "int", after: "%", help: "For “pay part now” bookings." },
       { key: "balance_due_days", label: "Balance due", kind: "int", after: "days before", help: "An M-Pesa prompt for the balance goes out then." },
+      { key: "instant_changes", label: "Instant date changes", kind: "switch", help: "Guests can move or extend into free nights and pay the difference straight away. Off: you approve every change." },
       { key: "usd_rate", label: "US dollar", kind: "decimal", before: "KES", after: "per $", help: "Display only — guests always pay in KES." },
       { key: "eur_rate", label: "Euro", kind: "decimal", before: "KES", after: "per €" },
       { key: "gbp_rate", label: "Pound", kind: "decimal", before: "KES", after: "per £" },

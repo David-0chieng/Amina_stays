@@ -37,7 +37,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={getQueryClient()}>
       <AuthCtx.Provider value={value}>
         {children}
-        <Toaster position="top-center" toastOptions={{ className: "!rounded-xl !text-[14px] !font-medium" }} />
+        <Toaster position="top-center" className="print:hidden" toastOptions={{ className: "!rounded-xl !text-[14px] !font-medium" }} />
       </AuthCtx.Provider>
     </QueryClientProvider>
   );

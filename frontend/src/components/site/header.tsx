@@ -325,7 +325,7 @@ export function MobileTabBar() {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] transition-transform duration-300 md:hidden",
+        "fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] transition-transform duration-300 md:hidden print:hidden",
         hidden && "translate-y-full",
       )}
     >

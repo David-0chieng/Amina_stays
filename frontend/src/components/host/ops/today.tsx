@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight, ArrowUpRight, BedDouble, Bot, CalendarDays, CalendarRange, ChefHat, CircleCheck, ClipboardCheck, Globe, Hourglass, KeyRound,
+  ArrowRight, ArrowUpRight, BedDouble, Bot, CalendarClock, CalendarDays, CalendarRange, ChefHat, CircleCheck, ClipboardCheck, Globe, Hourglass, KeyRound,
   LogIn, LogOut, MessageSquare, Siren, Sparkles, Star, Timer, TrendingUp, Wallet,
 } from "lucide-react";
 import Link from "next/link";
@@ -275,7 +275,7 @@ function AttentionCard({ data, requests }: { data: TodayData; requests: PendingR
             <AlertRow key={`a${a.id}`} alert={a} />
           ))}
           {requests.map((r) => (
-            <RequestRow key={`r${r.id}`} req={r} />
+            <RequestRow key={`${r.kind ?? "addon"}-${r.id}`} req={r} />
           ))}
           {threads.map((t) => (
             <ThreadRowItem key={`t${t.id}`} thread={t} />
@@ -357,26 +357,36 @@ function AlertRow({ alert: a }: { alert: AlertItem }) {
 }
 
 function RequestRow({ req: r }: { req: PendingRequest }) {
-  const decide = useHostAction((approve: boolean) => post(`/api/host/requests/${r.id}/decide`, { approve }), {
-    success: (_, approve) => `${r.addon} ${approve ? "approved" : "declined"} — ${r.guest} has been told by SMS`,
+  const isChange = r.kind === "change" && !!r.change;
+  const decide = useHostAction((approve: boolean) => post(isChange ? `/api/host/changes/${r.id}/decide` : `/api/host/requests/${r.id}/decide`, { approve }), {
+    success: (_, approve) => `${isChange ? "Date change" : r.addon} ${approve ? "approved" : "declined"} — ${r.guest} has been told by SMS`,
   });
   const details = Object.entries(r.details ?? {})
     .filter(([, v]) => v)
     .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
     .join(" · ");
+  const c = r.change;
   return (
     <AttentionRow
-      icon={<Sparkles />}
+      icon={isChange ? <CalendarClock /> : <Sparkles />}
       tone="warning"
       title={
-        <>
-          {r.addon} requested
-          {r.total > 0 && <span className="font-medium text-ink-2 tabular-nums">+{kes(r.total)}</span>}
-        </>
+        isChange && c ? (
+          <>
+            Change: {fmtRange(c.old.check_in, c.old.check_out)} → {fmtRange(c.new.check_in, c.new.check_out)}
+            {c.delta !== 0 && <span className="font-medium text-ink-2 tabular-nums">{c.delta > 0 ? `+${kes(c.delta)}` : `−${kes(-c.delta)}`}</span>}
+          </>
+        ) : (
+          <>
+            {r.addon} requested
+            {r.total > 0 && <span className="font-medium text-ink-2 tabular-nums">+{kes(r.total)}</span>}
+          </>
+        )
       }
       body={
         <>
           {r.guest} · {r.unit}
+          {isChange && c && (c.new.adults + c.new.children !== c.old.adults + c.old.children) && <> · {c.old.adults + c.old.children} → {c.new.adults + c.new.children} guests</>}
           {details && <> · {details}</>}
         </>
       }

@@ -15,6 +15,8 @@ import { useConfig, useMe } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
+import { FailureNotice, lastFailure, PaybillBox } from "@/components/site/payment-help";
+import { ChangeTrip, PendingChange } from "@/components/site/trip-change";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
@@ -33,6 +35,17 @@ const STYLES: Record<string, string> = { swahili: "Swahili — mahamri, chai, mb
 const ISSUES = [["water", "Water"], ["power", "Power / electricity"], ["wifi", "Wi-Fi"], ["ac", "Air conditioning / fan"], ["appliance", "Appliance"], ["plumbing", "Plumbing"], ["cleanliness", "Cleanliness"], ["noise", "Noise"], ["lock", "Door / lock"], ["pests", "Insects / pests"], ["other", "Something else"]];
 const ADDON_STATUS: Record<string, string> = { requested: "Awaiting Amina", confirmed: "Confirmed", fulfilled: "Done", declined: "Declined", cancelled: "Cancelled" };
 const ID_TYPES = [["passport", "Passport"], ["national_id", "Kenyan National ID"], ["alien_id", "Alien / Foreigner ID"], ["driving_licence", "Driving licence"]];
+
+/** What happened to the guest's money on a cancelled or expired stay. */
+function cancelledMoney(t: Trip) {
+  const { amount_paid: paid, amount_refunded: sent, refund_pending: queued = 0 } = t.price;
+  if (t.status === "refund_due") return "Your payment arrived after the hold expired — Amina is refunding you in full.";
+  if (sent > 0 && queued > 0) return `${kes(sent)} has been refunded and another ${kes(queued)} is on its way to your original payment method.`;
+  if (sent > 0) return `${kes(sent)} has been refunded to your original payment method.`;
+  if (queued > 0) return `Your refund of ${kes(queued)} is being sent to your original payment method.`;
+  if (paid > 0) return `The ${kes(paid)} you paid isn't refundable under the ${t.cancellation.policy} cancellation policy.`;
+  return "No payment was taken.";
+}
 
 function due(d?: string | null) {
   const r = relDay(d);
@@ -111,6 +124,7 @@ function TripHub({ tripRef: ref }: { tripRef: string }) {
         <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-16">
           <div className="min-w-0">
             <StatusPanel trip={t} />
+            <PendingChange trip={t} />
             {t.status === "checked_in" && <DoorCode trip={t} />}
             {(t.status === "confirmed" || t.status === "held") && <Checklist trip={t} listing={listing} />}
             {active && <CheckinDetails trip={t} />}
@@ -160,12 +174,13 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
   const { data: config } = useConfig();
   const now = useNow();
   const { busy, run } = useTripAction(t.ref);
-  const pay = (method?: "mpesa" | "card") =>
-    run("pay", async () => {
-      const r = await post<PaymentResult>(`/api/bookings/${t.ref}/pay`, { method });
+  const pay = (method?: "mpesa" | "card", plan?: "deposit") =>
+    run(plan ? "deposit" : method === "card" ? "card" : "pay", async () => {
+      const r = await post<PaymentResult>(`/api/bookings/${t.ref}/pay`, { method, plan });
       if (r.method === "card" && r.checkout_url) window.location.href = r.checkout_url;
       return r;
     }, method === "card" ? undefined : "M-Pesa prompt sent — check your phone.");
+  const failed = lastFailure(t.payments);
 
   if (t.status === "held") {
     const left = t.hold_expires_at ? Math.max(0, Math.floor((new Date(t.hold_expires_at).getTime() - now) / 1000)) : 0;
@@ -173,11 +188,17 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
     return (
       <Panel tone="warning" icon={<Clock className="size-6" />} title={left ? `We're holding these dates for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Your hold has run out"}>
         <p>{pending ? `Waiting for your ${pending.method_label} payment of ${kes(pending.amount)}. Enter your PIN on your phone — this page updates by itself.` : `Pay ${kes(t.price.amount_due_now)} to confirm.`}</p>
+        {failed && !pending && (
+          <div className="mt-4">
+            <FailureNotice payment={failed} busy={busy} onRetry={() => pay("mpesa")} onCard={() => pay("card")} onDeposit={t.price.payment_plan === "full" ? () => pay("mpesa", "deposit") : undefined} />
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="brand" onClick={() => pay("mpesa")} loading={busy === "pay"}>{pending ? "Resend M-Pesa prompt" : `Pay ${kes(t.price.amount_due_now)} with M-Pesa`}</Button>
           <Button variant="soft" onClick={() => pay("card")} disabled={!!busy}>Pay by card</Button>
           {config?.demo && <Button variant="ocean" onClick={() => run("sim", () => post(`/api/demo/pay/${t.ref}`), "Payment simulated")} loading={busy === "sim"}>Simulate payment (demo)</Button>}
         </div>
+        <div className="mt-4"><PaybillBox bookingRef={t.ref} amount={t.price.amount_due_now} defaultOpen={failed?.suggest === "paybill"} /></div>
       </Panel>
     );
   }
@@ -187,11 +208,19 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
       <Panel tone="ocean" icon={<CalendarDays className="size-6" />} title={days > 1 ? `${days} days to go` : days === 1 ? "See you tomorrow!" : "Arrival day — karibu!"}>
         <p>Check-in from <b>{hhmm(t.checkin.time)}</b> on {fmtLong(t.check_in)} · checkout by <b>{hhmm(t.checkin.checkout_time)}</b>. {t.checkin.method}.</p>
         {t.price.balance_due > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <p className="text-sm">Balance <b>{kes(t.price.balance_due)}</b> due {due(t.price.balance_due_date)}.</p>
-            <Button size="sm" variant="dark" onClick={() => pay("mpesa")} loading={busy === "pay"}>Pay balance with M-Pesa</Button>
-            <Button size="sm" variant="soft" onClick={() => pay("card")} disabled={!!busy}>Card</Button>
-            {config?.demo && <Button size="sm" variant="ocean" onClick={() => run("sim", () => post(`/api/demo/pay/${t.ref}`), "Payment simulated")}>Simulate (demo)</Button>}
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className={cn("text-sm", t.price.balance_overdue && "font-semibold text-danger")}>
+                {t.price.balance_overdue
+                  ? <>Balance <b>{kes(t.price.balance_due)}</b> is overdue — your door code is sent once it&apos;s paid.</>
+                  : <>Balance <b>{kes(t.price.balance_due)}</b> due {due(t.price.balance_due_date)}.</>}
+              </p>
+              <Button size="sm" variant="dark" onClick={() => pay("mpesa")} loading={busy === "pay"}>Pay balance with M-Pesa</Button>
+              <Button size="sm" variant="soft" onClick={() => pay("card")} disabled={!!busy}>Card</Button>
+              {config?.demo && <Button size="sm" variant="ocean" onClick={() => run("sim", () => post(`/api/demo/pay/${t.ref}`), "Payment simulated")}>Simulate (demo)</Button>}
+            </div>
+            {failed && failed.purpose !== "change" && <FailureNotice payment={failed} busy={busy} onRetry={() => pay("mpesa")} onCard={() => pay("card")} />}
+            <PaybillBox bookingRef={t.ref} amount={t.price.balance_due} defaultOpen={failed?.suggest === "paybill"} />
           </div>
         )}
       </Panel>
@@ -216,7 +245,7 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
   return (
     <Panel tone="danger" icon={<ShieldAlert className="size-6" />} title={t.status === "expired" ? "This hold expired" : t.status_label}>
       <p>
-        {t.price.amount_refunded > 0 ? `${kes(t.price.amount_refunded)} has been refunded to your original payment method.` : t.status === "refund_due" ? "Your payment arrived after the hold expired — Amina is refunding you in full." : "No payment was taken."}
+        {cancelledMoney(t)}
       </p>
       <Button asChild size="sm" variant="dark" className="mt-4"><Link href={`/stays/${t.unit.slug}`}>Check other dates</Link></Button>
     </Panel>
@@ -738,20 +767,30 @@ function ReceiptCard({ trip: t }: { trip: Trip }) {
         <div className="flex justify-between font-bold"><span>Total</span><span>{kes(p.total)}</span></div>
         <div className="flex justify-between"><span className="text-ink-2">Paid</span><span>{kes(p.amount_paid)}</span></div>
         {p.amount_refunded > 0 && <div className="flex justify-between text-success"><span>Refunded</span><span>{kes(p.amount_refunded)}</span></div>}
-        {p.balance_due > 0 && <div className="flex justify-between font-semibold text-warning"><span>Balance due {due(p.balance_due_date)}</span><span>{kes(p.balance_due)}</span></div>}
+        {p.balance_due > 0 && <div className={cn("flex justify-between font-semibold", p.balance_overdue ? "text-danger" : "text-warning")}><span>{p.balance_overdue ? "Overdue since" : "Balance due"} {due(p.balance_due_date)}</span><span>{kes(p.balance_due)}</span></div>}
+        {!!p.pending?.length && (
+          <div className="mt-3 rounded-xl bg-surface p-3 text-sm">
+            <p className="font-semibold">Awaiting Amina&apos;s OK — not charged yet</p>
+            {p.pending.map((l) => (
+              <div key={l.label} className="mt-1 flex justify-between gap-3 text-ink-2"><span>{l.label}</span><span>{kes(l.amount)}</span></div>
+            ))}
+          </div>
+        )}
       </div>
       {t.payments.length > 0 && (
         <ul className="mt-5 space-y-2 border-t border-line-soft pt-4 text-sm">
           {t.payments.map((x) => (
             <li key={x.id} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2">{x.method === "card" ? <CreditCard className="size-3.5 text-ink-2" /> : <Smartphone className="size-3.5 text-ink-2" />} {x.method_label}{x.reference ? <span className="font-mono text-xs text-ink-2">{x.reference}</span> : null}</span>
-              <span className={cn(x.status === "success" ? "" : x.status === "failed" ? "text-danger line-through" : "text-warning")}>{kes(x.amount)}</span>
+              <span className="flex min-w-0 items-center gap-2">{x.method === "card" ? <CreditCard className="size-3.5 shrink-0 text-ink-2" /> : <Smartphone className="size-3.5 shrink-0 text-ink-2" />} {x.method_label}{x.reference ? <span className="truncate font-mono text-xs text-ink-2">{x.reference}</span> : x.status === "failed" ? <span className="truncate text-xs text-danger">{x.failure_message ? "failed" : "not completed"}</span> : null}</span>
+              <span className={cn("shrink-0", x.status === "success" ? "" : x.status === "failed" ? "text-danger line-through" : "text-warning")}>{kes(x.amount)}</span>
             </li>
           ))}
         </ul>
       )}
       <div className="mt-5 flex flex-wrap gap-2 print:hidden">
         <Button variant="soft" size="sm" onClick={() => window.print()}><Printer className="size-4" /> Print receipt</Button>
+        {["confirmed", "checked_in", "completed"].includes(t.status) && <Button asChild variant="soft" size="sm"><Link href={`/trips/${t.ref}/invoice`}><Receipt className="size-4" /> Tax invoice</Link></Button>}
+        {t.can_change && <ChangeTrip trip={t} />}
         {t.can_cancel && <CancelButton trip={t} />}
       </div>
       <p className="mt-4 text-xs text-ink-2">{t.cancellation.policy_text || t.cancellation.text}{t.tra_licence ? ` · TRA licence ${t.tra_licence}` : ""}</p>

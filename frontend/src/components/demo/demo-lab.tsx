@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUp, CalendarClock, CheckCheck, Delete, FlaskConical, Mic, Phone, PhoneIncoming, PhoneOff, RotateCcw, Signal, Smartphone, Sparkles, UserRound,
+  ArrowUp, CalendarClock, CheckCheck, Delete, FlaskConical, Landmark, Mic, Phone, PhoneIncoming, PhoneOff, RotateCcw, Signal, Smartphone, Sparkles, UserRound,
   Volume2, VolumeX, Wifi, Zap,
 } from "lucide-react";
 import Link from "next/link";
@@ -570,6 +570,7 @@ const CODE_RESULT: Record<string, string> = {
   waiting_id: "code held: the guest register (ID) is missing",
   checking_sim: "code held: SIM-swap check in progress",
   security_hold: "code held: recent SIM swap detected, Amina must verify",
+  too_early: "code not released: it's not check-in day yet",
 };
 
 function TimeMachine({ guests }: { guests: DemoPersona[] }) {
@@ -629,6 +630,14 @@ function TimeMachine({ guests }: { guests: DemoPersona[] }) {
         </ol>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="soft" size="sm" onClick={() => advance("code", true)} disabled={!!busy || !ref}>Force-release code (host override)</Button>
+          <Button variant="soft" size="sm" loading={busy === "c2b"} disabled={!!busy || !ref} onClick={() => act("c2b", async () => {
+            const r = await post<{ trans_id: string; matched: boolean }>("/api/demo/c2b", { ref });
+            return `${ref}: Paybill payment ${r.trans_id} ${r.matched ? "received and matched to the booking" : "received — unmatched, see Host › Payments"}`;
+          })}><Landmark className="size-4" /> Simulate Paybill payment</Button>
+          <Button variant="soft" size="sm" loading={busy === "fail"} disabled={!!busy || !ref} onClick={() => act("fail", async () => {
+            const r = await post<{ ok: boolean; status: string; failure_code?: string }>(`/api/demo/pay/${ref}`, { result: 1032 });
+            return `${ref}: M-Pesa prompt cancelled on the phone (code ${r.failure_code ?? 1032}) · ${r.status.replace("_", " ")}`;
+          })}>Simulate “cancelled on phone”</Button>
           <Button variant="soft" size="sm" loading={busy === "tick"} onClick={() => act("tick", async () => {
             const r = await post<Record<string, unknown>>("/api/demo/tick", {});
             const keys = Object.keys(r);

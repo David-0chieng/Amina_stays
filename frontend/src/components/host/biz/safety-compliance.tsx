@@ -216,11 +216,18 @@ export function TraReturnTab() {
             </span>
           </div>
         </div>
-        <Button asChild variant="dark">
-          <a href={csv} download onClick={download} aria-disabled={!data}>
-            <FileSpreadsheet className="size-4" /> Download CSV
-          </a>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="soft">
+            <a href={`/api/host/invoices${qs({ month, export: "csv" })}`} download title="Every invoice and credit note issued this month — for KRA / eTIMS reconciliation">
+              <FileSpreadsheet className="size-4" /> Sales register
+            </a>
+          </Button>
+          <Button asChild variant="dark">
+            <a href={csv} download onClick={download} aria-disabled={!data}>
+              <FileSpreadsheet className="size-4" /> Download CSV
+            </a>
+          </Button>
+        </div>
       </div>
 
       {error ? (

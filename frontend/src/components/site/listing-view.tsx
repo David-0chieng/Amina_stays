@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronLeft, CircleCheck, Flag, Grid2x2, KeyRound, Map as MapIcon, MessageSquare, Share, SprayCan, Tag, type LucideIcon,
+  BellRing, ChevronDown, ChevronLeft, CircleCheck, Flag, Grid2x2, KeyRound, Map as MapIcon, MessageSquare, Share, SprayCan, Tag, type LucideIcon,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -11,7 +11,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Icon } from "@/components/icon";
-import { useConfig } from "@/components/providers";
+import { useAuthDialog, useConfig, useMe } from "@/components/providers";
 import { GuestPicker, guestsLabel, type Guests } from "@/components/site/guest-picker";
 import { SiteHeader } from "@/components/site/header";
 import { Photo, PhotoCarousel, StarIcon, WishlistHeart, typeLabel } from "@/components/site/listing-card";
@@ -21,9 +21,9 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Avatar, Skeleton } from "@/components/ui/misc";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlays";
-import { get, post } from "@/lib/api";
+import { ApiError, get, post } from "@/lib/api";
 import { approx, fmtDate, fmtRange, fmtShort, freeCancelUntil, hhmm, kes, nightsBetween } from "@/lib/format";
-import type { CalendarData, ListingDetail, Quote, Review } from "@/lib/types";
+import type { CalendarData, ListingDetail, Quote, Review, WaitlistEntry } from "@/lib/types";
 import { cn, flag } from "@/lib/utils";
 
 const LocationMap = dynamic(() => import("@/components/site/maps").then((m) => m.LocationMap), {
@@ -574,6 +574,41 @@ function ReserveButton(props: CardProps & { className?: string; onNeedDates?: ()
   );
 }
 
+/** Dates taken: join the waitlist; we text the guest (with a booking link) the moment the dates free up. */
+function NotifyMe({ listing: l, range, guests }: Pick<CardProps, "listing" | "range" | "guests">) {
+  const { data: me } = useMe();
+  const { requireLogin } = useAuthDialog();
+  const [joined, setJoined] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const key = `${range.from}|${range.to}`;
+  const join = async () => {
+    setBusy(true);
+    try {
+      await post<WaitlistEntry>("/api/waitlist", { slug: l.slug, check_in: range.from, check_out: range.to, adults: guests.adults, children: guests.children });
+      setJoined(key);
+      toast.success("You're on the waitlist — we'll text you the moment these dates open up.");
+    } catch (e) {
+      const err = e as ApiError;
+      if ((err.data as { code?: string } | undefined)?.code === "available") toast.success(err.message);
+      else toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (joined === key) {
+    return (
+      <p className="mt-3 flex items-center justify-center gap-2 text-sm">
+        <CircleCheck className="size-4 text-success" /> You&apos;re on the waitlist — we&apos;ll text you
+      </p>
+    );
+  }
+  return (
+    <Button variant="soft" size="lg" className="mt-3 h-12 w-full" loading={busy} onClick={() => (me?.authenticated ? join() : requireLogin("Log in to join the waitlist", join))}>
+      <BellRing className="size-4" /> Notify me if these dates open up
+    </Button>
+  );
+}
+
 /** The tip card above the booking card: "Rare find!" when the next months are mostly booked, else the all-in price promise. */
 function TipCard({ cal }: { cal?: CalendarData }) {
   const booked = cal ? cal.unavailable.filter((d) => d < (cal.end ?? "9999")).length : 0;
@@ -680,6 +715,7 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
         </p>
       )}
       <ReserveButton {...props} className="mt-4 h-12 w-full text-base" onNeedDates={() => setDatesOpen(true)} />
+      {ready && q?.available === false && <NotifyMe listing={l} range={range} guests={guests} />}
       {q?.problems?.length ? (
         <p className="mt-3 text-center text-sm text-danger">{q.problems[0]}</p>
       ) : (
