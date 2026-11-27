@@ -15,6 +15,7 @@ from apps.accounts.services import set_identity
 from apps.bookings import services as bookings
 from apps.bookings.models import AccessCode, Booking, BookingGuest, Waitlist
 from apps.core import scheduler
+from apps.core.management.commands.seed_demo import Command as SeedDemo
 from apps.core.management.commands.seed_demo import sample_ics
 from apps.core.models import JobRun, OnceMarker, SiteSettings
 from apps.messaging import services as messaging
@@ -532,6 +533,22 @@ def test_an_unreachable_calendar_is_recorded_not_raised(homes):
         assert run("ical_sync") == {"ical_sync": 1}
     feed.refresh_from_db()
     assert feed.last_ok is False and "no route to host" in feed.last_error
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("demo", [True, False])
+def test_the_seeded_airbnb_calendar_auto_syncs_only_in_demo_mode(homes, settings, demo):
+    """Its stand-in feed (/api/demo/ical/…) 404s without DEMO, so a non-demo seed imports it once and leaves it."""
+    settings.DEMO = demo
+    seed = SeedDemo()
+    seed.units = homes
+    seed.extras()
+    feed = ICalFeed.objects.get(unit=homes["Mtwapa Creek Cottage"])
+    assert feed.active is demo and feed.last_ok and CalendarBlock.objects.filter(feed=feed).count() == 2
+    FakeCalendar.calls = []
+    with mock.patch("httpx.Client", FakeCalendar):
+        run("ical_sync")
+    assert FakeCalendar.calls == ([feed.url] if demo else [])
 
 
 # ---------- the daily jobs ----------

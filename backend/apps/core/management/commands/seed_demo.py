@@ -828,7 +828,11 @@ class Command(BaseCommand):
 
     def extras(self):
         unit = self.units["Mtwapa Creek Cottage"]
+        # Its stand-in Airbnb calendar is only served in DEMO mode, so otherwise import it once and leave it paused.
         feed = ICalFeed.objects.create(
-            unit=unit, name="Airbnb", url=f"{settings.BACKEND_URL}/api/demo/ical/{unit.slug}.ics"
+            unit=unit,
+            name="Airbnb",
+            url=f"{settings.BACKEND_URL}/api/demo/ical/{unit.slug}.ics",
+            active=settings.DEMO,
         )
         sync_feed(feed, text=sample_ics(unit.slug))
