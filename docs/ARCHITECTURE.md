@@ -21,7 +21,7 @@ flowchart LR
   D <--> P[(PostgreSQL 18)]
   S[Scheduler<br/>run_scheduler] <--> P
   D & S -->|REST| ATS & ATV & ATX
-  D & S -->|STK push / checkout| M[M-Pesa: Daraja or AT<br/>Cards: Paystack]
+  D & S -->|checkout / STK push| M[Cards: Stripe Checkout<br/>M-Pesa: Daraja or AT, when on]
   M -->|callbacks| N
   D & S -->|codes| L[Smart locks<br/>igloohome]
 ```
@@ -38,7 +38,7 @@ In production, Django runs under gunicorn with several workers (`--keep-alive 0`
 | `accounts` | Phone-number identity (`User` with roles: guest, owner, manager, cleaner, cook, caretaker, security, driver), OTP login, encrypted ID, preferences, data export/erasure, retention purge |
 | `properties` | Areas, units (homes), photos, amenities, price rules and overrides, calendar blocks, iCal feeds (import/export), wishlists; availability and the all-in quote engine |
 | `bookings` | Booking lifecycle (hold → confirmed → checked in → completed), date changes and extensions (`ChangeRequest`), add-ons and approvals, breakfast, occupants (guest register), access codes, waitlist, risk screening, refunds quote |
-| `payments` | Payments and refunds; providers: simulated M-Pesa, Safaricom Daraja, AT mobile checkout, simulated card, Paystack; idempotent settlement; reconciliation; M-Pesa result-code guidance; Paybill (C2B) matching; invoices, credit notes and the ledger CSV |
+| `payments` | Payments and refunds; providers: Stripe Checkout, simulated card, Paystack, and M-Pesa (off by default: simulated, Safaricom Daraja, AT mobile checkout); idempotent settlement; reconciliation; M-Pesa result-code guidance; Paybill (C2B) matching; invoices, credit notes and the ledger CSV |
 | `messaging` | Threads, messages (outbox), multilingual templates, automations (message timeline), FAQ knowledge base, broadcasts, GSM-7 encoding, promo-hours guard |
 | `comms` | Africa's Talking REST client; the SMS bot ("Ask Amina") and host SMS commands; USSD state machine; voice IVR; M-Pesa prompts deferred until after a USSD/voice reply; SIM-swap checks; webhooks and Demo Lab endpoints |
 | `operations` | Tasks/work orders (turnover, maintenance, guest requests), staff, kitchen sheet, gate list, morning digest, guest CRM |
@@ -108,16 +108,17 @@ stateDiagram-v2
 
 ### Payments
 
-- **Pluggable providers.** `MPESA_PROVIDER=simulate|daraja|africastalking`, `CARD_PROVIDER=simulate|paystack`.
+- **Pluggable providers.** `CARD_PROVIDER=stripe|simulate|paystack` (Stripe as soon as `STRIPE_SECRET_KEY` is set) and `MPESA_PROVIDER=off|simulate|daraja|africastalking`. M-Pesa is off until Safaricom's Go-Live: every payment is then a card payment, and `payments.services.can_prompt(phone)` is the one place that decides whether a guest gets an M-Pesa prompt (M-Pesa on, a Kenyan number) or a card link by SMS.
 - **Callbacks** live under secret paths. Settlement (`payments.services.on_success`) locks the payment row and is safe to call any number of times. It checks the amount and handles late payments: re-hold if the unit is free, otherwise `refund_due` plus an alert to Amina.
-- **Reconciliation.** A scheduler job queries pending STK pushes every 2 minutes.
+- **Reconciliation.** A scheduler job queries pending STK pushes every 2 minutes, and pending Stripe sessions every run for their first quarter hour, then every 15 minutes until they expire (a session lasts 24 hours at most).
 - **Deposits.** 30% now and the balance one day before arrival. The door code waits for the balance, and Kenyan guests get an automatic M-Pesa prompt for it. A daily balance ladder adds a heads-up a week ahead and an overdue SMS with the Paybill details; Amina sees every outstanding balance on the Payments page.
 - **Failed prompts.** `payments/results.py` maps each Daraja result code (1 low balance, 1001 another prompt open, 1019 expired, 1025 unreachable, 1032 cancelled, 1037 timeout, 2001 wrong PIN) to the reason Amina sees, the guest's message and the next step: resend, wait, pay the 30% deposit, card or Paybill.
 - **Paybill (C2B).** Daraja calls `/api/payments/daraja/c2b/validation|confirmation/<secret>`. A payment whose account number is a booking reference settles that booking (an overpayment is queued as a refund); anything else waits in an Unmatched queue on the Payments page. `manage.py register_c2b` registers the URLs.
 - **One payment, two reports.** A prompt's money can also arrive as a Paybill confirmation. With the same M-Pesa code it is counted once. When STK Query settles a prompt, the answer carries no M-Pesa code, so a prompt and a Paybill payment for the same booking and amount within 30 minutes are counted once, in either order. Amina gets an alert to check her statement, saying whether to record or refund a second payment if there was one; the guest is promised nothing until she does.
 - **Changes.** A `ChangeRequest` re-prices the stay at current rates and re-checks availability inside one transaction. A higher price is applied when its payment settles (48 h at most, then it lapses); a lower one applies at once and refunds by the cancellation policy. `SiteSettings.instant_changes` off means Amina approves first.
 - **Invoices.** Numbered invoices (`AMS-INV-YYYY-NNNNN`, one per booking) and credit notes (`AMS-CN-…`) from a per-year counter, a printable page at `/trips/[ref]/invoice`, and sales-register and ledger CSVs. eTIMS transmission is not built.
-- **Cards.** Paystack webhooks are HMAC-checked and then confirmed with Verify Transaction (KES, full amount); pending card payments are reconciled like STK pushes.
+- **Cards (Stripe).** A payment opens a Stripe Checkout Session in KES (amounts in cents; 31 minutes for a hold, 23 hours for a balance or a change) with our own `checkout_token` as `client_reference_id`. Stripe sends the guest back to `/pay/card/<token>`, which asks Stripe about the session (throttled to once every 3 s) and settles it; the signed webhook (`checkout.session.*`, HMAC-SHA256 over the raw body, 5-minute tolerance) and the scheduler settle it too. Only a complete, paid session for this payment, in KES and for the full amount counts. The same `/pay/card/<token>` page is the short link texted to USSD, SMS and voice guests. A cancellation refund goes back through Stripe's Refunds API after the transaction commits, split across the stay's Stripe payments (newest first) with an idempotency key per part; a refund that includes cash or M-Pesa money waits for Amina.
+- **Cards (Paystack, optional).** Webhooks are HMAC-checked and then confirmed with Verify Transaction (KES, full amount); pending card payments are reconciled like STK pushes.
 
 ### Messaging: an outbox
 
@@ -169,7 +170,7 @@ stateDiagram-v2
   - Login codes are never stored: the SMS is sent straight from memory, and the outbox, inbox and admin show `••••••` instead.
   - Session cookie (HttpOnly, SameSite=Lax, Secure in production) with CSRF.
 - **Roles.** Guest; host (owner/manager); staff (cleaner, cook, caretaker, security, driver). DRF permission classes (`IsGuest`, `IsHost`, `IsStaffMember`). Guests only ever see their own bookings (404 otherwise).
-- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. The M-Pesa prompt (STK) and Paybill (C2B) callbacks share their own secret path, `DARAJA_CALLBACK_SECRET` (falling back to `AT_WEBHOOK_SECRET`), and Paystack webhooks are HMAC-verified.
+- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. The M-Pesa prompt (STK) and Paybill (C2B) callbacks share their own secret path, `DARAJA_CALLBACK_SECRET` (falling back to `AT_WEBHOOK_SECRET`), and Paystack webhooks are HMAC-verified. Stripe webhooks are checked against `STRIPE_WEBHOOK_SECRET` (a bad or stale signature is a 400).
 - **Guest IDs.**
   - Encrypted with Fernet; staff see only the last 4 characters. Consent is required.
   - Kept for the legal register period (`id_retention_days`), then purged by the retention job.
@@ -178,7 +179,7 @@ stateDiagram-v2
 - **SIM-swap check.** Uses AT Insights before sending a door code to a Kenyan number. A recent swap holds the code and alerts Amina.
 - **DEMO mode** (`DEMO=1`) enables the Demo Lab, on-screen login codes and demo shortcuts. All demo endpoints return 404 when it's off (tested).
 - **Headers.** Content-Security-Policy (Django 6 native CSP), HSTS (configurable), `X-Frame-Options`. In production the Next.js pages get their own CSP (scripts, styles and API calls only from the site itself, no framing), `X-Frame-Options: DENY`, `nosniff`, a Referrer-Policy and a Permissions-Policy.
-- **Go-live check.** `manage.py check --deploy` adds warnings `amina.W001`–`W017` for every key or setting a live site still needs: dry-run SMS, simulated payments, a demo host phone, a tunnel URL with live M-Pesa, a missing SMS sender and so on.
+- **Go-live check.** `manage.py check --deploy` adds warnings `amina.W001`–`W020` for every key or setting a live site still needs: dry-run SMS, simulated payments, a Stripe test key, a demo host phone, a tunnel URL with live M-Pesa, a missing SMS sender and so on.
 
 ## Frontend
 
@@ -203,7 +204,7 @@ stateDiagram-v2
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite (586 tests) on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (596 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;
@@ -216,4 +217,4 @@ stateDiagram-v2
 - webhook secrets and delivery reports;
 - OTP login, permissions, staged disclosure, the web booking API and iCal round-trips.
 
-End-to-end flow suites walk every journey through the public API the way the web, USSD, SMS and voice channels use it: `test_flows_guest`, `_host`, `_ops`, `_payments`, `_sms`, `_ussd`, `_voice` and `_webhooks`, with shared helpers in `tests/flowkit.py`. Feature suites (`test_feature_bookings`, `_payments`, `_channels`) cover date changes and extensions, the waitlist, deposits on manual bookings, M-Pesa result codes, Paybill matching, invoices and credit notes, the balance ladder, licence reminders and SMS retry rules; `test_scheduler` covers the core jobs, the single-instance lock and failure isolation.
+End-to-end flow suites walk every journey through the public API the way the web, USSD, SMS and voice channels use it: `test_flows_guest`, `_host`, `_ops`, `_payments`, `_sms`, `_ussd`, `_voice` and `_webhooks`, with shared helpers in `tests/flowkit.py`. Feature suites (`test_feature_bookings`, `_payments`, `_channels`, `_stripe`) cover Stripe Checkout (sessions, the webhook signature, return-page and scheduler settlement, refunds), a site with M-Pesa off on every channel, date changes and extensions, the waitlist, deposits on manual bookings, M-Pesa result codes, Paybill matching, invoices and credit notes, the balance ladder, licence reminders and SMS retry rules; `test_scheduler` covers the core jobs, the single-instance lock and failure isolation.

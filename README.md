@@ -10,7 +10,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 
 | | |
 |---|---|
-| 🌍 **Web** | Search with an all-in price, listing pages, checkout with M-Pesa (Paybill as a fallback) or card, in full or with a 30% deposit, and a living trip page with directions, Wi-Fi, door code, breakfast, extras, help, date changes and extensions, and a tax invoice |
+| 🌍 **Web** | Search with an all-in price, listing pages, checkout by card through Stripe (or M-Pesa with a Paybill fallback, once Safaricom's Go-Live is done), in full or with a 30% deposit, and a living trip page with directions, Wi-Fi, door code, breakfast, extras, help, date changes and extensions, and a tax invoice |
 | 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina, check out, language, emergency |
 | 💬 **SMS — "Ask Amina"** | Natural-language booking in English, Kiswahili, Italian, German and French; instant answers from each home's knowledge base; HELP for emergencies |
 | 📞 **Voice — "Call Amina"** | English/Kiswahili IVR: availability and booking, prices, directions, bridge to Amina, voicemail, emergencies |
@@ -28,7 +28,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages and a single-instance scheduler; Next.js 16 front end; 586 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 596 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out), USSD, Voice (IVR, bridge, voicemail, outbound safety calls), Airtime, Mobile Data, SIM Swap; WhatsApp and AT checkout optional. |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
 
@@ -44,8 +44,8 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
   - The code stops working at checkout.
 - **Breakfast that reaches the kitchen.** Style (Swahili, continental, full English, vegetarian), people, time and dietary needs (halal, vegan, gluten-free…) are chosen at booking, on the trip page, by SMS or USSD. The cook gets tomorrow's sheet at 18:00.
 - **Payments that recover.**
-  - A failed M-Pesa prompt (wrong PIN, cancelled, low balance, phone unreachable) gets a plain explanation and the right next step: resend, pay the 30% deposit, card, or the **Paybill**, using the booking reference as the account number.
-  - Paybill payments are matched to the booking automatically and confirmed by SMS. Anything unmatched waits for Amina's one-click match.
+  - Cards go through **Stripe Checkout**, Stripe's hosted page, so card numbers never touch the server. The stay confirms the moment the guest is back from Stripe (or when Stripe's webhook arrives). Guests on USSD, SMS or a phone call get a short card link by SMS, and a cancellation refund goes back to the card by itself.
+  - M-Pesa is built in and switches on after Safaricom's Daraja Go-Live. A failed prompt (wrong PIN, cancelled, low balance, phone unreachable) then gets a plain explanation and the right next step: resend, pay the 30% deposit, card, or the **Paybill** with the booking reference as the account number. Paybill payments are matched to the booking automatically.
   - Balances are chased by a reminder ladder, overpayments are refunded, and every stay gets a numbered invoice (with credit notes for refunds).
 - **Plans change.** Guests change dates or guests, or extend, from the trip page or by texting EXTEND. The stay is re-priced, and they pay the difference or get it back under the cancellation policy; Amina can require approval. Sold-out dates offer "Notify me" and an SMS when they free up.
 - **Safety.**
@@ -220,8 +220,8 @@ If you have Docker Desktop, you can skip installing PostgreSQL and step 2. When 
 
 Configuration is environment-driven; every variable is documented in [.env.example](.env.example). With no keys at all you get:
 - dry-run SMS and voice (logged, not sent);
-- simulated M-Pesa (it "succeeds" after 6 seconds);
-- a simulated card checkout and simulated smart-lock codes;
+- a simulated card checkout, until `STRIPE_SECRET_KEY` is set (M-Pesa is off; `MPESA_PROVIDER=simulate` adds a pretend M-Pesa prompt for demos);
+- simulated smart-lock codes;
 - the Demo Lab to drive every channel.
 
 Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Hans 🇩🇪 arrives today with his ID missing (so his door code is held), Sarah 🇬🇧 arrives tomorrow with a deposit paid and an early check-in request, Peter 🇰🇪 checks out today. Staff: Fatuma (cleaner), Juma (caretaker), Mama Zawadi (cook), Hassan (security).
@@ -248,52 +248,62 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 
 ### Payments
 
+Card payments go through **Stripe Checkout**, Stripe's hosted payment page, so card numbers never touch this server. Put two keys in `.env`:
+
+| Variable | What it is |
+|---|---|
+| `STRIPE_SECRET_KEY` | From the Stripe Dashboard: **Developers → API keys**. A test key (`sk_test_…`) takes Stripe's test card `4242 4242 4242 4242` (any future date, any CVC) and moves no money; a live key (`sk_live_…`) takes real payments. Setting it is all it takes to switch card payments to Stripe. |
+| `STRIPE_WEBHOOK_SECRET` | Optional, but it makes every payment confirm at once. In **Developers → Webhooks**, add the endpoint `https://<your-site>/api/payments/stripe/webhook` with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` and `checkout.session.expired`, then copy its signing secret (`whsec_…`). On a laptop, `stripe listen --forward-to localhost:3000/api/payments/stripe/webhook` prints one. Without a webhook a payment still confirms: when the guest comes back from Stripe, or within 2 minutes. |
+
+Guests on USSD, SMS or a phone call get a short link by SMS (`/pay/card/…`) that opens the same checkout. When a stay is cancelled, the refund goes back to the card through Stripe by itself, split across the stay's card payments (a deposit and the balance, say). A refund that includes money paid another way (cash at the door, say) waits in **Host › Payments** for Amina to send and mark as sent.
+
+M-Pesa is built but **off** until Safaricom's Daraja Go-Live, which takes a while. When it's done:
+
 | Variable | Options |
 |---|---|
-| `MPESA_PROVIDER` | `simulate` (default) · `daraja` (Safaricom STK push; set the `DARAJA_*` keys; callback `https://<tunnel>/api/payments/daraja/callback/<secret>`) · `africastalking` (AT mobile checkout, onboarding-gated, with no sandbox) |
+| `MPESA_PROVIDER` | `off` (default: card only, on every channel) · `simulate` (a pretend prompt, for demos) · `daraja` (Safaricom STK push; set the `DARAJA_*` keys; callback `https://<your-site>/api/payments/daraja/callback/<secret>`) · `africastalking` (AT mobile checkout, onboarding-gated, with no sandbox) |
 | `DARAJA_TRANSACTION_TYPE` | `CustomerPayBillOnline` (default, a Paybill) · `CustomerBuyGoodsOnline` (a Till: set `DARAJA_SHORTCODE` to the store number and `DARAJA_PARTY_B` to the Till number) |
 | `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Paybill only: a Till payment carries no account number, so it can't be matched to a booking. Set `DARAJA_CALLBACK_SECRET` (a hex value: Safaricom rejects callback URLs containing words such as `exe`, `cmd` or `sql`); the M-Pesa prompt and Paybill callbacks share it. Then register the Paybill callbacks once by running `uv run python manage.py register_c2b` in `backend/` (it prints the validation and confirmation URLs). |
-| `CARD_PROVIDER` | `simulate` (default: a hosted test card page) · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<tunnel>/api/payments/paystack/webhook`) |
+| `CARD_PROVIDER` | Empty (default): Stripe once its key is set, else a simulated card page · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<your-site>/api/payments/paystack/webhook`) |
 
-Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable and Safaricom Daraja is the production path.
+Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable: Stripe for cards today, Safaricom Daraja for M-Pesa once it's approved.
 
 ## Going live
 
-Real guests need no code changes. Each simulated service switches to the real one as soon as its keys are set.
+Real guests need no code changes. Each simulated service switches to the real one as soon as its keys are set, and the only keys a live site needs are **Africa's Talking's and Stripe's**. M-Pesa can be added later.
 
-1. In `backend/`, run `uv run python manage.py check --deploy`. Along with Django's own checks, it lists every key or setting a live site still needs and the variable to set (warnings `amina.W001`–`W017`). It also catches the mistakes that only show up with real guests: no SMS sender, a `PUBLIC_URL` missing from `ALLOWED_HOSTS`, a tunnel URL with live M-Pesa, the sandbox shortcode in production and the demo host phone. Once those are gone, only hosting is left.
+1. In `backend/`, run `uv run python manage.py check --deploy`. Along with Django's own checks, it lists every key or setting a live site still needs and the variable to set (warnings `amina.W001`–`W020`). It also catches the mistakes that only show up with real guests: no SMS sender, a `PUBLIC_URL` missing from `ALLOWED_HOSTS`, a Stripe test key on a live site, a tunnel URL with live M-Pesa, the sandbox shortcode in production and the demo host phone. Once those are gone, only hosting is left.
 2. Fill in `.env` (or your host's environment variables):
 
    | For | Set |
    |---|---|
    | The site | `DEBUG=0`, `DEMO=0`, `SECRET_KEY`, `ALLOWED_HOSTS`, `FRONTEND_URL` and `PUBLIC_URL` (your https address), `ID_ENCRYPTION_KEY`, `AMINA_PHONE` (the host's own number) |
    | Africa's Talking | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` (a sender ID approved in the AT dashboard; without it or `AT_SMS_NUMBER`, AT's default sender only reaches Airtel numbers), `AT_SMS_NUMBER`, `AT_USSD_CODE`, `AT_VOICE_NUMBER`, `AT_WEBHOOK_SECRET`; optionally `AT_DATA_PRODUCT` and `AT_WHATSAPP_NUMBER` |
-   | M-Pesa | `MPESA_PROVIDER=daraja`, `DARAJA_ENV=production`, `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`, `DARAJA_SHORTCODE`, `DARAJA_PASSKEY` (emailed after Daraja Go-Live), `DARAJA_CALLBACK_SECRET`, `MPESA_SHORTCODE`; for a Till, `DARAJA_TRANSACTION_TYPE=CustomerBuyGoodsOnline` and `DARAJA_PARTY_B` |
-   | Cards | `CARD_PROVIDER=paystack`, `PAYSTACK_SECRET_KEY` |
+   | Cards (Stripe) | `STRIPE_SECRET_KEY` (the live `sk_live_…` key) and `STRIPE_WEBHOOK_SECRET` |
+   | M-Pesa (later, optional) | `MPESA_PROVIDER=daraja`, `DARAJA_ENV=production`, `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`, `DARAJA_SHORTCODE`, `DARAJA_PASSKEY` (emailed after Daraja Go-Live), `DARAJA_CALLBACK_SECRET`, `MPESA_SHORTCODE`; for a Till, `DARAJA_TRANSACTION_TYPE=CustomerBuyGoodsOnline` and `DARAJA_PARTY_B` |
    | Smart locks (optional) | `IGLOOHOME_API_KEY`, `IGLOOHOME_API_BASE`, and each home's lock device ID in the listing editor |
 
 3. Register the callback URLs:
    - the [Africa's Talking table above](#connecting-africas-talking);
-   - the Paybill callbacks, with `register_c2b`;
-   - the Paystack webhook, in the Paystack dashboard.
+   - the Stripe webhook, in the Stripe Dashboard ([Payments](#payments) lists the URL and events).
 
-   M-Pesa prompts carry their own callback URL, so they need no registration. With live M-Pesa the callbacks must be on your own https domain: Safaricom blocks ngrok and similar tunnels in production.
+   Once M-Pesa is on, also register the Paybill callbacks with `register_c2b` (M-Pesa prompts carry their own callback URL). Live M-Pesa callbacks must be on your own https domain: Safaricom blocks ngrok and similar tunnels in production.
 4. Serve the site over HTTPS, on any host or with `docker compose up -d` behind a TLS proxy, and keep the scheduler running. Reminders, door codes and payment checks depend on it. `migrate` also creates the cache table that every API worker shares, so login-code limits and provider tokens hold across workers. Without Docker, also run `uv run python manage.py collectstatic --noinput` in `backend/` (with `DEBUG=0` set) after each update; the Docker image does this when it's built.
 
 ## Demo script (5 minutes)
 
 1. **The problem.** Amina answers the same questions all day across WhatsApp, calls and SMS. Breakfast orders get lost, guests wait outside for keys, and she can't see who's arriving.
-2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 2 (Diani) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (pay all now). About 6 seconds later the simulated M-Pesa payment confirms, and the confirmation SMS with a trip link arrives on the SMS phone.
+2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 2 (Diani) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (pay all now). The session ends with "We'll text you a secure card payment link"; tap that link on the SMS phone and pay (with Stripe test keys: card 4242 4242 4242 4242, any future date and CVC). The confirmation SMS with a trip link arrives on the SMS phone.
 3. **Ask Amina by SMS.** Text "Bei?" (Kiswahili for "price?"), then "WIFI", then "Nataka nyumba Diani 12 Dec siku 3 watu 2" (a booking in plain Kiswahili).
 4. **Call Amina.** Press 2 for Kiswahili, then 2 for prices and breakfast. The IVR is read aloud in the browser.
-5. **Web.** Search → listing → checkout with breakfast, paying in full. While the M-Pesa prompt is waiting, tap *Simulate "insufficient funds"*: the guest is told why and offered the 30% deposit instead, a card or the Paybill. Pay the deposit, then open the trip page: the checklist, directions unlocking 48 h before, the receipt and the tax invoice.
+5. **Web.** Search → listing → checkout with breakfast, choosing the 30% deposit, then *Pay by card*: Stripe's checkout opens, and back on Amina Stays the booking confirms in seconds. Open the trip page: the checklist, directions unlocking 48 h before, the balance due before arrival, the receipt and the tax invoice.
 6. **Time machine.** Pick Hans's booking and press *Release door code*: it is held because the guest register (ID) is missing. Hold Hans's phone, text "ID C01X00T47", release again, and the door code arrives by SMS in German.
 7. **Safety.** Holding Wanjiku's phone, text "HELP": she gets an instant reply in Kiswahili and Amina gets an SMS alert. Switch to Amina's phone and *Answer the SOS safety call*: it names the guest, home and booking, and pressing 1 connects Amina to her.
 8. **Host console.** Today (the Today | Upcoming reservation cards), Calendar and Messages (Amina can also reply from her phone with "#3 …"). Then open the Menu for the kitchen sheet, insights and the one-click TRA return.
 
 More flows, if there's time:
 - **Change of plans.** On a confirmed trip, *Change dates or guests* (or *Extend your stay* once checked in) shows the new price before the guest commits; pay the difference and the dates move. Turn off *Instant date changes* in Settings and the request waits on Amina's Today page instead.
-- **Paybill.** In the Demo Lab time machine, pick a booking that owes money and press *Simulate Paybill payment*: it is matched by reference, the guest gets a PAID SMS, and Host › Payments updates. Payments that match no booking land in the Unmatched queue.
+- **M-Pesa, once it's approved.** Start with `MPESA_PROVIDER=simulate`: checkout offers an M-Pesa prompt next to the card, a failed prompt (*Simulate "insufficient funds"*) offers the 30% deposit, a card or the Paybill, and the Demo Lab's *Simulate Paybill payment* is matched to the booking by its reference.
 - **Waitlist.** On a listing whose dates are taken, *Notify me*; cancel the blocking stay in the console and the waiting guest gets an SMS offer.
 
 ## Tests
@@ -302,7 +312,7 @@ They use the database from the quick start; pytest creates and drops its own tes
 
 ```bash
 cd backend
-uv run pytest            # 586 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run pytest            # 596 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
 uv run ruff check .
 cd ../frontend
 npx tsc --noEmit
@@ -317,7 +327,7 @@ backend/                 Django 6 + DRF API, Africa's Talking webhooks, schedule
   apps/accounts          phone-number users, OTP login, ID encryption, data rights
   apps/properties        homes, photos, pricing, calendars, iCal, quote engine
   apps/bookings          booking lifecycle, add-ons, breakfast, guest register, door codes
-  apps/payments          M-Pesa (simulated / Daraja / AT), cards (simulated / Paystack), refunds
+  apps/payments          cards (Stripe / simulated / Paystack), M-Pesa (off / simulated / Daraja / AT), refunds
   apps/messaging         outbox, templates (5 languages), automations, FAQ, broadcasts
   apps/comms             AT client, SMS bot, USSD, voice IVR, SIM swap, webhooks
   apps/operations        tasks, staff, kitchen sheet, gate list, digest, CRM
