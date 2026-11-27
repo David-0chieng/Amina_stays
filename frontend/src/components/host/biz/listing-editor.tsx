@@ -220,8 +220,8 @@ function EditorForm({ listing, defaultArea }: { listing: HostListing | null; def
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav aria-label="Listing sections" className="lg:sticky lg:top-6 lg:self-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <nav aria-label="Listing sections" className="min-w-0 lg:sticky lg:top-6 lg:self-start">
           <ul className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:px-0">
             {SECTIONS.map((s) => {
               const active = s.key === section;

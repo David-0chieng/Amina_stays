@@ -17,10 +17,10 @@ export function PageHeader({ title, subtitle, actions, back }: { title: React.Re
             ← {back.label}
           </Link>
         )}
-        <h1 className="truncate text-[26px] leading-tight font-semibold tracking-tight md:text-[32px]">{title}</h1>
+        <h1 className="text-[26px] leading-tight font-semibold tracking-tight [overflow-wrap:anywhere] md:text-[32px]">{title}</h1>
         {subtitle && <p className="mt-1.5 text-base text-ink-2">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex max-w-full min-w-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

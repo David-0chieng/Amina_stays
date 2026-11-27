@@ -264,9 +264,9 @@ function ReviewCard({ review: r }: { review: HostReview }) {
     <li className={cn("rounded-2xl border bg-white p-5", low ? "border-danger/30" : "border-line-soft")}>
       <div className="flex flex-wrap items-start gap-3">
         <Avatar name={r.guest} size={40} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-40">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[15px] font-semibold">
-            {r.guest}
+            <span className="min-w-0 [overflow-wrap:anywhere]">{r.guest}</span>
             {r.nationality && (
               <span className="text-[13px] font-normal text-ink-2" title={countryName(r.nationality)}>
                 {flag(r.nationality)} {countryName(r.nationality)}

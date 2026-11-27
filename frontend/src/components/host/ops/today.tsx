@@ -139,11 +139,12 @@ function upcomingLabel(checkIn: string) {
 
 function ReservationsStrip({ data }: { data: TodayData }) {
   const [view, setView] = React.useState<"today" | "upcoming">("today");
-  const leaving = new Set(data.departures.map((r) => r.ref));
+  // one card per stay: a guest who arrived today is also in house, and one leaving today may be both
+  const shown = new Set([...data.departures, ...data.arrivals].map((r) => r.ref));
   const today: { r: ReservationRow; kind: CardKind; label: string }[] = [
-    ...data.departures.map((r) => ({ r, kind: "checkout" as const, label: "Checking out today" })),
+    ...data.departures.map((r) => ({ r, kind: "checkout" as const, label: r.status === "completed" ? "Checked out today" : "Checking out today" })),
     ...data.arrivals.map((r) => ({ r, kind: "arriving" as const, label: r.status === "checked_in" ? "Checked in today" : "Arriving today" })),
-    ...data.in_house.filter((r) => !leaving.has(r.ref)).map((r) => ({ r, kind: "hosting" as const, label: "Currently hosting" })),
+    ...data.in_house.filter((r) => !shown.has(r.ref)).map((r) => ({ r, kind: "hosting" as const, label: "Currently hosting" })),
   ];
   const upcoming = data.upcoming.map((r) => ({ r, kind: "upcoming" as const, label: upcomingLabel(r.check_in) }));
   const rows = view === "today" ? today : upcoming;

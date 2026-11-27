@@ -52,6 +52,7 @@ export function HomeView({ tab = "all" }: { tab?: "all" | "homes" }) {
       <MobileTabs active={tab} />
       <ContinueSearch />
       <main className="container-site pb-6">
+        <h1 className="sr-only">{tab === "homes" ? "Homes on the Kenyan coast" : "Homes, experiences and services on the Kenyan coast"}</h1>
         <Destinations />
         <CarouselRow title="Popular homes in Mombasa" href="/s?sort=rating">
           {isLoading ? Array.from({ length: 6 }).map((_, i) => <HomeCardSkeleton key={i} />) : popular.map((l, i) => <HomeCard key={l.id} listing={l} priority={i < 3} />)}

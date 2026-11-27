@@ -343,7 +343,9 @@ export function MobileTabBar() {
       : [{ href: "/account", label: "Log in", icon: CircleUserRound, auth: true }]),
   ];
   return (
+    // suppressHydrationWarning: a dialog opened before this streams in marks it aria-hidden (Radix), which React would report
     <nav
+      suppressHydrationWarning
       className={cn(
         "fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white pb-[env(safe-area-inset-bottom)] transition-transform duration-300 md:hidden print:hidden",
         hidden && "translate-y-full",

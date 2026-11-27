@@ -292,8 +292,9 @@ function Checklist({ trip: t, listing }: { trip: Trip; listing?: ListingDetail }
   ];
   const done = items.filter((i) => i.done).length;
   return (
-    <Section title="Before you arrive" action={<span className="text-sm font-semibold text-ink-2">{done} of {items.length} done</span>}>
-      <div className="h-1.5 overflow-hidden rounded-full bg-line-soft"><div className="h-full rounded-full bg-success transition-all" style={{ width: `${(done / items.length) * 100}%` }} /></div>
+    // the breakfast item depends on the listing, so count only once it has loaded (no "2 of 3" → "3 of 4" jump)
+    <Section title="Before you arrive" action={listing && <span className="text-sm font-semibold text-ink-2">{done} of {items.length} done</span>}>
+      <div className="h-1.5 overflow-hidden rounded-full bg-line-soft"><div className="h-full rounded-full bg-success transition-all" style={{ width: listing ? `${(done / items.length) * 100}%` : 0 }} /></div>
       <ul className="mt-5 divide-y divide-line-soft">
         {items.map((i) => (
           <li key={i.href}>
@@ -789,7 +790,7 @@ function ReceiptCard({ trip: t }: { trip: Trip }) {
       )}
       <div className="mt-5 flex flex-wrap gap-2 print:hidden">
         <Button variant="soft" size="sm" onClick={() => window.print()}><Printer className="size-4" /> Print receipt</Button>
-        {["confirmed", "checked_in", "completed"].includes(t.status) && <Button asChild variant="soft" size="sm"><Link href={`/trips/${t.ref}/invoice`}><Receipt className="size-4" /> Tax invoice</Link></Button>}
+        {["confirmed", "checked_in", "completed"].includes(t.status) && <Button asChild variant="soft" size="sm"><Link href={`/trips/${t.ref}/invoice`}><Receipt className="size-4" /> Invoice</Link></Button>}
         {t.can_change && <ChangeTrip trip={t} />}
         {t.can_cancel && <CancelButton trip={t} />}
       </div>

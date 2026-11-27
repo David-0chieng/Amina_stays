@@ -49,8 +49,10 @@ export function InboxView() {
 
   const select = (id: number | null) => router.replace(id ? `${pathname}?t=${id}` : pathname, { scroll: false });
 
+  // fills the screen between the shell's chrome: 24px padding above and the 62px tab bar (+18px gap) below on phones,
+  // the 81px header and 40px padding above (+24px gap below) from md, minus the SOS banner when it shows
   return (
-    <div className="flex h-[calc(100dvh-104px)] min-h-[520px] overflow-hidden rounded-2xl border border-line-soft bg-white sm:h-[calc(100dvh-120px)] lg:h-[calc(100dvh-4rem)]">
+    <div className="flex h-[calc(100dvh-104px-var(--sos-banner-h,0px))] min-h-[400px] overflow-hidden rounded-2xl border border-line-soft bg-white md:h-[calc(100dvh-145px-var(--sos-banner-h,0px))] md:min-h-[520px]">
       <aside className={cn("flex w-full min-w-0 flex-col md:w-[320px] md:shrink-0 md:border-r md:border-line-soft", selected && "hidden md:flex")}>
         <div className="space-y-3 border-b border-line-soft p-4">
           <div className="flex items-center justify-between gap-2">
@@ -521,7 +523,7 @@ function ContextPanel({ thread, bookings }: { thread: ThreadRow; bookings: TripC
           </Button>
           {g && (
             <Button asChild size="sm" variant="soft">
-              <Link href={`/host/guests/${g.id}`}>Profile</Link>
+              <Link href={`/host/guests?guest=${g.id}`}>Profile</Link>
             </Button>
           )}
         </div>

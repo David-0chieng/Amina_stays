@@ -303,7 +303,7 @@ export function CheckoutView({ slug }: { slug: string }) {
                         <span>{line.label}</span><span className="shrink-0 whitespace-nowrap">{line.amount < 0 ? `−${kes(-line.amount)}` : kes(line.amount)}</span>
                       </div>
                     ))}
-                    <div className="flex justify-between border-t border-line pt-4 text-base font-semibold"><span>Total <span className="underline">KES</span></span><span>{kes(q.total)}</span></div>
+                    <div className="flex justify-between border-t border-line pt-4 text-base font-semibold"><span>Total</span><span>{kes(q.total)}</span></div>
                     {!!q.pending?.length && (
                       <div className="rounded-xl bg-surface p-3">
                         <p className="font-medium">On request — charged only if Amina confirms</p>

@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Ban, CircleCheck, MessageSquareText, Phone, Plus, Search, ShieldAlert, Star, Users, X } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -19,7 +20,7 @@ import { COUNTRIES, cn } from "@/lib/utils";
 
 import { useInvalidateHost } from "./queries";
 import type { GuestDetail, GuestRow } from "./types";
-import { ConfirmDialog, Field, Flag, Segmented, StatTile, countryName, errorMessage, isEqualJson, reservationHref, useDebounced } from "./ui";
+import { ConfirmDialog, Field, Flag, Segmented, StatTile, countryName, errorMessage, isEqualJson, replaceSearchParams, reservationHref, useDebounced } from "./ui";
 
 type Filter = "all" | "returning" | "blocked";
 
@@ -28,7 +29,13 @@ const LANGS: Record<string, string> = { en: "English", sw: "Kiswahili", fr: "Fra
 export function GuestsPage() {
   const [q, setQ] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
-  const [openId, setOpenId] = React.useState<number | null>(null);
+  // ?guest=<id> opens that profile, so reservations and the inbox can link straight to it
+  const linked = Number(useSearchParams().get("guest")) || null;
+  const [openId, setOpenIdState] = React.useState<number | null>(linked);
+  const setOpenId = (id: number | null) => {
+    setOpenIdState(id);
+    replaceSearchParams({ guest: id === null ? null : String(id) });
+  };
   const query = useDebounced(q.trim(), 250);
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["host", "guests", query, filter],

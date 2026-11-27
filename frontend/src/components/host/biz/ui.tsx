@@ -491,13 +491,14 @@ export function StringListEditor({
 
 // ---------- save bar & dialogs ----------
 
+// on phones it floats above the bottom tab bar (64px + safe area), not behind it
 export function SaveBar({
   count, saving, onSave, onDiscard, saveLabel = "Save changes",
 }: { count: number; saving?: boolean; onSave: () => void; onDiscard: () => void; saveLabel?: string }) {
   useUnsavedChanges(count > 0, onSave);
   if (!count) return null;
   return (
-    <div className="pointer-events-none sticky bottom-4 z-30 mt-6 flex justify-center">
+    <div className="pointer-events-none sticky bottom-[calc(80px+env(safe-area-inset-bottom))] z-30 mt-6 flex justify-center md:bottom-4">
       <div role="status" className="pointer-events-auto flex w-full max-w-2xl items-center gap-2 rounded-2xl bg-ink py-2.5 pr-2.5 pl-5 text-white shadow-float animate-slide-up">
         <span className="size-2 shrink-0 animate-pulse rounded-full bg-brand-400" />
         <p className="min-w-0 flex-1 truncate text-sm font-semibold">

@@ -155,6 +155,9 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const badges = useBadges();
   const menuActive = pathname.startsWith("/host/menu") || HOST_MENU.some((g) => g.items.some((i) => isActive(pathname, i.href)));
+  // the inbox sizes itself to the screen; this bottom padding is the gap its height leaves above the tab bar (phones)
+  // or the window edge (md+), so the page only scrolls when the inbox hits its minimum height
+  const fullHeight = pathname.startsWith("/host/inbox");
   return (
     <div className="min-h-dvh bg-white">
       <header className="sticky top-0 z-40 hidden border-b border-line-soft bg-white md:block">
@@ -189,7 +192,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <SosBanner />
-      <main className="mx-auto w-full max-w-[1400px] px-5 pt-6 pb-28 sm:px-8 md:px-10 md:pt-10 md:pb-16">{children}</main>
+      <main className={cn("mx-auto w-full max-w-[1400px] px-5 pt-6 pb-28 sm:px-8 md:px-10 md:pt-10 md:pb-16", fullHeight && "pb-20 md:pb-6")}>{children}</main>
       <BottomBar pathname={pathname} badges={badges} menuActive={menuActive} />
     </div>
   );
@@ -316,15 +319,29 @@ function SosBanner() {
     refetchInterval: 10_000,
   });
   const sos = data?.filter((a) => a.kind === "sos" && a.status === "open") ?? [];
-  if (!sos.length) return null;
+  const showing = sos.length > 0;
+  const ref = React.useRef<HTMLDivElement>(null);
+  // full-height pages (the inbox) subtract --sos-banner-h, so the banner never pushes them under the tab bar
+  React.useEffect(() => {
+    const el = ref.current;
+    const root = document.documentElement;
+    if (!el) return;
+    const ro = new ResizeObserver(() => root.style.setProperty("--sos-banner-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--sos-banner-h");
+    };
+  }, [showing]);
+  if (!showing) return null;
   const a = sos[0];
   return (
-    <div className="sticky top-0 z-30 border-b border-danger/30 bg-danger text-white md:top-20">
+    <div ref={ref} className="sticky top-0 z-30 border-b border-danger/30 bg-danger text-white md:top-20">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-3 sm:px-8 md:px-10">
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/20 animate-pulse-ring">
           <Siren className="size-5" />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <p className="font-bold">Guest needs urgent help{sos.length > 1 ? ` (+${sos.length - 1} more)` : ""}</p>
           <p className="truncate text-sm text-white/85">{a.summary} · {ago(a.created_at)}</p>
         </div>

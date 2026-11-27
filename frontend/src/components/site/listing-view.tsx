@@ -143,7 +143,18 @@ export function ListingView({ slug }: { slug: string }) {
       {/* phones: full-bleed carousel with floating actions */}
       <div className="relative md:hidden">
         <PhotoTour listing={l}>
-          <div className="block w-full cursor-pointer" aria-label="Show all photos">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Show all photos"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.currentTarget.click();
+              }
+            }}
+            className="block w-full cursor-pointer"
+          >
             <PhotoCarousel photos={l.photos.map((p) => p.src)} alt={l.name} priority className="aspect-[20/19]" sizes="100vw" dotsClassName="bottom-9" counter />
           </div>
         </PhotoTour>
@@ -641,7 +652,7 @@ function PriceDetails({ q, depositPercent, children }: { q: Quote; depositPercen
             </div>
           ))}
           <div className="flex justify-between gap-4 border-t border-line pt-3 font-semibold">
-            <span>Total <span className="underline">KES</span></span>
+            <span>Total</span>
             <span>{kes(q.total)}</span>
           </div>
         </div>
@@ -752,19 +763,19 @@ function MobileReserveBar(props: CardProps) {
   const money = useMoney();
   const [open, setOpen] = React.useState(false);
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-4 border-t border-line bg-white px-6 py-4 pb-[max(16px,env(safe-area-inset-bottom))] lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-4 border-t border-line bg-white px-6 py-4 pb-[max(16px,env(safe-area-inset-bottom))] max-[379px]:gap-3 max-[379px]:px-4 lg:hidden">
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <button type="button" className="min-w-0 text-left">
             {q ? (
               <>
-                <p className="text-base"><b className="font-semibold underline">{money(q.total)}</b> for {q.nights} nights</p>
-                <p className="text-sm font-medium underline">{fmtRange(range.from, range.to)}</p>
+                <p className="text-base max-[379px]:text-[15px]"><b className="font-semibold underline">{money(q.total)}</b> for {q.nights} nights</p>
+                <p className="text-sm font-medium underline max-[379px]:text-[13px]">{fmtRange(range.from, range.to)}</p>
               </>
             ) : (
               <>
-                <p className="text-base"><b className="font-semibold">{money(l.price.from_nightly)}</b> night</p>
-                <p className="flex items-center gap-1 text-sm font-medium"><span className="underline">Add dates</span>{l.rating && <> · <StarIcon className="size-2.5" /> {l.rating.toFixed(2)}</>}</p>
+                <p className="text-base max-[379px]:text-[15px]"><b className="font-semibold">{money(l.price.from_nightly)}</b> night</p>
+                <p className="flex items-center gap-1 text-sm font-medium whitespace-nowrap max-[379px]:text-[13px]"><span className="underline">Add dates</span>{l.rating && <> · <StarIcon className="size-2.5" /> {l.rating.toFixed(2)}</>}</p>
               </>
             )}
           </button>
@@ -775,7 +786,7 @@ function MobileReserveBar(props: CardProps) {
           </div>
         </DialogContent>
       </Dialog>
-      <ReserveButton {...props} className="h-12 shrink-0 px-7 text-base" onNeedDates={() => setOpen(true)} />
+      <ReserveButton {...props} className="h-12 shrink-0 px-7 text-base max-[379px]:px-4 max-[379px]:text-sm" onNeedDates={() => setOpen(true)} />
     </div>
   );
 }
@@ -813,8 +824,8 @@ function Reviews({ listing: l, reviews }: { listing: ListingDetail; reviews: Rev
         </h2>
       )}
 
-      <div className="no-scrollbar mt-10 flex gap-0 overflow-x-auto pb-2 lg:grid lg:grid-cols-[1.2fr_repeat(6,1fr)]">
-        <div className="min-w-44 shrink-0 pr-6 lg:min-w-0">
+      <div className="no-scrollbar mt-10 flex gap-0 overflow-x-auto pb-2 xl:grid xl:grid-cols-[1.2fr_repeat(6,1fr)]">
+        <div className="min-w-44 shrink-0 pr-6 xl:min-w-0">
           <p className="text-sm font-medium">Overall rating</p>
           <div className="mt-2 space-y-0.5">
             {dist.map((c, i) => (
@@ -828,7 +839,7 @@ function Reviews({ listing: l, reviews }: { listing: ListingDetail; reviews: Rev
           </div>
         </div>
         {CATEGORIES.map((c) => (
-          <div key={c.key} className="flex min-w-32 shrink-0 flex-col justify-between border-l border-line px-6 lg:min-w-0">
+          <div key={c.key} className="flex min-w-32 shrink-0 flex-col justify-between border-l border-line px-6 xl:min-w-0">
             <div>
               <p className="text-sm font-medium">{c.label}</p>
               <p className="text-lg font-semibold">{cats[c.key]?.toFixed(1) ?? "—"}</p>
@@ -903,7 +914,7 @@ function MeetHost({ listing: l }: { listing: ListingDetail }) {
     <section className="py-12">
       <h2 className="text-[22px] leading-[26px] font-medium">Meet your host</h2>
       <div className="mt-8 grid gap-10 md:grid-cols-[minmax(0,380px)_1fr] md:gap-16">
-        <div className="flex items-center gap-6 self-start rounded-3xl bg-white px-6 py-8 shadow-[0_6px_20px_rgb(0_0_0/0.2)]">
+        <div className="flex max-w-full items-center gap-6 self-start rounded-3xl bg-white px-6 py-8 shadow-[0_6px_20px_rgb(0_0_0/0.2)] max-[379px]:gap-4 max-[379px]:px-4">
           <div className="flex flex-1 flex-col items-center text-center">
             <div className="relative">
               <Avatar name={`${l.host.name} Mohamed`} size={104} className="bg-ink! text-[40px]!" />

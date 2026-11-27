@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/host/shell";
+import { useMe } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ export function InvoiceView({ bookingRef }: { bookingRef: string }) {
 
 function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
   const qc = useQueryClient();
+  const asHost = !!useMe().data?.is_host; // Amina opens the same invoice from the reservation page
   const { data: inv, error, isLoading } = useQuery({ queryKey: ["invoice", ref], queryFn: () => get<Invoice>(`/api/bookings/${ref}/invoice`), retry: false });
   const [buyer, setBuyer] = React.useState<{ name: string; pin: string } | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -50,7 +52,7 @@ function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
     <main className="min-h-dvh bg-surface py-8 print:bg-white print:py-0">
       <div className="container-narrow max-w-[820px]">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link href={`/trips/${ref}`} className="inline-flex items-center gap-2 text-sm font-semibold text-ink-2 hover:text-ink"><ArrowLeft className="size-4" /> Back to the trip</Link>
+          <Link href={asHost ? `/host/reservations/${ref}` : `/trips/${ref}`} className="inline-flex items-center gap-2 text-sm font-semibold text-ink-2 hover:text-ink"><ArrowLeft className="size-4" /> {asHost ? "Back to the reservation" : "Back to the trip"}</Link>
           <Button variant="dark" size="sm" onClick={() => window.print()} disabled={!inv}><Printer className="size-4" /> Print or save as PDF</Button>
         </div>
 
@@ -93,22 +95,28 @@ function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
                 </div>
               </section>
 
-              <table className="w-full text-[15px]">
+              {/* phones fold quantity and unit price under the description; wider screens and print get all four columns */}
+              <table className="w-full text-[14px] sm:text-[15px] print:text-[15px]">
                 <thead>
                   <tr className="border-b border-line-soft text-left text-xs tracking-wide text-ink-2 uppercase">
                     <th className="py-3 font-bold">Description</th>
-                    <th className="py-3 pl-4 text-right font-bold">Qty</th>
-                    <th className="py-3 pl-6 text-right font-bold whitespace-nowrap">Unit price</th>
-                    <th className="py-3 pl-6 text-right font-bold">Amount</th>
+                    <th className="hidden py-3 pl-4 text-right font-bold sm:table-cell print:table-cell">Qty</th>
+                    <th className="hidden py-3 pl-6 text-right font-bold whitespace-nowrap sm:table-cell print:table-cell">Unit price</th>
+                    <th className="py-3 pl-4 text-right font-bold sm:pl-6 print:pl-6">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {inv.lines.map((l, i) => (
                     <tr key={`${l.label}-${i}`} className="border-b border-line-soft">
-                      <td className="py-3 pr-4">{l.label}</td>
-                      <td className="py-3 pl-4 text-right tabular-nums">{l.qty}</td>
-                      <td className="py-3 pl-6 text-right tabular-nums whitespace-nowrap">{kes(l.unit_price)}</td>
-                      <td className="py-3 pl-6 text-right tabular-nums whitespace-nowrap">{kes(l.amount)}</td>
+                      <td className="py-3 pr-4">
+                        {l.label}
+                        <span className="mt-0.5 block text-[13px] text-ink-2 tabular-nums sm:hidden print:hidden">
+                          {l.qty} × {kes(l.unit_price)}
+                        </span>
+                      </td>
+                      <td className="hidden py-3 pl-4 text-right tabular-nums sm:table-cell print:table-cell">{l.qty}</td>
+                      <td className="hidden py-3 pl-6 text-right tabular-nums whitespace-nowrap sm:table-cell print:table-cell">{kes(l.unit_price)}</td>
+                      <td className="py-3 pl-4 text-right tabular-nums whitespace-nowrap sm:pl-6 print:pl-6">{kes(l.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -159,8 +167,10 @@ function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
             </article>
 
             <section className="mt-6 rounded-2xl bg-white p-6 shadow-soft print:hidden">
-              <p className="font-semibold">Claiming this as a business expense?</p>
-              <p className="mt-1 text-sm text-ink-2">Add your company name and KRA PIN and we&apos;ll reissue the invoice in your company&apos;s name.</p>
+              <p className="font-semibold">{asHost ? "Invoicing a company?" : "Claiming this as a business expense?"}</p>
+              <p className="mt-1 text-sm text-ink-2">
+                {asHost ? "Add the company's name and KRA PIN to reissue this invoice in its name." : "Add your company name and KRA PIN and we'll reissue the invoice in your company's name."}
+              </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_200px_auto] sm:items-end">
                 <Field label="Name on invoice"><Input value={form.name} onChange={(e) => setBuyer({ ...form, name: e.target.value })} /></Field>
                 <Field label="KRA PIN" error={pinOk ? undefined : "Format: A123456789Z"}><Input value={form.pin} onChange={(e) => setBuyer({ ...form, pin: e.target.value.toUpperCase() })} placeholder="P051234567X" className="font-mono" maxLength={11} /></Field>

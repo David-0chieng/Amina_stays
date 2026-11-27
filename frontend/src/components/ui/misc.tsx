@@ -53,15 +53,17 @@ export function Avatar({ name, src, size = 40, className }: { name?: string | nu
   );
 }
 
+// aria-disabled rather than disabled: a button that disables itself drops focus, which closes the popover or sheet
+// the stepper sits in on phones
 export function Stepper({ value, min = 0, max = 16, onChange, label }: { value: number; min?: number; max?: number; onChange: (v: number) => void; label: string }) {
   return (
     <div className="flex items-center gap-3">
       <button
         type="button"
         aria-label={`Fewer ${label}`}
-        disabled={value <= min}
-        onClick={() => onChange(value - 1)}
-        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft disabled:cursor-not-allowed disabled:bg-chip/60 disabled:text-ink-disabled"
+        aria-disabled={value <= min}
+        onClick={() => value > min && onChange(value - 1)}
+        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft aria-disabled:cursor-not-allowed aria-disabled:bg-chip/60 aria-disabled:text-ink-disabled aria-disabled:hover:bg-chip/60"
       >
         <Minus className="size-3.5" strokeWidth={2.5} />
       </button>
@@ -69,9 +71,9 @@ export function Stepper({ value, min = 0, max = 16, onChange, label }: { value: 
       <button
         type="button"
         aria-label={`More ${label}`}
-        disabled={value >= max}
-        onClick={() => onChange(value + 1)}
-        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft disabled:cursor-not-allowed disabled:bg-chip/60 disabled:text-ink-disabled"
+        aria-disabled={value >= max}
+        onClick={() => value < max && onChange(value + 1)}
+        className="grid size-8 place-items-center rounded-full bg-chip text-ink transition-colors hover:bg-line-soft aria-disabled:cursor-not-allowed aria-disabled:bg-chip/60 aria-disabled:text-ink-disabled aria-disabled:hover:bg-chip/60"
       >
         <Plus className="size-3.5" strokeWidth={2.5} />
       </button>

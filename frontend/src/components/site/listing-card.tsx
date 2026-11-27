@@ -30,7 +30,7 @@ export function Photo({ src, alt, className, sizes = "(min-width: 1280px) 20vw, 
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       onError={() => setFailed(true)}
-      className={cn("object-cover", className)}
+      className={cn("object-cover text-transparent", className)} // Firefox paints alt text over a loading photo otherwise
     />
   );
 }

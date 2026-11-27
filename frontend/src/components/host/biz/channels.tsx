@@ -163,7 +163,7 @@ export function ChannelsPage() {
                 {ready} of {data.products.length} ready · paste each URL into the AT dashboard
               </p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {data.products.map((p) => (
                 <ProductCard key={p.key} p={p} seen={PRODUCT_META[p.key]?.seen ? data.last_seen[PRODUCT_META[p.key].seen as string] : undefined} />
               ))}
@@ -252,7 +252,7 @@ function ProductCard({ p, seen }: { p: AtProduct; seen?: string | null }) {
   const meta = PRODUCT_META[p.key] ?? { icon: KeyRound, where: "AT dashboard", blurb: "" };
   const callbacks = Object.entries(p.callbacks);
   return (
-    <article className="flex flex-col rounded-2xl border border-line-soft bg-white p-5">
+    <article className="flex min-w-0 flex-col rounded-2xl border border-line-soft bg-white p-5">
       <div className="flex items-start gap-3">
         <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", p.ready ? "bg-success-50 text-success" : "bg-surface text-ink-2")}>
           <meta.icon className="size-5" />
@@ -276,7 +276,7 @@ function ProductCard({ p, seen }: { p: AtProduct; seen?: string | null }) {
       <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px]">
         <div>
           <dt className="inline text-ink-3">Setting: </dt>
-          <dd className="inline font-medium">{p.detail}</dd>
+          <dd className="inline font-medium [overflow-wrap:anywhere]">{p.detail}</dd>
         </div>
         {meta.seen && (
           <div>

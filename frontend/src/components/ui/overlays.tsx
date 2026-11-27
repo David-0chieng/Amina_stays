@@ -15,7 +15,7 @@ export function PopoverContent({ className, align = "center", sideOffset = 10, .
       <P.Content
         align={align}
         sideOffset={sideOffset}
-        className={cn("z-50 rounded-2xl border border-line-soft bg-white p-4 shadow-float outline-none animate-fade-in", className)}
+        className={cn("z-50 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-2xl border border-line-soft bg-white p-4 shadow-float outline-none animate-fade-in", className)}
         {...props}
       />
     </P.Portal>
@@ -31,7 +31,7 @@ export function DropdownContent({ className, align = "end", ...props }: React.Co
       <DM.Content
         align={align}
         sideOffset={8}
-        className={cn("z-50 min-w-56 rounded-xl border border-line-soft bg-white py-2 shadow-float outline-none animate-fade-in", className)}
+        className={cn("z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-56 overflow-y-auto rounded-xl border border-line-soft bg-white py-2 shadow-float outline-none animate-fade-in", className)}
         {...props}
       />
     </DM.Portal>

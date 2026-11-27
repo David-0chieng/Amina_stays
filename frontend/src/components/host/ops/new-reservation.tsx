@@ -1,12 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Banknote, CircleCheck, CircleAlert, Clock, CreditCard, Plus, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { SwitchRow } from "@/components/host/biz/ui";
+import { SwitchRow, useDebounced } from "@/components/host/biz/ui";
 import { useConfig } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -81,6 +81,17 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
     staleTime: 30_000,
     retry: false,
   });
+  // with a custom price, the backend prices the stay exactly as the booking will be (cleaning, levy and VAT on top)
+  const agreed = useDebounced(custom && Number(override) > 0 ? Math.round(Number(override)) : 0, 300);
+  const agreedQuote = useQuery({
+    queryKey: ["host", "ops", "quote", unit?.slug, ci, co, adults, children, "agreed", agreed],
+    queryFn: () => post<Quote>(`/api/listings/${unit!.slug}/quote`, { check_in: ci, check_out: co, adults, children, price_override: agreed }),
+    enabled: Boolean(quote.data && agreed > 0),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const total = custom ? (agreed > 0 ? agreedQuote.data?.total : undefined) : quote.data?.total;
 
   const errors = {
     dates: !ci || !co ? "Choose the dates." : nights <= 0 ? "Check-out must be after check-in." : "",
@@ -102,7 +113,7 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
         adults,
         children,
         payment: mode,
-        amount: mode === "cash" ? Number(amount || quote.data?.total || 0) || undefined : undefined,
+        amount: mode === "cash" ? Number(amount || total || 0) || undefined : undefined,
         payment_plan: mode === "mpesa" || mode === "card" ? plan : "full",
         price_override: custom ? Number(override) : null,
         override_reason: custom ? reason.trim() : "",
@@ -132,7 +143,6 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
     if (valid) create.mutate();
   };
 
-  const total = quote.data?.total;
   const problems = quote.data?.problems ?? [];
 
   return (
@@ -149,7 +159,7 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
                 <span className="text-ink-2"> · {plural(nights, "night")}</span>
               </span>
             ) : (
-              <span className="text-ink-2">Choose a home and dates to see the price</span>
+              <span className="text-ink-2">{custom && nights > 0 ? "Enter the price for the stay" : "Choose a home and dates to see the price"}</span>
             )}
           </div>
           <Button type="submit" form="new-reservation" variant="dark" loading={create.isPending} disabled={tried && !valid}>

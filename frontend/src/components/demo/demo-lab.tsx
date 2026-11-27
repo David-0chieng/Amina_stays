@@ -46,7 +46,8 @@ export function DemoLab() {
     );
   }
   const people = [NEW_GUEST, ...lab.guests];
-  const current = [...people, ...lab.staff].find((p) => p.phone === phone);
+  const host: DemoPersona = { phone: lab.host_phone, name: lab.host_name, role: "host", lang: "en", ref: null, note: "" };
+  const current = [...people, ...lab.staff, host].find((p) => p.phone === phone);
 
   return (
     <>
@@ -75,7 +76,7 @@ export function DemoLab() {
             <span className="font-mono text-sm text-ink-2">{flag(countryOf(phone))} {phone}</span>
             {current?.ref && <Link href={`/host/reservations/${current.ref}`} className="text-sm font-semibold underline">{current.ref}</Link>}
           </div>
-          <div className="grid justify-items-center gap-8 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 justify-items-center gap-8 md:grid-cols-2 xl:grid-cols-3">
             <PhoneFrame label="SMS · “Ask Amina”" hint="Two-way SMS · English, Kiswahili, Italian, German, French">
               <SmsPhone key={`sms-${phone}`} phone={phone} contact={config.channels.sms_number || "AMINA"} suggestions={["Hi", "Bei", "BOOK", "Diani 12 Dec 3 nights 2 people", "BREAKFAST", "WIFI", "HELP"]} />
             </PhoneFrame>
@@ -87,8 +88,8 @@ export function DemoLab() {
             </PhoneFrame>
           </div>
 
-          <div className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-            <section>
+          <div className="mt-14 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+            <section className="min-w-0">
               <h2 className="text-[22px] font-bold tracking-tight">{lab.host_name}&apos;s phone</h2>
               <p className="mt-1 text-ink-2">Amina runs everything by SMS too: approve requests (<code className="text-ink">YES 12</code>), reply to a guest (<code className="text-ink">#3 Karibu!</code>), acknowledge alerts (<code className="text-ink">OK</code>).</p>
               <div className="mt-5 flex justify-center lg:justify-start">
@@ -141,7 +142,7 @@ function PersonaBar({ people, staff, hostPhone, phone, setPhone }: { people: Dem
 
 function PhoneFrame({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
   return (
-    <div className="w-full max-w-[340px]">
+    <div className="w-full min-w-0 max-w-[340px]">
       <div className="mb-3 text-center">
         <p className="font-bold">{label}</p>
         <p className="text-xs text-ink-2">{hint}</p>
@@ -229,7 +230,7 @@ function SmsPhone({ phone, contact, suggestions }: { phone: string; contact: str
           const mine = m.direction === "in";
           return (
             <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
-              <div className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-snug whitespace-pre-line", mine ? "rounded-br-md bg-[#0b84ff] text-white" : "rounded-bl-md bg-[#e9e9eb] text-ink")}>
+              <div className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-snug whitespace-pre-line [overflow-wrap:anywhere]", mine ? "rounded-br-md bg-[#0b84ff] text-white" : "rounded-bl-md bg-[#e9e9eb] text-ink")}>
                 {m.body}
                 <span className={cn("mt-0.5 block text-right text-[9px]", mine ? "text-white/70" : "text-ink-2")}>
                   {clock(m.created_at)}{m.channel !== "sms" ? ` · ${m.channel}` : ""}{!mine && m.status === "failed" ? " · failed" : ""}
@@ -308,7 +309,7 @@ function UssdPhone({ phone, code }: { phone: string; code?: string }) {
             {busy && !screen ? (
               <p className="py-6 text-center text-sm text-ink-2">USSD code running…</p>
             ) : (
-              <p className="min-h-24 font-mono text-[12.5px] leading-snug whitespace-pre-line">{screen}</p>
+              <p className="min-h-24 font-mono text-[12.5px] leading-snug whitespace-pre-line [overflow-wrap:anywhere]">{screen}</p>
             )}
             {!ended ? (
               <form onSubmit={(e) => { e.preventDefault(); if (input.trim()) request(session, [...chain, input.trim()]); }}>
@@ -600,7 +601,7 @@ function TimeMachine({ guests }: { guests: DemoPersona[] }) {
     });
 
   return (
-    <section>
+    <section className="min-w-0">
       <h2 className="flex items-center gap-2 text-[22px] font-bold tracking-tight"><CalendarClock className="size-6" /> Time machine</h2>
       <p className="mt-1 text-ink-2">Fast-forward a stay through every automated message — exactly what the scheduler sends on the real dates. Hold that guest&apos;s phone above to watch them arrive.</p>
       <div className="mt-5 rounded-2xl border border-line-soft p-5">

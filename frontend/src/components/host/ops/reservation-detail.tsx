@@ -210,7 +210,7 @@ function GuestCard({ t }: { t: Trip }) {
     <Section
       title="Guest"
       action={
-        <Link href={`/host/guests/${g.id}`} className="text-[13px] font-semibold text-ink-2 hover:text-ink">
+        <Link href={`/host/guests?guest=${g.id}`} className="text-[13px] font-semibold text-ink-2 hover:text-ink">
           Guest profile →
         </Link>
       }
@@ -615,7 +615,7 @@ function CodesCard({ t }: { t: Trip }) {
           {codes.map((c, i) => (
             <li key={`${c.code}-${i}`} className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-4">
               <span className={cn("font-mono text-xl font-semibold tracking-[0.2em] tabular-nums", c.revoked_at && "text-ink-3 line-through")}>{c.code}</span>
-              <div className="min-w-0 flex-1 text-[13px] text-ink-2">
+              <div className="min-w-0 flex-1 basis-40 text-[13px] text-ink-2">
                 <p>
                   {fmtDateTime(c.valid_from)} → {fmtDateTime(c.valid_until)}
                 </p>
