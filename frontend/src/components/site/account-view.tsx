@@ -11,6 +11,7 @@ import { useLogout, useMe } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
+import { RewardsSection } from "@/components/site/rewards-section";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -28,6 +29,9 @@ const ACCOUNT_CARDS: { icon: Icon3DName; title: string; text: string; href: stri
   { icon: "envelope", title: "Notifications", text: "Booking messages always come; offers only if you say so", href: "#notifications" },
   { icon: "lock", title: "Privacy & your data", text: "Download or erase your data under the Data Protection Act", href: "#data" },
   { icon: "homes", title: "Trips", text: "Bookings from the web, USSD, SMS and calls", href: "/trips" },
+  { icon: "trophy", title: "Rewards", text: "Points for every stay, swapped for airtime or data", href: "#rewards" },
+  { icon: "speech-balloon", title: "Support requests", text: "Complaints and call-backs, each with a reference", href: "/help#support" },
+  { icon: "palm-tree", title: "Local guide", text: "What to see, eat and do near your home", href: "/guide" },
   { icon: "mobile-phone", title: "Book without data", text: "USSD, SMS and voice — the same account", href: "/help#book-your-way" },
 ];
 
@@ -173,6 +177,8 @@ function Account() {
             <Switch checked={!!me.marketing_opt_in} onCheckedChange={(v) => save({ marketing_opt_in: v }, v ? "You'll get our offers" : "Unsubscribed from offers")} aria-label="Offers by SMS" />
           </div>
         </section>
+
+        <RewardsSection />
 
         <WaitlistSection />
 

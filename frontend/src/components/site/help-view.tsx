@@ -5,8 +5,9 @@ import { ChevronDown, FlaskConical, Globe, MessageSquareText, Phone, Search, Shi
 import Link from "next/link";
 import * as React from "react";
 
-import { useConfig, usePayOptions } from "@/components/providers";
+import { useAuthDialog, useConfig, useMe, usePayOptions } from "@/components/providers";
 import { SiteHeader } from "@/components/site/header";
+import { SupportPanel } from "@/components/site/support-panel";
 import { Button } from "@/components/ui/button";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
 import { Skeleton } from "@/components/ui/misc";
@@ -62,17 +63,17 @@ export function HelpView() {
               <Channel icon={<Smartphone className="size-6" />} title="USSD — no data, no smartphone" tag={c?.ussd_code || "Dial our code"}>
                 Dial {c?.ussd_code ? <b className="text-ink">{c.ussd_code}</b> : "our USSD code"} from any Kenyan line:
                 <ol className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  {["Book a stay", "Prices & homes", "My booking", "Breakfast", "Report problem", "Talk to Amina", "Check out", "Language", "EMERGENCY"].map((x, i) => <li key={x}><b className="text-ink">{i + 1}.</b> {x}</li>)}
+                  {["Book a stay", "Prices & homes", "My booking", "Breakfast", "Report problem", "Talk to Amina", "Check out", "More: guide, alerts, rewards", "EMERGENCY"].map((x, i) => <li key={x}><b className="text-ink">{i + 1}.</b> {x}</li>)}
                 </ol>
               </Channel>
               <Channel icon={<MessageSquareText className="size-6" />} title="SMS — “Ask Amina”" tag={c?.sms_number || "Text our number"}>
                 Text in English, Kiswahili, Italian, German or French. Try:
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {["PRICES", "BOOK", "BREAKFAST", "WIFI", "ETA 4pm", "ID 12345678", "LATE", "CODE", "HELP", "STOP"].map((k) => <code key={k} className="rounded-md bg-surface px-2 py-0.5 text-[13px] font-semibold text-ink">{k}</code>)}
+                  {["PRICES", "BOOK", "BREAKFAST", "WIFI", "ETA 4pm", "ID 12345678", "LATE", "CODE", "EXPLORE", "ALERTS", "COMPLAIN …", "POINTS", "HELP", "STOP"].map((k) => <code key={k} className="rounded-md bg-surface px-2 py-0.5 text-[13px] font-semibold text-ink">{k}</code>)}
                 </div>
               </Channel>
               <Channel icon={<Phone className="size-6" />} title="Voice — “Call Amina”" tag={c?.voice_number || "Call our line"}>
-                English or Kiswahili menu: <b className="text-ink">1</b> availability &amp; booking · <b className="text-ink">2</b> prices &amp; breakfast · <b className="text-ink">3</b> your booking &amp; directions · <b className="text-ink">4</b> talk to Amina · <b className="text-ink">9</b> urgent help.
+                English or Kiswahili menu: <b className="text-ink">1</b> availability &amp; booking · <b className="text-ink">2</b> prices &amp; breakfast · <b className="text-ink">3</b> your booking &amp; directions · <b className="text-ink">4</b> talk to Amina · <b className="text-ink">5</b> a complaint or problem · <b className="text-ink">6</b> things to do nearby · <b className="text-ink">9</b> urgent help.
               </Channel>
             </div>
             {config?.demo && !c?.ussd_code && (
@@ -147,6 +148,8 @@ export function HelpView() {
             </div>
           </section>
 
+          <SupportSection />
+
           <section className="rounded-3xl border border-line-soft p-8 text-center">
             <h2 className="text-[22px] font-bold">Still need help?</h2>
             <p className="mt-1 text-ink-2">Message Amina — instant answers any time, and a personal reply within the hour.</p>
@@ -155,6 +158,38 @@ export function HelpView() {
         </div>
       </main>
     </>
+  );
+}
+
+/** Complaints, call-backs and questions with a reference, a reply-by time and a rating at the end. */
+function SupportSection() {
+  const { data: me } = useMe();
+  const { requireLogin } = useAuthDialog();
+  const { data: config } = useConfig();
+  const c = config?.channels;
+  return (
+    <section id="support" className="scroll-mt-24">
+      <h2 className="text-[26px] font-bold tracking-tight">Support requests</h2>
+      <p className="mt-1 text-ink-2">
+        Something not right, or rather talk it through? Every request gets a reference and a reply-by time, and if nobody answers in time it goes
+        straight to {config?.business.host_name ?? "Amina"}&apos;s phone.
+      </p>
+      <div className="mt-6">
+        {me?.authenticated ? (
+          <SupportPanel />
+        ) : (
+          <div className="rounded-2xl border border-line-soft p-6">
+            <p className="text-[15px]">
+              Log in with your phone number to raise a request and follow it here - or use any phone: text <b className="font-semibold">COMPLAIN</b> and what
+              happened, <b className="font-semibold">CALL ME</b> for a call-back or <b className="font-semibold">TICKETS</b> to check on them
+              {c?.sms_number ? <> to <b className="font-semibold">{c.sms_number}</b></> : ""}; dial {c?.ussd_code || "our USSD code"} → Talk to Amina; or call
+              us and press 5 to leave a complaint.
+            </p>
+            <Button className="mt-4" variant="dark" onClick={() => requireLogin()}>Log in</Button>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -2,8 +2,8 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarDays, ChefHat, ClipboardCheck, ClipboardList, FlaskConical, House, LogOut, Menu as MenuIcon, MessageSquare, MessageSquareText, Phone,
-  Plane, Radio, Settings, ShieldCheck, Siren, Star, Sun, TrendingUp, Users, Wallet, type LucideIcon,
+  CalendarDays, ChefHat, ClipboardCheck, ClipboardList, FlaskConical, Gift, House, LifeBuoy, LogOut, MapPinned, Megaphone, Menu as MenuIcon, MessageSquare,
+  MessageSquareText, Phone, Plane, Radio, Settings, ShieldCheck, Siren, Star, Sun, TrendingUp, Users, Wallet, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -87,7 +87,7 @@ export function Logo({ className }: { className?: string }) {
   );
 }
 
-type Badge = "inbox" | "alerts";
+type Badge = "inbox" | "alerts" | "support";
 
 // Airbnb's hosting mode: four destinations plus Menu, the same on desktop (top bar) and phones (bottom bar).
 const TABS: { href: string; label: string; icon: LucideIcon; badge?: Badge }[] = [
@@ -109,6 +109,8 @@ export const HOST_MENU: {
       { href: "/host/insights", label: "Insights", text: "Occupancy, nightly rates, channels and demand", icon: "bar-chart", lucide: TrendingUp },
       { href: "/host/reviews", label: "Reviews", text: "Ratings, replies and what guests mention", icon: "star", lucide: Star },
       { href: "/host/guests", label: "Guests", text: "Profiles, stays, preferences and IDs", icon: "guests", lucide: Users },
+      { href: "/host/support", label: "Support desk", text: "Complaints, call-backs and requests, with reply-by times", icon: "services", lucide: LifeBuoy, badge: "support" },
+      { href: "/host/rewards", label: "Rewards & airtime", text: "Points, referrals, airtime and data top-ups", icon: "trophy", lucide: Gift },
     ],
   },
   {
@@ -117,6 +119,8 @@ export const HOST_MENU: {
       { href: "/host/tasks", label: "Housekeeping & tasks", text: "Turnovers, inspections and repairs", icon: "broom", lucide: ClipboardCheck },
       { href: "/host/kitchen", label: "Breakfast & kitchen", text: "Who eats what, when — and the shopping list", icon: "cooking", lucide: ChefHat },
       { href: "/host/messaging", label: "Messaging & automations", text: "Templates, the guest timeline, FAQ and broadcasts", icon: "speech-balloon", lucide: MessageSquareText },
+      { href: "/host/notices", label: "Service alerts", text: "Outages and maintenance, texted to the guests affected", icon: "megaphone", lucide: Megaphone },
+      { href: "/host/guide", label: "Local guide", text: "Places and events guests get by USSD, SMS and voice", icon: "palm-tree", lucide: MapPinned },
     ],
   },
   {
@@ -146,7 +150,13 @@ function useBadges(): Record<Badge, number> {
     queryFn: () => get<AlertRow[]>("/api/host/alerts?status=active"),
     refetchInterval: 10_000,
   });
-  return { inbox: inbox?.length ?? 0, alerts: alerts?.filter((a) => a.status === "open").length ?? 0 };
+  // same query (key and URL) as the support desk's "Open" list, so the two share one cache entry
+  const { data: support } = useQuery({
+    queryKey: ["host", "support", "tickets", "open", ""],
+    queryFn: () => get<{ counts: { overdue: number } }>("/api/host/support/tickets?status=open"),
+    refetchInterval: 15_000,
+  });
+  return { inbox: inbox?.length ?? 0, alerts: alerts?.filter((a) => a.status === "open").length ?? 0, support: support?.counts.overdue ?? 0 };
 }
 
 const isActive = (pathname: string, href: string) => (href === "/host" ? pathname === "/host" : pathname.startsWith(href));

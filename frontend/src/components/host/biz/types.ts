@@ -537,3 +537,227 @@ export interface ChannelsResponse {
   last_seen: Record<string, string | null>;
   jobs: { key: string; last_run_at: string | null; ok: boolean; runs: number }[];
 }
+
+// ---------- support desk ----------
+
+export type TicketCategory = "complaint" | "issue" | "callback" | "billing" | "booking" | "feedback" | "other";
+export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
+export type TicketPriority = "low" | "normal" | "high" | "urgent";
+
+export interface TicketRow {
+  id: number;
+  ref: string;
+  category: TicketCategory;
+  category_label: string;
+  status: TicketStatus;
+  status_label: string;
+  priority: TicketPriority;
+  channel: "sms" | "ussd" | "voice" | "web" | "host";
+  subject: string;
+  description: string;
+  phone: string;
+  guest: { name: string; phone: string } | null;
+  booking: string | null;
+  unit: string | null;
+  task: { id: number; status: string; assignee: string | null } | null;
+  recording_url: string;
+  created_at: string;
+  first_response_due: string | null;
+  first_response_at: string | null;
+  overdue: boolean;
+  resolved_at: string | null;
+  resolution: string;
+  rating: number | null;
+  rating_comment: string;
+  escalation_level: number;
+  last_activity_at: string;
+}
+
+export interface TicketEvent {
+  id: number;
+  kind: "created" | "reply" | "guest" | "note" | "status" | "call" | "escalated" | "rating" | "task";
+  text: string;
+  channel: string;
+  actor: string | null;
+  created_at: string;
+}
+
+export interface TicketDetail extends TicketRow {
+  events: TicketEvent[];
+}
+
+export interface SupportCounts {
+  open: number;
+  overdue: number;
+  resolved_7d: number;
+  avg_first_response_min: number | null;
+  csat: number | null;
+  csat_count: number;
+}
+
+export interface TicketsResponse {
+  counts: SupportCounts;
+  tickets: TicketRow[];
+}
+
+export interface TicketCallResult {
+  placed: boolean;
+  dry_run: boolean;
+  detail: string;
+  ticket: TicketDetail;
+}
+
+// ---------- service alerts ----------
+
+export type NoticeKind = "outage" | "maintenance" | "advisory";
+export type NoticeStatus = "scheduled" | "active" | "resolved" | "cancelled";
+
+export interface NoticeRow {
+  id: number;
+  kind: NoticeKind;
+  kind_label: string;
+  service: string;
+  service_label: string;
+  status: NoticeStatus;
+  status_label: string;
+  title: string;
+  message: string;
+  units: { id: number; name: string }[];
+  all_homes: boolean;
+  starts_at: string;
+  expected_end: string | null;
+  resolved_at: string | null;
+  resolution: string;
+  data_mb: number;
+  notified: number;
+  source: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface NoticesResponse {
+  notices: NoticeRow[];
+  services: [string, string][];
+  kinds: [NoticeKind, string][];
+  default_data_mb: number;
+  data_services: string[];
+}
+
+export interface NoticePreview {
+  guests: number;
+  sms: string;
+  segments: number;
+}
+
+// ---------- local guide ----------
+
+export type PlaceCategory = "sights" | "beaches" | "nature" | "food" | "markets" | "culture" | "evenings" | "transport" | "essentials";
+
+export interface HostPlace {
+  id: number;
+  name: string;
+  slug: string;
+  category: PlaceCategory;
+  category_label: string;
+  area: string | null;
+  summary: string;
+  summary_sw: string;
+  description: string;
+  tips: string;
+  hours: string;
+  price: string;
+  phone: string;
+  website: string;
+  latitude: number | null;
+  longitude: number | null;
+  photo: string;
+  featured: boolean;
+  active: boolean;
+  sort_order: number;
+  hits: number;
+  map_url: string;
+  updated_at: string;
+}
+
+export interface HostGuideEvent {
+  id: number;
+  title: string;
+  summary: string;
+  place: number | null;
+  area: string | null;
+  weekday: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  yearly: boolean;
+  time: string;
+  price: string;
+  addon_code: string;
+  link: string;
+  active: boolean;
+  next_on: string | null;
+}
+
+// ---------- rewards & airtime ----------
+
+export interface RewardsProgram {
+  enabled: boolean;
+  points_per_100: number;
+  review_points: number;
+  referral_airtime: number;
+  referee_airtime: number;
+  redeem_points: number;
+  redeem_airtime: number;
+  redeem_data_mb: number;
+  outage_data_mb: number;
+  monthly_airtime_budget: number;
+}
+
+export interface RewardsStats {
+  members: number;
+  points_outstanding: number;
+  airtime_month: number;
+  airtime_budget: number;
+  data_month_mb: number;
+  referrals_completed: number;
+  referrals_pending: number;
+  payouts_held: number;
+  guests: number;
+}
+
+export type PayoutStatus = "held" | "queued" | "sent" | "success" | "failed" | "rejected" | "simulated";
+
+export interface PayoutRow {
+  id: number;
+  kind: "airtime" | "data";
+  kind_label: string;
+  amount: number;
+  amount_text: string;
+  reason: "referral" | "referee" | "redeem" | "outage" | "manual";
+  reason_label: string;
+  phone: string;
+  guest: string | null;
+  booking: string | null;
+  note: string;
+  status: PayoutStatus;
+  status_label: string;
+  error: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface ReferralRow {
+  referrer: string;
+  referee: string;
+  code: string | null;
+  status: "pending" | "rewarded" | "void";
+  status_label: string;
+  booking: string | null;
+  created_at: string | null;
+}
+
+export interface RewardsResponse {
+  program: RewardsProgram;
+  stats: RewardsStats;
+  payouts: PayoutRow[];
+  referrals: ReferralRow[];
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleHelp, CircleUserRound, Globe, Heart, LogOut, Menu, MessageSquare, Search, Settings, UserRound } from "lucide-react";
+import { CircleHelp, CircleUserRound, Gift, Globe, Heart, LogOut, MapPinned, Menu, MessageSquare, Search, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
@@ -232,9 +232,11 @@ function UserMenu() {
               <MenuItem onSelect={() => router.push("/trips")} icon={BrandMark}>Trips</MenuItem>
               <MenuItem onSelect={() => router.push("/messages")} icon={MessageSquare}>Messages</MenuItem>
               <MenuItem onSelect={() => router.push("/account")} icon={UserRound}>Profile</MenuItem>
+              <MenuItem onSelect={() => router.push("/account#rewards")} icon={Gift}>Rewards</MenuItem>
               <MenuSeparator />
               <MenuItem onSelect={() => router.push("/account")} icon={Settings}>Account &amp; privacy</MenuItem>
               <MenuItem onSelect={() => openLocaleDialog()} icon={Globe}>Languages &amp; currency</MenuItem>
+              <MenuItem onSelect={() => router.push("/guide")} icon={MapPinned}>Local guide</MenuItem>
               <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
               <MenuSeparator />
               {me.is_host ? (
@@ -248,6 +250,7 @@ function UserMenu() {
           ) : (
             <>
               <MenuItem onSelect={() => openLocaleDialog()} icon={Globe}>Languages &amp; currency</MenuItem>
+              <MenuItem onSelect={() => router.push("/guide")} icon={MapPinned}>Local guide</MenuItem>
               <MenuItem onSelect={() => router.push("/help")} icon={CircleHelp}>Help Centre</MenuItem>
               <MenuSeparator />
               <PromoItem onSelect={() => router.push("/help#book-your-way")} icon="mobile-phone" title="Book without data" text={c?.ussd_code ? `Dial ${c.ussd_code} or text Amina — English or Kiswahili.` : "Book by USSD, SMS or a phone call."} />
@@ -311,7 +314,7 @@ export function LoginDialog() {
   );
 }
 
-const TAB_BAR_PAGES = ["/", "/homes", "/hotels", "/s", "/experiences", "/services", "/trips", "/wishlists", "/messages", "/account", "/help"];
+const TAB_BAR_PAGES = ["/", "/homes", "/hotels", "/s", "/experiences", "/services", "/guide", "/trips", "/wishlists", "/messages", "/account", "/help"];
 
 /** Phone bottom navigation; slides away while scrolling down, returns on scroll up. */
 export function MobileTabBar() {
@@ -332,7 +335,7 @@ export function MobileTabBar() {
   if (!TAB_BAR_PAGES.includes(pathname)) return null;
   const authed = !!me?.authenticated;
   const tabs: { href: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; auth?: boolean; match?: string[] }[] = [
-    { href: "/", label: "Explore", icon: Search, match: ["/", "/homes", "/hotels", "/s", "/experiences", "/services"] },
+    { href: "/", label: "Explore", icon: Search, match: ["/", "/homes", "/hotels", "/s", "/experiences", "/services", "/guide"] },
     { href: "/wishlists", label: "Wishlists", icon: Heart, auth: true },
     ...(authed
       ? [

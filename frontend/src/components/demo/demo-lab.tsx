@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp, CalendarClock, CheckCheck, Delete, FlaskConical, Landmark, Mic, Phone, PhoneIncoming, PhoneOff, RotateCcw, Signal, Smartphone, Sparkles, UserRound,
-  Volume2, VolumeX, Wifi, Zap,
+  Volume2, VolumeX, Wifi, WifiOff, Zap,
 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
@@ -78,7 +78,7 @@ export function DemoLab() {
           </div>
           <div className="grid grid-cols-1 justify-items-center gap-8 md:grid-cols-2 xl:grid-cols-3">
             <PhoneFrame label="SMS · “Ask Amina”" hint="Two-way SMS · English, Kiswahili, Italian, German, French">
-              <SmsPhone key={`sms-${phone}`} phone={phone} contact={config.channels.sms_number || "AMINA"} suggestions={["Hi", "Bei", "BOOK", "Diani 12 Dec 3 nights 2 people", "BREAKFAST", "WIFI", "HELP"]} />
+              <SmsPhone key={`sms-${phone}`} phone={phone} contact={config.channels.sms_number || "AMINA"} suggestions={["Hi", "Bei", "BOOK", "Diani 12 Dec 3 nights 2 people", "BREAKFAST", "WIFI", "EXPLORE", "ALERTS", "COMPLAIN the music next door is too loud", "TICKETS", "POINTS", "HELP"]} />
             </PhoneFrame>
             <PhoneFrame label={`USSD · ${config.channels.ussd_code || "*384*…#"}`} hint="No data, any phone · 160-character screens">
               <UssdPhone key={`ussd-${phone}`} phone={phone} code={config.channels.ussd_code} />
@@ -91,10 +91,10 @@ export function DemoLab() {
           <div className="mt-14 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <section className="min-w-0">
               <h2 className="text-[22px] font-bold tracking-tight">{lab.host_name}&apos;s phone</h2>
-              <p className="mt-1 text-ink-2">Amina runs everything by SMS too: approve requests (<code className="text-ink">YES 12</code>), reply to a guest (<code className="text-ink">#3 Karibu!</code>), acknowledge alerts (<code className="text-ink">OK</code>).</p>
+              <p className="mt-1 text-ink-2">Amina runs everything by SMS too: approve requests (<code className="text-ink">YES 12</code>), reply to a guest (<code className="text-ink">#3 Karibu!</code>), answer a ticket (<code className="text-ink">T1 Pole sana</code>, <code className="text-ink">CALL T1</code>), post an outage (<code className="text-ink">OUTAGE POWER ALL</code>) and acknowledge alerts (<code className="text-ink">OK</code>).</p>
               <div className="mt-5 flex justify-center lg:justify-start">
                 <PhoneFrame label={`${lab.host_name} · host`} hint={lab.host_phone}>
-                  <SmsPhone phone={lab.host_phone} contact="Amina Stays" suggestions={["OK", "STATUS", "TODAY", "#1 Karibu sana!"]} />
+                  <SmsPhone phone={lab.host_phone} contact="Amina Stays" suggestions={["OK", "STATUS", "TICKETS", "ALERTS", "OUTAGE WIFI ALL the router is being replaced", "#1 Karibu sana!"]} />
                 </PhoneFrame>
               </div>
             </section>
@@ -360,7 +360,7 @@ function VoicePhone({ phone, isHost }: { phone: string; isHost: boolean }) {
   const [speakOn, setSpeakOn] = React.useState(true);
   const [seconds, setSeconds] = React.useState(0);
   const [dialTo, setDialTo] = React.useState("");
-  const call = React.useRef({ id: 0, session: "", direction: "Inbound" });
+  const call = React.useRef({ id: 0, session: "", direction: "Inbound", requestId: "" });
   const sessionPrefix = React.useRef("");
   React.useEffect(() => {
     sessionPrefix.current = Math.random().toString(36).slice(2, 10); // unique per page load: AT session ids never repeat
@@ -421,7 +421,13 @@ function VoicePhone({ phone, isHost }: { phone: string; isHost: boolean }) {
     });
 
   async function send(id: number, extra: Record<string, string>) {
-    const r = await post<{ xml: string }>("/api/demo/voice", { phone, session: call.current.session, direction: call.current.direction, ...extra });
+    const r = await post<{ xml: string }>("/api/demo/voice", {
+      phone,
+      session: call.current.session,
+      direction: call.current.direction,
+      ...(call.current.requestId ? { clientRequestId: call.current.requestId } : {}),
+      ...extra,
+    });
     if (call.current.id === id) await run(r.xml, id);
   }
 
@@ -472,10 +478,11 @@ function VoicePhone({ phone, isHost }: { phone: string; isHost: boolean }) {
     post("/api/demo/voice", { phone, session: call.current.session, direction: call.current.direction, hangup: true, ...extra }).catch(() => undefined);
   }
 
-  function start(direction: "Inbound" | "Outbound") {
+  function start(direction: "Inbound" | "Outbound", requestId = "") {
     const id = call.current.id + 1;
-    call.current = { id, session: `demo-voice-${sessionPrefix.current}-${id}`, direction };
-    setLines([{ who: "sys", text: direction === "Outbound" ? "Incoming safety call from Amina Stays" : "Calling Amina Stays…" }]);
+    call.current = { id, session: `demo-voice-${sessionPrefix.current}-${id}`, direction, requestId };
+    const intro = requestId ? "Call-back from Amina Stays support" : direction === "Outbound" ? "Incoming safety call from Amina Stays" : "Calling Amina Stays…";
+    setLines([{ who: "sys", text: intro }]);
     setSeconds(0);
     setState("active");
     send(id, {}).catch((e) => {
@@ -511,6 +518,11 @@ function VoicePhone({ phone, isHost }: { phone: string; isHost: boolean }) {
         {isHost && (
           <button onClick={() => start("Outbound")} className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold hover:bg-white/20">
             <PhoneIncoming className="size-4" /> Answer the SOS safety call
+          </button>
+        )}
+        {isHost && (
+          <button onClick={() => start("Outbound", "bridge-latest")} className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold hover:bg-white/20">
+            <PhoneIncoming className="size-4" /> Answer a support call-back
           </button>
         )}
         <button onClick={() => setSpeakOn(!speakOn)} className="flex items-center gap-2 text-xs text-white/60">
@@ -662,6 +674,14 @@ function TimeMachine({ guests }: { guests: DemoPersona[] }) {
               })}>Simulate “cancelled on phone”</Button>
             </>
           )}
+          <Button variant="soft" size="sm" loading={busy === "outage"} disabled={!!busy || !ref} onClick={() => act("outage", async () => {
+            const r = await post<{ notice: number; told: number; data_mb: number }>(`/api/demo/outage/${ref}`, { service: "wifi" });
+            return `${ref}: Wi-Fi outage #${r.notice} posted · ${r.told} guest(s) texted${r.data_mb ? ` · ${r.data_mb} MB data bundle to anyone staying` : ""}`;
+          })}><WifiOff className="size-4" /> Wi-Fi outage at this home</Button>
+          <Button variant="soft" size="sm" loading={busy === "restore"} disabled={!!busy || !ref} onClick={() => act("restore", async () => {
+            const r = await post<{ notice: number; told: number }>(`/api/demo/outage/${ref}`, { restore: true });
+            return `${ref}: alert #${r.notice} resolved · ${r.told} guest(s) told it's fixed`;
+          })}>Fix it</Button>
           <Button variant="soft" size="sm" loading={busy === "tick"} onClick={() => act("tick", async () => {
             const r = await post<Record<string, unknown>>("/api/demo/tick", {});
             const keys = Object.keys(r);

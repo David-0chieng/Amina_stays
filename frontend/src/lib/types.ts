@@ -415,3 +415,94 @@ export interface FaqItem {
   question: string;
   answer: string;
 }
+
+// ---------- Africa's Talking challenge add-ons: local guide, service alerts, support desk, rewards ----------
+
+export interface GuidePlace {
+  id: number;
+  slug: string;
+  name: string;
+  category: string;
+  category_label: string;
+  area: { slug: string; name: string } | null;
+  summary: string;
+  description: string;
+  tips: string;
+  hours: string;
+  price: string;
+  phone: string;
+  website: string;
+  latitude: number | null;
+  longitude: number | null;
+  photo: string;
+  featured: boolean;
+  map_url: string;
+  distance_km?: number | null;
+}
+
+export interface GuideEvent {
+  id: number;
+  title: string;
+  summary: string;
+  date: string;
+  time: string;
+  price: string;
+  addon_code: string;
+  link: string;
+  place: { slug: string; name: string } | null;
+  area: string | null;
+  weekly: boolean;
+}
+
+export interface GuideData {
+  categories: { key: string; label: string; count: number }[];
+  areas: { slug: string; name: string }[];
+  places: GuidePlace[];
+  events: GuideEvent[];
+}
+
+export interface ServiceNotice {
+  id: number;
+  kind: "outage" | "maintenance" | "advisory";
+  kind_label: string;
+  service: string;
+  service_label: string;
+  status: "scheduled" | "active";
+  title: string;
+  message: string;
+  starts_at: string;
+  expected_end: string | null;
+}
+
+export interface SupportTicket {
+  id: number;
+  ref: string;
+  category: string;
+  category_label: string;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  status_label: string;
+  subject: string;
+  description: string;
+  booking: string | null;
+  created_at: string;
+  updated_at: string;
+  resolution: string;
+  rating: number | null;
+  can_rate: boolean;
+  events: { kind: string; text: string; created_at: string }[];
+}
+
+export interface Rewards {
+  enabled: boolean;
+  points: number;
+  code: string;
+  share_text: string;
+  referred_by: string | null;
+  referral_status: "pending" | "rewarded" | "void" | null;
+  can_enter_code: boolean;
+  kenyan: boolean;
+  redeem: { points: number; airtime: number; data_mb: number; can_airtime: boolean; can_data: boolean; why_not: string };
+  rules: { points_per_100: number; review_points: number; referral_airtime: number; referee_airtime: number };
+  history: { kind: "points" | "payout"; text: string; points: number | null; amount_text: string | null; status: string | null; created_at: string }[];
+  message?: string;
+}

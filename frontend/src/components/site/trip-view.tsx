@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, BedDouble, CalendarDays, Car, Check, CheckCircle2, ChevronRight, Clock, Copy, CreditCard, Croissant, KeyRound, LifeBuoy, LogOut, MapPin,
-  MessageCircle, Phone, Printer, Receipt, ShieldAlert, ShieldCheck, Siren, Smartphone, Star, UserPlus, Wifi, Wrench,
+  MapPinned, MessageCircle, MessageSquareWarning, Phone, Printer, Receipt, ShieldAlert, ShieldCheck, Siren, Smartphone, Star, UserPlus, Wifi, Wrench,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -15,7 +15,10 @@ import { useConfig, useMe, usePayOptions } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
+import { NearbyPlaces } from "@/components/site/guide-view";
 import { FailureNotice, lastFailure, PaybillBox } from "@/components/site/payment-help";
+import { ServiceNotices } from "@/components/site/service-notices";
+import { SupportPanel } from "@/components/site/support-panel";
 import { ChangeTrip, PendingChange } from "@/components/site/trip-change";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -124,6 +127,7 @@ function TripHub({ tripRef: ref }: { tripRef: string }) {
         <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-16">
           <div className="min-w-0">
             <StatusPanel trip={t} />
+            {active && <ServiceNotices unitSlug={t.unit.slug} className="mt-6" />}
             <PendingChange trip={t} />
             {t.status === "checked_in" && <DoorCode trip={t} />}
             {(t.status === "confirmed" || t.status === "held") && <Checklist trip={t} listing={listing} />}
@@ -133,6 +137,16 @@ function TripHub({ tripRef: ref }: { tripRef: string }) {
             {active && <Arrival trip={t} />}
             {["held", "confirmed", "checked_in"].includes(t.status) && <Register trip={t} />}
             {t.status === "checked_in" && <HelpDuringStay trip={t} />}
+            {active && (
+              <Section id="nearby" title="Near your home" icon={<MapPinned className="size-6" />}>
+                <NearbyPlaces unitSlug={t.unit.slug} />
+              </Section>
+            )}
+            {(active || t.status === "completed") && (
+              <Section id="support" title="Support requests" icon={<MessageSquareWarning className="size-6" />}>
+                <SupportPanel booking={t.ref} />
+              </Section>
+            )}
             {(t.can_review || t.review) && <ReviewSection trip={t} />}
             <Timeline trip={t} />
           </div>
@@ -625,8 +639,9 @@ function HelpDuringStay({ trip: t }: { trip: Trip }) {
   const [issueOpen, setIssueOpen] = React.useState(false);
   const [sosDone, setSosDone] = React.useState(false);
   const report = () => run("issue", async () => {
-    const r = await post<{ task: number; assignee: string | null; priority: string }>(`/api/bookings/${t.ref}/issues`, issue);
-    toast.success(r.assignee ? `${r.assignee} is on it — we'll text you updates.` : "Reported — Amina will text you shortly.");
+    const r = await post<{ task: number | null; assignee: string | null; priority: string | null; ticket: string | null; known: string | null }>(`/api/bookings/${t.ref}/issues`, issue);
+    if (r.known) toast.info(r.known, { duration: 12_000 }); // an outage we've already announced: no new work order
+    else toast.success(`${r.assignee ? `${r.assignee} is on it` : "Reported - Amina will text you shortly"}${r.ticket ? ` (reference ${r.ticket})` : ""}. We'll text you updates.`);
     setIssueOpen(false);
     setIssue({ category: "water", description: "" });
     return r;
