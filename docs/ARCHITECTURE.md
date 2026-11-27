@@ -28,6 +28,8 @@ flowchart LR
 
 There is **one public origin**. Next.js serves the website and proxies the API, admin, media and Africa's Talking webhooks to Django. A single tunnel (ngrok/cloudflared) on port 3000 is all the demo needs, and the browser gets same-origin session cookies with CSRF and no CORS.
 
+In production, Django runs under gunicorn with several workers (`--keep-alive 0`, so the Next.js proxy never reuses a connection gunicorn is about to close). The workers share one cache, a PostgreSQL table created by `migrate`, so login-code limits, throttles and provider access tokens hold across workers and restarts without Redis.
+
 ## Backend (Django apps)
 
 | App | Responsibility |
@@ -112,6 +114,7 @@ stateDiagram-v2
 - **Deposits.** 30% now and the balance one day before arrival. The door code waits for the balance, and Kenyan guests get an automatic M-Pesa prompt for it. A daily balance ladder adds a heads-up a week ahead and an overdue SMS with the Paybill details; Amina sees every outstanding balance on the Payments page.
 - **Failed prompts.** `payments/results.py` maps each Daraja result code (1 low balance, 1001 another prompt open, 1019 expired, 1025 unreachable, 1032 cancelled, 1037 timeout, 2001 wrong PIN) to the reason Amina sees, the guest's message and the next step: resend, wait, pay the 30% deposit, card or Paybill.
 - **Paybill (C2B).** Daraja calls `/api/payments/daraja/c2b/validation|confirmation/<secret>`. A payment whose account number is a booking reference settles that booking (an overpayment is queued as a refund); anything else waits in an Unmatched queue on the Payments page. `manage.py register_c2b` registers the URLs.
+- **One payment, two reports.** A prompt's money can also arrive as a Paybill confirmation. With the same M-Pesa code it is counted once. When STK Query settles a prompt, the answer carries no M-Pesa code, so a prompt and a Paybill payment for the same booking and amount within 30 minutes are counted once, in either order. Amina gets an alert to check her statement, saying whether to record or refund a second payment if there was one; the guest is promised nothing until she does.
 - **Changes.** A `ChangeRequest` re-prices the stay at current rates and re-checks availability inside one transaction. A higher price is applied when its payment settles (48 h at most, then it lapses); a lower one applies at once and refunds by the cancellation policy. `SiteSettings.instant_changes` off means Amina approves first.
 - **Invoices.** Numbered invoices (`AMS-INV-YYYY-NNNNN`, one per booking) and credit notes (`AMS-CN-…`) from a per-year counter, a printable page at `/trips/[ref]/invoice`, and sales-register and ledger CSVs. eTIMS transmission is not built.
 - **Cards.** Paystack webhooks are HMAC-checked and then confirmed with Verify Transaction (KES, full amount); pending card payments are reconciled like STK pushes.
@@ -163,9 +166,10 @@ stateDiagram-v2
 
 - **Auth.**
   - Phone number + 6-digit OTP (hashed): 5-minute expiry, lockout after 5 attempts, 30-second resend gap, 5 codes per number per hour, plus per-IP throttles.
+  - Login codes are never stored: the SMS is sent straight from memory, and the outbox, inbox and admin show `••••••` instead.
   - Session cookie (HttpOnly, SameSite=Lax, Secure in production) with CSRF.
 - **Roles.** Guest; host (owner/manager); staff (cleaner, cook, caretaker, security, driver). DRF permission classes (`IsGuest`, `IsHost`, `IsStaffMember`). Guests only ever see their own bookings (404 otherwise).
-- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. Payment callbacks use their own secret path (the Paybill callbacks use `DARAJA_CALLBACK_SECRET`), and Paystack webhooks are HMAC-verified.
+- **Webhooks.** AT doesn't sign callbacks, so they live under `/at/<AT_WEBHOOK_SECRET>/…`; a wrong secret returns 403. The M-Pesa prompt (STK) and Paybill (C2B) callbacks share their own secret path, `DARAJA_CALLBACK_SECRET` (falling back to `AT_WEBHOOK_SECRET`), and Paystack webhooks are HMAC-verified.
 - **Guest IDs.**
   - Encrypted with Fernet; staff see only the last 4 characters. Consent is required.
   - Kept for the legal register period (`id_retention_days`), then purged by the retention job.
@@ -173,7 +177,8 @@ stateDiagram-v2
 - **Staged disclosure.** The address is shown once confirmed; directions, Wi-Fi and the house manual from 48 h before; the door code only after release, and it is revoked at checkout or cancellation.
 - **SIM-swap check.** Uses AT Insights before sending a door code to a Kenyan number. A recent swap holds the code and alerts Amina.
 - **DEMO mode** (`DEMO=1`) enables the Demo Lab, on-screen login codes and demo shortcuts. All demo endpoints return 404 when it's off (tested).
-- **Headers.** Content-Security-Policy (Django 6 native CSP), HSTS (configurable), `X-Frame-Options`.
+- **Headers.** Content-Security-Policy (Django 6 native CSP), HSTS (configurable), `X-Frame-Options`. In production the Next.js pages get their own CSP (scripts, styles and API calls only from the site itself, no framing), `X-Frame-Options: DENY`, `nosniff`, a Referrer-Policy and a Permissions-Policy.
+- **Go-live check.** `manage.py check --deploy` adds warnings `amina.W001`–`W017` for every key or setting a live site still needs: dry-run SMS, simulated payments, a demo host phone, a tunnel URL with live M-Pesa, a missing SMS sender and so on.
 
 ## Frontend
 
@@ -198,7 +203,7 @@ stateDiagram-v2
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite (529 tests) on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (586 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;

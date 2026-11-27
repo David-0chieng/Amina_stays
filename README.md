@@ -251,10 +251,34 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 | Variable | Options |
 |---|---|
 | `MPESA_PROVIDER` | `simulate` (default) · `daraja` (Safaricom STK push; set the `DARAJA_*` keys; callback `https://<tunnel>/api/payments/daraja/callback/<secret>`) · `africastalking` (AT mobile checkout, onboarding-gated, with no sandbox) |
-| `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Set `DARAJA_CALLBACK_SECRET`, then register the Paybill callbacks once by running `uv run python manage.py register_c2b` in `backend/` (it prints the validation and confirmation URLs). |
+| `DARAJA_TRANSACTION_TYPE` | `CustomerPayBillOnline` (default, a Paybill) · `CustomerBuyGoodsOnline` (a Till: set `DARAJA_SHORTCODE` to the store number and `DARAJA_PARTY_B` to the Till number) |
+| `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Paybill only: a Till payment carries no account number, so it can't be matched to a booking. Set `DARAJA_CALLBACK_SECRET` (a hex value: Safaricom rejects callback URLs containing words such as `exe`, `cmd` or `sql`); the M-Pesa prompt and Paybill callbacks share it. Then register the Paybill callbacks once by running `uv run python manage.py register_c2b` in `backend/` (it prints the validation and confirmation URLs). |
 | `CARD_PROVIDER` | `simulate` (default: a hosted test card page) · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<tunnel>/api/payments/paystack/webhook`) |
 
 Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable and Safaricom Daraja is the production path.
+
+## Going live
+
+Real guests need no code changes. Each simulated service switches to the real one as soon as its keys are set.
+
+1. In `backend/`, run `uv run python manage.py check --deploy`. Along with Django's own checks, it lists every key or setting a live site still needs and the variable to set (warnings `amina.W001`–`W017`). It also catches the mistakes that only show up with real guests: no SMS sender, a `PUBLIC_URL` missing from `ALLOWED_HOSTS`, a tunnel URL with live M-Pesa, the sandbox shortcode in production and the demo host phone. Once those are gone, only hosting is left.
+2. Fill in `.env` (or your host's environment variables):
+
+   | For | Set |
+   |---|---|
+   | The site | `DEBUG=0`, `DEMO=0`, `SECRET_KEY`, `ALLOWED_HOSTS`, `FRONTEND_URL` and `PUBLIC_URL` (your https address), `ID_ENCRYPTION_KEY`, `AMINA_PHONE` (the host's own number) |
+   | Africa's Talking | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` (a sender ID approved in the AT dashboard; without it or `AT_SMS_NUMBER`, AT's default sender only reaches Airtel numbers), `AT_SMS_NUMBER`, `AT_USSD_CODE`, `AT_VOICE_NUMBER`, `AT_WEBHOOK_SECRET`; optionally `AT_DATA_PRODUCT` and `AT_WHATSAPP_NUMBER` |
+   | M-Pesa | `MPESA_PROVIDER=daraja`, `DARAJA_ENV=production`, `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`, `DARAJA_SHORTCODE`, `DARAJA_PASSKEY` (emailed after Daraja Go-Live), `DARAJA_CALLBACK_SECRET`, `MPESA_SHORTCODE`; for a Till, `DARAJA_TRANSACTION_TYPE=CustomerBuyGoodsOnline` and `DARAJA_PARTY_B` |
+   | Cards | `CARD_PROVIDER=paystack`, `PAYSTACK_SECRET_KEY` |
+   | Smart locks (optional) | `IGLOOHOME_API_KEY`, `IGLOOHOME_API_BASE`, and each home's lock device ID in the listing editor |
+
+3. Register the callback URLs:
+   - the [Africa's Talking table above](#connecting-africas-talking);
+   - the Paybill callbacks, with `register_c2b`;
+   - the Paystack webhook, in the Paystack dashboard.
+
+   M-Pesa prompts carry their own callback URL, so they need no registration. With live M-Pesa the callbacks must be on your own https domain: Safaricom blocks ngrok and similar tunnels in production.
+4. Serve the site over HTTPS, on any host or with `docker compose up -d` behind a TLS proxy, and keep the scheduler running. Reminders, door codes and payment checks depend on it. `migrate` also creates the cache table that every API worker shares, so login-code limits and provider tokens hold across workers. Without Docker, also run `uv run python manage.py collectstatic --noinput` in `backend/` (with `DEBUG=0` set) after each update; the Docker image does this when it's built.
 
 ## Demo script (5 minutes)
 
@@ -278,7 +302,7 @@ They use the database from the quick start; pytest creates and drops its own tes
 
 ```bash
 cd backend
-uv run pytest            # 529 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run pytest            # 586 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
 uv run ruff check .
 cd ../frontend
 npx tsc --noEmit
