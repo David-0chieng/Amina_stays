@@ -28,7 +28,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages and a single-instance scheduler; Next.js 16 front end; 529 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages and a single-instance scheduler; Next.js 16 front end; 586 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out), USSD, Voice (IVR, bridge, voicemail, outbound safety calls), Airtime, Mobile Data, SIM Swap; WhatsApp and AT checkout optional. |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
 
@@ -292,7 +292,7 @@ Real guests need no code changes. Each simulated service switches to the real on
 8. **Host console.** Today (the Today | Upcoming reservation cards), Calendar and Messages (Amina can also reply from her phone with "#3 …"). Then open the Menu for the kitchen sheet, insights and the one-click TRA return.
 
 More flows, if there's time:
-- **Change of plans.** On a confirmed trip, *Change dates or guests* (or *Extend your stay* once checked in) shows the new price before the guest commits; pay the difference and the dates move. Turn off *Instant changes* in Settings and the request waits on Amina's Today page instead.
+- **Change of plans.** On a confirmed trip, *Change dates or guests* (or *Extend your stay* once checked in) shows the new price before the guest commits; pay the difference and the dates move. Turn off *Instant date changes* in Settings and the request waits on Amina's Today page instead.
 - **Paybill.** In the Demo Lab time machine, pick a booking that owes money and press *Simulate Paybill payment*: it is matched by reference, the guest gets a PAID SMS, and Host › Payments updates. Payments that match no booking land in the Unmatched queue.
 - **Waitlist.** On a listing whose dates are taken, *Notify me*; cancel the blocking stay in the console and the waiting guest gets an SMS offer.
 
