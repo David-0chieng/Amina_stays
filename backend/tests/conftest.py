@@ -13,8 +13,9 @@ from apps.properties.models import Area, Unit
 
 
 @pytest.fixture(autouse=True)
-def _isolated(settings):
-    """Deterministic, offline settings: simulated providers, no background timers, synchronous outbox."""
+def _isolated(settings, monkeypatch):
+    """Deterministic, offline settings: simulated providers, no background timers, synchronous outbox, and none of the
+    keys or numbers from a developer's .env (a test that needs one sets it)."""
     settings.SIM_PAY_DELAY_SECONDS = 0
     settings.OUTBOX_MODE = "sync"
     settings.AT_API_KEY = ""
@@ -23,6 +24,18 @@ def _isolated(settings):
     settings.CARD_PROVIDER = "simulate"
     settings.SIM_SWAP_PROVIDER = "simulate"
     settings.DEMO = True
+    settings.AT_USERNAME, settings.AT_SANDBOX = "sandbox", True
+    for key in ("AT_SENDER_ID", "AT_SMS_NUMBER", "AT_USSD_CODE", "AT_VOICE_NUMBER", "AT_WHATSAPP_NUMBER"):
+        setattr(settings, key, "")
+    for key in ("AT_DATA_PRODUCT", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "PAYSTACK_SECRET_KEY"):
+        setattr(settings, key, "")
+    settings.IGLOOHOME_API_KEY = settings.LOCK_PROVIDER_API_BASE = ""
+    settings.DARAJA_ENV, settings.DARAJA_SHORTCODE = "sandbox", "174379"
+    settings.DARAJA_CONSUMER_KEY = settings.DARAJA_CONSUMER_SECRET = settings.DARAJA_PASSKEY = ""
+    settings.AMINA_PHONE = "+254700000001"
+    settings.FRONTEND_URL = settings.PUBLIC_URL = "http://localhost:3000"
+    for var in ("DARAJA_CALLBACK_SECRET", "MPESA_SHORTCODE"):  # read from the environment directly
+        monkeypatch.delenv(var, raising=False)
     cache.clear()  # OTP caps and DRF throttles live in the cache
     yield
     cache.clear()
