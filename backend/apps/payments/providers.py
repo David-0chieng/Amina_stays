@@ -9,16 +9,26 @@ Card numbers never touch this server: guests are always sent to a hosted page.
 
 import base64
 import logging
+import os
+import re
 import secrets
 import threading
-from datetime import datetime
+from urllib.parse import urlsplit
 
 import httpx
 from django.conf import settings
 from django.core.cache import cache
 from django.db import close_old_connections
+from django.utils import timezone
+
+from apps.core.utils import today
 
 log = logging.getLogger("amina.payments")
+
+TOKEN_KEY = "daraja_token"
+# Safaricom: "Do not use public URL testers e.g. ngrok ... especially on production ... usually blocked by the API"
+TUNNEL_HOSTS = ("ngrok", "trycloudflare", "requestbin", "mockbin")
+SETUP_FAILED = "We couldn't start the M-Pesa payment - Amina has been alerted. Please try again later or pay by card."
 
 
 class PaymentError(Exception):
@@ -34,8 +44,43 @@ class PaymentError(Exception):
         return {"error": str(self), "failure_code": self.failure_code, "suggest": self.suggest}
 
 
+class DarajaSetupError(PaymentError):
+    """Daraja refused us because of how M-Pesa is set up here (keys, shortcode, passkey), not anything the guest did."""
+
+
 def _callback_base():
     return settings.PUBLIC_URL.rstrip("/")
+
+
+def callback_secret():
+    """The path secret Daraja calls back on, for the M-Pesa prompt (STK) callback and the Paybill (C2B) ones alike:
+    DARAJA_CALLBACK_SECRET, else AT_WEBHOOK_SECRET, else the placeholder "cb"."""
+    return (
+        getattr(settings, "DARAJA_CALLBACK_SECRET", "")
+        or os.environ.get("DARAJA_CALLBACK_SECRET", "")
+        or settings.AT_WEBHOOK_SECRET
+        or "cb"
+    )
+
+
+def tunnel_host(url):
+    """A tunnel or public URL tester (ngrok, trycloudflare, ...): fine for a sandbox demo, blocked by Safaricom live."""
+    host = urlsplit(url).hostname or ""
+    return any(name in host for name in TUNNEL_HOSTS)
+
+
+def setup_alert(booking, detail):
+    """Tell Amina (once a day) that M-Pesa payments fail because Daraja is misconfigured."""
+    from apps.safety.services import raise_alert
+
+    raise_alert(
+        "payment",
+        f"Daraja is misconfigured, so M-Pesa payments are failing ({detail}). Check the DARAJA_* settings: env, "
+        "shortcode, passkey, consumer key and secret, transaction type and PartyB.",
+        severity="high",
+        booking=booking,
+        dedupe=f"daraja-setup:{today()}",
+    )
 
 
 # ---------- M-Pesa ----------
@@ -87,11 +132,11 @@ class DarajaMpesa:
         )
 
     def _token(self):
-        token = cache.get("daraja_token")
+        token = cache.get(TOKEN_KEY)
         if token:
             return token
         if not (settings.DARAJA_CONSUMER_KEY and settings.DARAJA_CONSUMER_SECRET):
-            raise PaymentError("Daraja credentials are not configured")
+            raise DarajaSetupError("Daraja credentials are not configured")
         with httpx.Client(timeout=15) as c:
             r = c.get(
                 f"{self.base}/oauth/v1/generate",
@@ -99,13 +144,24 @@ class DarajaMpesa:
                 auth=(settings.DARAJA_CONSUMER_KEY, settings.DARAJA_CONSUMER_SECRET),
             )
         if r.status_code != 200:
-            raise PaymentError(f"Daraja auth failed (HTTP {r.status_code})")
+            error = DarajaSetupError if r.status_code in (400, 401, 403) else PaymentError
+            raise error(f"Daraja auth failed (HTTP {r.status_code})")
         data = r.json()
-        cache.set("daraja_token", data["access_token"], int(data.get("expires_in", 3599)) - 60)
+        cache.set(TOKEN_KEY, data["access_token"], int(data.get("expires_in", 3599)) - 60)
         return data["access_token"]
 
+    def _post(self, path, body, timeout=20):
+        """POST with the cached token. Each new token invalidates the previous one, so a token another process has
+        replaced comes back as HTTP 401 or 404.001.03 "Invalid Access Token": drop it and try once more."""
+        for last_try in (False, True):
+            with httpx.Client(timeout=timeout) as c:
+                r = c.post(f"{self.base}{path}", json=body, headers={"Authorization": f"Bearer {self._token()}"})
+            if last_try or not _stale_token(r):
+                return r
+            cache.delete(TOKEN_KEY)
+
     def _password(self):
-        ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        ts = timezone.localtime().strftime("%Y%m%d%H%M%S")  # Kenya time on any server
         raw = f"{settings.DARAJA_SHORTCODE}{settings.DARAJA_PASSKEY}{ts}"
         return base64.b64encode(raw.encode()).decode(), ts
 
@@ -115,33 +171,28 @@ class DarajaMpesa:
             "BusinessShortCode": settings.DARAJA_SHORTCODE,
             "Password": password,
             "Timestamp": ts,
-            "TransactionType": "CustomerPayBillOnline",
+            "TransactionType": settings.DARAJA_TRANSACTION_TYPE,
             "Amount": int(payment.amount),
             "PartyA": payment.phone.lstrip("+"),
-            "PartyB": settings.DARAJA_SHORTCODE,
+            "PartyB": settings.DARAJA_PARTY_B or settings.DARAJA_SHORTCODE,
             "PhoneNumber": payment.phone.lstrip("+"),
-            "CallBackURL": f"{_callback_base()}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+            "CallBackURL": f"{_callback_base()}/api/payments/daraja/callback/{callback_secret()}",
             "AccountReference": payment.booking.ref[:12],
             "TransactionDesc": "Amina Stays",
         }
         try:
-            with httpx.Client(timeout=20) as c:
-                r = c.post(
-                    f"{self.base}/mpesa/stkpush/v1/processrequest",
-                    json=body,
-                    headers={"Authorization": f"Bearer {self._token()}"},
-                )
+            r = self._post("/mpesa/stkpush/v1/processrequest", body)
+            if r.status_code in (401, 403):  # refused even with a fresh token: the keys or the Daraja app are wrong
+                raise DarajaSetupError(f"HTTP {r.status_code} from the STK push API")
             data = r.json()
+        except DarajaSetupError as e:
+            setup_alert(payment.booking, str(e))
+            raise PaymentError(SETUP_FAILED) from e
         except (httpx.HTTPError, ValueError) as e:
             raise PaymentError(f"M-Pesa is unreachable ({e})") from e
         payment.raw = [*payment.raw, {"request": data}]
         if str(data.get("ResponseCode")) != "0":
-            # e.g. {"errorCode": "500.001.1001", "errorMessage": "Unable to lock subscriber, ..."}
-            code = str(data.get("errorCode") or "").rsplit(".", 1)[-1]
-            raise PaymentError(
-                data.get("errorMessage") or data.get("ResponseDescription") or "STK push rejected",
-                failure_code=code if code in ("1001", "1025", "1037") else None,
-            )
+            raise _rejected(payment, data)
         payment.transaction_id = data["CheckoutRequestID"]
         payment.save(update_fields=["transaction_id", "raw"])
         return {"status": "pending", "message": data.get("CustomerMessage", "")}
@@ -149,21 +200,54 @@ class DarajaMpesa:
     def query(self, payment):
         password, ts = self._password()
         try:
-            with httpx.Client(timeout=15) as c:
-                r = c.post(
-                    f"{self.base}/mpesa/stkpushquery/v1/query",
-                    headers={"Authorization": f"Bearer {self._token()}"},
-                    json={
-                        "BusinessShortCode": settings.DARAJA_SHORTCODE,
-                        "Password": password,
-                        "Timestamp": ts,
-                        "CheckoutRequestID": payment.transaction_id,
-                    },
-                )
+            r = self._post(
+                "/mpesa/stkpushquery/v1/query",
+                {
+                    "BusinessShortCode": settings.DARAJA_SHORTCODE,
+                    "Password": password,
+                    "Timestamp": ts,
+                    "CheckoutRequestID": payment.transaction_id,
+                },
+                timeout=15,
+            )
             return r.json()
         except Exception as e:
             log.warning("Daraja query failed: %s", e)
             return None
+
+
+def _stale_token(r):
+    if r.status_code == 401:
+        return True
+    try:
+        return str(r.json().get("errorCode") or "") == "404.001.03"
+    except (ValueError, AttributeError):
+        return False
+
+
+BUSY_PHONE = re.compile(r"lock subscriber|already in process", re.IGNORECASE)
+GUEST_FIELDS = re.compile(r"amount|phone|partya", re.IGNORECASE)
+
+
+def _rejected(payment, data):
+    """The PaymentError for a push Daraja turned down, e.g. {"errorCode": "500.001.1001", "errorMessage": ...}.
+    500.001.1001 is also "Merchant does not exist" and "Wrong credentials", so only "Unable to lock subscriber, a
+    transaction is already in process" means another prompt is open on the phone. Errors about our setup (the access
+    token, 500.001.1001, a bad request field other than the guest's amount or number) give the guest a plain message
+    and alert Amina."""
+    message = data.get("errorMessage") or data.get("ResponseDescription") or "STK push rejected"
+    error = str(data.get("errorCode") or "")
+    code = error.rsplit(".", 1)[-1]
+    if code == "1001" and BUSY_PHONE.search(message):
+        return PaymentError(message, failure_code="1001")
+    if code in ("1025", "1037"):
+        return PaymentError(message, failure_code=code)
+    if error.startswith(("404.001.", "500.001.1001")) or (
+        error.startswith("400.002.") and not GUEST_FIELDS.search(message)
+    ):
+        setup_alert(payment.booking, f"{error} {message}")
+        return PaymentError(SETUP_FAILED)
+    return PaymentError(message)
 
 
 class ATMobileCheckout:

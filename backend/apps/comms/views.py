@@ -32,7 +32,7 @@ def at_webhook(view):
     def wrapper(request, secret=None, *args, **kwargs):
         expected = settings.AT_WEBHOOK_SECRET
         given = secret or request.GET.get("key", "")
-        if expected and not hmac.compare_digest(given, expected):
+        if expected and not hmac.compare_digest(given.encode(), expected.encode()):  # as bytes: non-ASCII is no 500
             log.warning("rejected AT callback with a bad secret from %s", request.META.get("REMOTE_ADDR"))
             return HttpResponseForbidden("bad secret")
         return view(request, *args, **kwargs)
@@ -173,7 +173,8 @@ def airtime_status(request):
 @at_webhook
 def data_status(request):
     d = _data(request)
-    record("system", f"Mobile data {d.get('status', '')} to {d.get('phoneNumber', '')}", phone=d.get("phoneNumber", ""))
+    phone = d.get("destination") or d.get("phoneNumber", "")  # AT sends the masked destination, e.g. +254705****48
+    record("system", f"Mobile data {d.get('status', '')} to {phone}", phone=phone)
     return HttpResponse("OK")
 
 

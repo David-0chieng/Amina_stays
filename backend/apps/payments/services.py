@@ -30,7 +30,7 @@ from apps.properties.models import Unit
 from apps.properties.services import is_available
 
 from .models import Payment, Refund
-from .providers import PaymentError, PaystackCard, card_provider, mpesa_provider
+from .providers import PaymentError, PaystackCard, card_provider, mpesa_provider, setup_alert
 from .results import MPESA_RESULTS, result_for, sms_reason
 
 log = logging.getLogger("amina.payments")
@@ -51,11 +51,13 @@ MISMATCH = (
 
 
 def paybill_number():
-    """The Paybill/Till guests can pay into with their booking ref as the account number (None = not offered)."""
+    """The Paybill guests can pay into with their booking ref as the account number (None = not offered). A Till
+    (CustomerBuyGoodsOnline) takes no account number, so DARAJA_SHORTCODE only counts for a Paybill."""
+    paybill = settings.MPESA_PROVIDER == "daraja" and settings.DARAJA_TRANSACTION_TYPE == "CustomerPayBillOnline"
     number = (
         getattr(settings, "MPESA_SHORTCODE", "")
         or os.environ.get("MPESA_SHORTCODE", "")
-        or (settings.DARAJA_SHORTCODE if settings.MPESA_PROVIDER == "daraja" else "")
+        or (settings.DARAJA_SHORTCODE if paybill else "")
         or ("174379" if settings.DEMO else "")  # Daraja's sandbox shortcode
     )
     return str(number).strip() or None
@@ -248,12 +250,17 @@ def start_remote_payment(booking):
 
 
 def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amount=None):
-    """Settle a payment exactly once. Safe to call repeatedly (duplicate callbacks, retries, the simulator)."""
+    """Settle a payment exactly once. Safe to call repeatedly (duplicate callbacks, retries, the simulator).
+    Money for a date change applies the change in the same transaction: nobody ever sees it counted while the
+    change it paid for is still pending."""
     outcome = None
     try:
         with transaction.atomic():
             p = Payment.objects.select_for_update().get(pk=payment.pk)
             if p.status == "success":
+                if provider_ref and not p.provider_ref:  # the M-Pesa code arriving after STK Query settled it
+                    p.provider_ref = provider_ref[:80]
+                    p.save(update_fields=["provider_ref", "updated_at"])
                 return p.booking
             if amount is not None and int(float(amount)) < p.amount:
                 p.status, p.failure_code = "failed", ""
@@ -295,9 +302,11 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
                         b.save(update_fields=["status", "updated_at"])
                         outcome = "refund_due"
                 elif p.purpose == "change" and b.status in ("confirmed", "checked_in"):
-                    outcome = "change"  # pays for a new total that isn't applied yet: not an overpayment
+                    outcome = "change"  # pays for the new total, not an overpayment
                 else:
                     outcome = "extra"
+            if outcome == "change":
+                _apply_change(p)
     except IntegrityError:
         # the reinstated dates were taken in the meantime (exclusion constraint)
         Booking.objects.filter(pk=payment.booking_id).update(status="refund_due")
@@ -312,8 +321,6 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
         b.refresh_from_db()
         bookings.refund_overpayment(b, reason="Paid more than the bill")  # a Paybill payment can be any amount
         _invoice_quietly(b)
-    elif outcome == "change":
-        _apply_change(p)
     elif outcome == "refund_due":
         from apps.safety.services import raise_alert
 
@@ -354,13 +361,16 @@ def on_success(payment, *, transaction_id=None, provider_ref="", raw=None, amoun
 
 
 def _apply_change(p):
-    """A paid reservation change: the payment is already counted in amount_paid; bookings applies the change."""
+    """A paid reservation change, inside the transaction that counts the money: bookings applies the change (or
+    declines it and refunds when the dates have gone). Should that fail, its savepoint is rolled back on its own:
+    the money stays counted, Amina is alerted and the scheduler applies the change later."""
     hook = getattr(bookings, "on_change_paid", None)
     if hook is None:
         log.warning("change payment %s settled but bookings.on_change_paid isn't available", p.pk)
         return
     try:
-        hook(p)
+        with transaction.atomic():
+            hook(p)
     except Exception:
         log.exception("applying the change paid by payment %s failed", p.pk)
         from apps.safety.services import raise_alert
@@ -404,9 +414,70 @@ def on_mpesa_result(payment, code, *, desc="", raw=None, amount=None, receipt=""
                 updated_at=timezone.now(),
             )
             return paybill.booking
+        twin = None if receipt else _paybill_twin(payment)
+        if twin:  # STK Query (no M-Pesa code) settled it after a Paybill payment of the same money was counted
+            cancelled = Payment.objects.filter(pk=payment.pk, status__in=("pending", "failed", "expired")).update(
+                status="cancelled",
+                failure_reason=f"Paid with no M-Pesa code: counted once, with Paybill {twin.transaction_id}",
+                updated_at=timezone.now(),
+            )
+            if cancelled:
+                flag_same_money(twin.booking, payment, twin.transaction_id)
+            return twin.booking
         return on_success(payment, provider_ref=receipt, raw=raw, amount=amount)
     entry = MPESA_RESULTS.get(code)
-    return on_failure(payment, entry["reason"] if entry else (desc or "failed"), raw=raw, code=code)
+    failed = on_failure(payment, entry["reason"] if entry else (desc or "failed"), raw=raw, code=code)
+    if entry and entry.get("host_alert"):
+        setup_alert(failed.booking, entry["host_alert"])
+    return failed
+
+
+def _paybill_twin(payment):
+    """A Paybill payment already counted for the same booking and amount around this prompt's time: what a prompt
+    settled without an M-Pesa code may be the same money as."""
+    from .c2b import ECHO_WINDOW
+
+    window = (payment.created_at - ECHO_WINDOW, payment.created_at + ECHO_WINDOW)
+    return (
+        Payment.objects.filter(
+            booking_id=payment.booking_id,
+            provider="c2b",
+            status="success",
+            amount=payment.amount,
+            created_at__range=window,
+        )
+        .order_by("created_at")
+        .first()
+    )
+
+
+def flag_same_money(booking, prompt, paybill_code):
+    """A prompt and a Paybill payment matched by amount and time, not by M-Pesa code: one payment reported twice
+    (a prompt echoed to the Paybill) or a guest who paid twice. It is counted once, and nobody is promised a
+    refund; Amina's M-Pesa statement settles which it was, and the alert says what to do if it was two."""
+    from apps.safety.services import raise_alert
+
+    b = Booking.objects.select_related("guest").get(pk=booking.pk)
+    amount = kes(prompt.amount)
+    if b.balance_due >= prompt.amount:  # the stay still needs the money: a second payment counts towards it
+        action = "record the second one on the reservation (Record cash or bank payment, M-Pesa)"
+    else:
+        action = f"refund {amount} to {prompt.phone or b.guest.phone}"
+    raise_alert(
+        "payment",
+        f"Check M-Pesa for {b.ref}: an M-Pesa prompt and Paybill {paybill_code} ({amount}) were counted as one "
+        f"payment. If your statement shows two, {action}.",
+        severity="high",
+        booking=b,
+        dedupe=f"same-money:{prompt.pk}",
+    )
+    record(
+        "payment",
+        f"Prompt payment and Paybill {paybill_code} ({amount}) counted once for {b.ref}",
+        booking=b,
+        amount=prompt.amount,
+        trans_id=paybill_code,
+    )
 
 
 def on_failure(payment, reason="", raw=None, code=""):
@@ -453,10 +524,11 @@ def public_failure(payment):
         return {"failure_code": code, "failure_message": MISMATCH, "retryable": False, "suggest": None}
     entry = result_for(code) if p.method == "mpesa" else {"retryable": True, "suggest": "retry", "message": CARD_FAILED}
     suggest = _suggest(p, b, code, entry["suggest"])
-    ctx = {"amount": kes(p.amount), "deposit_option": "", "hold_note": ""}
+    ctx = {"amount": kes(p.amount), "deposit_option": "", "or_deposit": "", "hold_note": ""}
     if suggest == "deposit":
-        deposit = deposit_amount(b)
-        ctx["deposit_option"] = f", pay only the {SiteSettings.load().deposit_percent}% deposit ({kes(deposit)})"
+        deposit, pct = deposit_amount(b), SiteSettings.load().deposit_percent
+        ctx["deposit_option"] = f", pay only the {pct}% deposit ({kes(deposit)})"
+        ctx["or_deposit"] = f", or pay only the {pct}% deposit ({kes(deposit)}) by M-Pesa"
     if b.status == "held" and b.hold_active:
         minutes = max(1, math.ceil((b.hold_expires_at - timezone.now()).total_seconds() / 60))
         ctx["hold_note"] = f" Your home is still held for {minutes} more minute{'s' if minutes != 1 else ''}."
@@ -471,7 +543,7 @@ def public_failure(payment):
 def _suggest(p, b, code, default):
     if p.method != "mpesa":
         return default
-    if code == "1":  # top up, or pay less now
+    if code in ("1", "3", "4", "8"):  # too much for this M-Pesa account now: pay less now, or by card
         return "deposit" if p.purpose != "change" and deposit_amount(b) else "card"
     if code in ("1025", "1037"):  # the prompt can't reach the phone: Paybill doesn't need it to
         return "paybill" if paybill_number() and p.purpose != "change" else "retry"

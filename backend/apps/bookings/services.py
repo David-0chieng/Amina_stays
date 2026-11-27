@@ -1881,9 +1881,10 @@ def attach_change_payment(booking, payment):
 
 
 def on_change_paid(payment):
-    """Payments calls this once a purpose="change" payment has succeeded (booking.amount_paid already includes it).
-    Applies the change it paid for, exactly once per payment. When that's no longer possible - the dates went in
-    the meantime, or the change was withdrawn or replaced - the money is queued for refund and Amina alerted."""
+    """Payments calls this once a purpose="change" payment has succeeded (booking.amount_paid already includes it),
+    inside the transaction that settles it, so the money and the change it paid for commit together. Applies the
+    change, exactly once per payment. When that's no longer possible - the dates went in the meantime, or the
+    change was withdrawn or replaced - the money is queued for refund and Amina alerted."""
     from apps.payments.models import Payment
     from apps.safety.services import raise_alert
 

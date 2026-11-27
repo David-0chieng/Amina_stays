@@ -164,6 +164,18 @@ def quote(request, slug):
                 }
             )
     q = services.quote(unit, ci, co, guests=guests, addons=items, payment_plan=d.get("payment_plan", "full"))
+    # Amina's agreed price for a walk-in, priced exactly as the booking will be (host only: guests can't set prices)
+    override = d.get("price_override")
+    if override not in (None, "") and IsHost().has_permission(request, None):
+        from apps.bookings.services import _with_agreed_price
+        from apps.core.models import SiteSettings
+
+        try:
+            override = int(override)
+        except (TypeError, ValueError):
+            override = 0
+        if override > 0:
+            q = _with_agreed_price(q, override, ci, co, SiteSettings.load())
     problems = []
     if ci < today():
         problems.append("Check-in can't be in the past.")

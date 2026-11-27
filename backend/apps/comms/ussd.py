@@ -186,7 +186,8 @@ class Reply(Exception):
 
 
 def fit(text, limit=LIMIT - 4):
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    """Shorten to the limit with an ASCII "..." (telcos can't render special characters like a Unicode ellipsis)."""
+    return text if len(text) <= limit else text[: max(limit - 3, 0)].rstrip() + "..."
 
 
 class Cursor:

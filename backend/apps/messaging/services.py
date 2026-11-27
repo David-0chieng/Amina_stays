@@ -184,9 +184,25 @@ def mark(msg, handled, kind=""):
 
 # ---------- outbox ----------
 
+REDACTED = "••••••"  # a login code wherever its message is stored or shown: only the SMS itself carries the code
 
-def send(phone, body, *, booking=None, kind="", sender="system", user=None, channel=None, marketing=False, sync=False):
-    """Queue an outbound message. Returns the Message (or None if suppressed by an opt-out)."""
+
+def send(
+    phone,
+    body,
+    *,
+    booking=None,
+    kind="",
+    sender="system",
+    user=None,
+    channel=None,
+    marketing=False,
+    sync=False,
+    secret="",
+):
+    """Queue an outbound message. Returns the Message (or None if suppressed by an opt-out).
+    secret: a login code inside body. The message carries it, but it is never stored - the saved copy (inbox, admin,
+    exports) reads REDACTED instead and doesn't touch the thread's preview - so it goes out at once, from memory."""
     phone = normalize_phone(phone) or phone
     if not phone or not body:
         log.warning("message skipped (no recipient/body): %s", kind)
@@ -208,34 +224,35 @@ def send(phone, body, *, booking=None, kind="", sender="system", user=None, chan
         direction="out",
         channel=channel,
         sender=sender,
-        body=body,
+        body=body.replace(secret, REDACTED) if secret else body,
         kind=kind[:40],
         status="queued" if channel in ("sms", "whatsapp") else "sent",
         sent_by=user,
         is_marketing=marketing,
     )
-    updates = {"last_message_at": msg.created_at, "last_preview": body[:160]}
+    updates = {} if secret else {"last_message_at": msg.created_at, "last_preview": body[:160]}
     if sender in ("host", "staff"):
         updates.update(needs_reply=False, waiting_since=None, unread=0)
         Message.objects.filter(thread=thread, direction="in", handled="relayed").update(handled="answered")
-    Thread.objects.filter(pk=thread.pk).update(**updates)
+    if updates:
+        Thread.objects.filter(pk=thread.pk).update(**updates)
     if msg.status == "queued":
-        _schedule(msg.pk, sync)
+        _schedule(msg.pk, sync or bool(secret), text=body if secret else None)
     return msg
 
 
-def _schedule(message_id, sync=False):
+def _schedule(message_id, sync=False, text=None):
     mode = "sync" if sync else settings.OUTBOX_MODE
     if mode == "sync":
-        transaction.on_commit(lambda: dispatch(message_id), robust=True)
+        transaction.on_commit(lambda: dispatch(message_id, text), robust=True)
     elif mode == "thread":
-        transaction.on_commit(lambda: _executor.submit(_dispatch_in_thread, message_id), robust=True)
+        transaction.on_commit(lambda: _executor.submit(_dispatch_in_thread, message_id, text), robust=True)
     # mode == "queue": the scheduler picks it up
 
 
-def _dispatch_in_thread(message_id):
+def _dispatch_in_thread(message_id, text=None):
     try:
-        dispatch(message_id)
+        dispatch(message_id, text)
     except Exception:
         log.exception("dispatch failed for message %s", message_id)
     finally:
@@ -251,6 +268,7 @@ def _suppressed(phone):
 
 # Africa's Talking answers every recipient with a statusCode: 100 Processed, 101 Sent and 102 Queued are accepted.
 SMS_ACCEPTED = (100, 101, 102)
+WHATSAPP_ACCEPTED = ("SENT", "DELIVERED", "READ")
 SMS_UNDELIVERABLE = {  # final: sending the same message again can't help
     402: "Sender ID not registered with this network (402 InvalidSenderId)",
     403: "Not a valid mobile number (403 InvalidPhoneNumber)",
@@ -265,7 +283,9 @@ NO_CREDIT_RETRY = timedelta(minutes=30)  # booking messages wait out a 405 (not 
 NO_CREDIT_GIVE_UP = timedelta(hours=24)  # ...for a day at most
 
 
-def dispatch(message_id):
+def dispatch(message_id, text=None):
+    """Send one queued message. text is the real wording when the stored body was redacted (send(secret=...)): such
+    a message goes out once, from memory - if that fails it stays failed and the guest asks for a new code."""
     from apps.comms import at
 
     with transaction.atomic():
@@ -280,14 +300,25 @@ def dispatch(message_id):
         msg.status, msg.sent_at, msg.next_attempt_at = "logged", timezone.now(), None
         msg.save(update_fields=["status", "sent_at", "next_attempt_at"])
         return msg
+    if text is None and REDACTED in msg.body:  # its code was never stored: there's nothing to send again
+        msg.status, msg.next_attempt_at, msg.failure_reason = "failed", None, "Login code not kept, so not re-sent"
+        msg.save(update_fields=["status", "next_attempt_at", "failure_reason"])
+        return msg
     msg.next_attempt_at = None
     try:
         if msg.channel == "whatsapp":
-            res = at.send_whatsapp(msg.phone, msg.body)
-            status = "logged" if res.get("dry_run") else "sent"
-            msg.provider_id = str(res.get("messageId", ""))[:80]
+            res = at.send_whatsapp(msg.phone, text or msg.body)
+            if res.get("dry_run"):
+                status = "logged"
+            else:
+                msg.provider_id = str(res.get("messageId") or "")[:80]
+                msg.provider_status = str(res.get("status") or "")[:40]
+                # AT returns a messageId only for a message it took; FAILED / DELETED are failed sends
+                if not (res.get("messageId") and msg.provider_status.upper() in WHATSAPP_ACCEPTED):
+                    raise at.ATError(f"WhatsApp not sent ({msg.provider_status or 'no message id'})")
+                status = "sent"
         else:
-            res = at.send_sms(msg.phone, msg.body)
+            res = at.send_sms(msg.phone, text or msg.body)
             if res.get("dry_run"):
                 status = "logged"
             else:
@@ -309,6 +340,8 @@ def dispatch(message_id):
     except Exception as e:  # network/HTTP error: try again after a pause
         msg.status = _retry_later(msg, str(e))
         log.warning("send failed (%s/%s) to %s: %s", msg.attempts, MAX_ATTEMPTS, msg.phone, e)
+    if text is not None and msg.status == "queued":  # a retry would need the code we didn't keep
+        msg.status, msg.next_attempt_at = "failed", None
     msg.save(
         update_fields=[
             "status",

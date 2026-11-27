@@ -3,8 +3,9 @@
 This one map drives everything a failed prompt touches: the reason stored on the Payment (and shown to Amina),
 the guest's message on the web, the SMS fragment for remote guests and the suggested next step
 (retry | card | deposit | wait | paybill). Some suggestions depend on the booking and are settled in
-services.public_failure: code 1 offers the deposit only on a held, pay-in-full booking that allows one,
-and 1025/1037 point to Paybill only when one is configured.
+services.public_failure: codes 1, 3, 4 and 8 offer the deposit only on a held, pay-in-full booking that allows one,
+and 1025/1037 point to Paybill only when one is configured. A host_alert means the fault is our M-Pesa setup, so
+Amina is alerted too.
 """
 
 import re
@@ -24,6 +25,44 @@ MPESA_RESULTS = {
         "message": "Your M-Pesa balance was too low for {amount}. Top up or use Fuliza and resend{deposit_option}, "
         "or pay by card.",
         "sms": {"en": "insufficient M-Pesa balance", "sw": "salio la M-Pesa halitoshi"},
+    },
+    "2": {
+        "reason": "below M-Pesa's minimum amount",
+        "retryable": False,
+        "suggest": "card",
+        "message": "M-Pesa can't take a payment this small. Please pay by card.",
+        "sms": {"en": "below M-Pesa's minimum amount", "sw": "kiasi ni chini ya kiwango cha chini cha M-Pesa"},
+    },
+    "3": {
+        "reason": "over M-Pesa's limit for one payment",
+        "retryable": False,
+        "suggest": "deposit",
+        "message": "{amount} is more than M-Pesa allows in one payment. Pay by card{or_deposit}.",
+        "sms": {"en": "over M-Pesa's limit for one payment", "sw": "kiasi kinazidi kikomo cha M-Pesa kwa malipo moja"},
+    },
+    "4": {
+        "reason": "over the daily M-Pesa limit",
+        "retryable": False,
+        "suggest": "deposit",
+        "message": "{amount} would take you over your daily M-Pesa limit. Pay by card{or_deposit}.",
+        "sms": {"en": "over the daily M-Pesa limit", "sw": "kiasi kinazidi kikomo cha M-Pesa cha siku"},
+    },
+    "8": {
+        "reason": "over an M-Pesa balance limit",
+        "retryable": False,
+        "suggest": "deposit",
+        "message": "An M-Pesa balance limit stopped this payment of {amount}. Pay by card{or_deposit}.",
+        "sms": {"en": "over an M-Pesa balance limit", "sw": "kiasi kinazidi kikomo cha salio la M-Pesa"},
+    },
+    "17": {
+        "reason": "the same payment was tried again too soon",
+        "retryable": True,
+        "suggest": "wait",
+        "message": "M-Pesa blocks the same payment twice within 2 minutes. Wait 2 minutes, then resend.",
+        "sms": {
+            "en": "the same payment was tried again too soon - wait 2 minutes",
+            "sw": "malipo yale yale yalijaribiwa tena mapema mno - subiri dakika 2",
+        },
     },
     "1001": {
         "reason": "another M-Pesa request was open on the phone",
@@ -69,6 +108,23 @@ MPESA_RESULTS = {
         "suggest": "retry",
         "message": "Wrong M-Pesa PIN. Try once more carefully - repeated wrong PINs can lock M-Pesa - or pay by card.",
         "sms": {"en": "wrong M-Pesa PIN", "sw": "PIN ya M-Pesa si sahihi"},
+    },
+    # our setup, not the guest: the shortcode doesn't take this TransactionType / PartyB (e.g. a Till sent as Paybill)
+    "2028": {
+        "reason": "a problem with our M-Pesa setup",
+        "retryable": False,
+        "suggest": "card",
+        "message": "M-Pesa payments aren't working on our side right now - Amina has been told. Please pay by card.",
+        "sms": {"en": "a problem with our M-Pesa setup", "sw": "tatizo la mipangilio yetu ya M-Pesa"},
+        "host_alert": "result 2028, not permitted for this shortcode: wrong DARAJA_TRANSACTION_TYPE or DARAJA_PARTY_B",
+    },
+    "SFC_IC0003": {
+        "reason": "a problem with our M-Pesa setup",
+        "retryable": False,
+        "suggest": "card",
+        "message": "M-Pesa payments aren't working on our side right now - Amina has been told. Please pay by card.",
+        "sms": {"en": "a problem with our M-Pesa setup", "sw": "tatizo la mipangilio yetu ya M-Pesa"},
+        "host_alert": "result SFC_IC0003, the operator does not exist: wrong DARAJA_PARTY_B or DARAJA_TRANSACTION_TYPE",
     },
 }
 

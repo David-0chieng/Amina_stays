@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from apps.core.api import IsHost
 
 from .models import Activity, JobRun, SiteSettings
+from .utils import normalize_phone
 
 
 def health(request):
@@ -96,6 +97,22 @@ class SettingsSerializer(serializers.ModelSerializer):
         model = SiteSettings
         exclude = ["id"]
 
+    def validate_host_phone(self, value):
+        return _dialable_phone(value)
+
+    def validate_backup_phone(self, value):
+        return _dialable_phone(value)
+
+
+def _dialable_phone(value):
+    """Alerts ring these numbers through Africa's Talking, which only dials +E.164: store them that way."""
+    if not value:
+        return ""
+    phone = normalize_phone(value)
+    if not phone:
+        raise serializers.ValidationError("Enter a valid phone number, e.g. +254712345678.")
+    return phone
+
 
 @api_view(["GET", "PATCH"])
 @permission_classes([IsHost])
@@ -117,6 +134,7 @@ def channels(request):
     """Africa's Talking integration status + the exact callback URLs to paste into the AT dashboard."""
     from apps.comms import at
     from apps.payments.c2b import c2b_urls
+    from apps.payments.providers import callback_secret
 
     base = settings.PUBLIC_URL.rstrip("/")
     prefix = f"{base}/at/{settings.AT_WEBHOOK_SECRET}" if settings.AT_WEBHOOK_SECRET else f"{base}/at"
@@ -197,7 +215,7 @@ def channels(request):
                     else settings.MPESA_PROVIDER,
                     "callbacks": {
                         "AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
-                        "Daraja": f"{base}/api/payments/daraja/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+                        "Daraja": f"{base}/api/payments/daraja/callback/{callback_secret()}",
                         "Paybill validation": paybill["validation"],
                         "Paybill confirmation": paybill["confirmation"],
                     },

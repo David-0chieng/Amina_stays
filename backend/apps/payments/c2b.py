@@ -14,7 +14,8 @@ import os
 import re
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 from django.conf import settings
@@ -30,7 +31,7 @@ from apps.messaging import services as messaging
 
 from . import services
 from .models import C2BTransaction, Payment
-from .providers import DarajaMpesa, PaymentError, _callback_base
+from .providers import DarajaMpesa, PaymentError, _callback_base, callback_secret, tunnel_host
 
 log = logging.getLogger("amina.payments")
 
@@ -39,16 +40,10 @@ BAD_CODE = (
     "That doesn't look like an M-Pesa code - it's the 10 letters and numbers at the start of your M-Pesa SMS, "
     "e.g. SKL3X7QW2P."
 )
-
-
-def callback_secret():
-    """The path secret Daraja must call back on (register .../c2b/confirmation/<secret>)."""
-    return (
-        getattr(settings, "DARAJA_CALLBACK_SECRET", "")
-        or os.environ.get("DARAJA_CALLBACK_SECRET", "")
-        or settings.AT_WEBHOOK_SECRET
-        or "cb"
-    )
+# Safaricom's production rules for C2B URLs: "Avoid keywords such as M-PESA, Safaricom, exe, exec, cmd, SQL, query"
+BANNED_URL_WORDS = ("mpesa", "m-pesa", "safaricom", "exe", "exec", "cmd", "sql", "query")
+# an STK prompt settled by STK Query (no receipt in the answer) and a Paybill notice this close are the same money
+ECHO_WINDOW = timedelta(minutes=30)
 
 
 def c2b_urls():
@@ -65,7 +60,7 @@ def c2b_shortcode():
 
 
 def register_c2b_urls(shortcode=None):
-    """Register our validation and confirmation URLs for the shortcode with Daraja (POST /mpesa/c2b/v1/registerurl).
+    """Register our validation and confirmation URLs for the shortcode with Daraja (POST /mpesa/c2b/v2/registerurl).
     Returns {"shortcode", "urls", "response"}. Raises PaymentError when Daraja isn't configured or says no."""
     shortcode = str(shortcode or c2b_shortcode()).strip()
     missing = [
@@ -80,10 +75,13 @@ def register_c2b_urls(shortcode=None):
     if missing:
         raise PaymentError(f"Daraja isn't configured - set {', '.join(missing)}.")
     urls = c2b_urls()
+    production = settings.DARAJA_ENV == "production"
     if not urls["confirmation"].startswith("https://"):
-        raise PaymentError(
-            "Daraja only calls public HTTPS addresses - set PUBLIC_URL, e.g. https://abc123.ngrok-free.app."
-        )
+        example = "your site's own https:// domain" if production else "e.g. https://abc123.ngrok-free.app"
+        raise PaymentError(f"Daraja only calls public HTTPS addresses - set PUBLIC_URL ({example}).")
+    if production:
+        for url in urls.values():
+            _check_production_url(url)
     daraja = DarajaMpesa()
     body = {
         "ShortCode": shortcode,
@@ -92,11 +90,7 @@ def register_c2b_urls(shortcode=None):
         "ValidationURL": urls["validation"],
     }
     try:
-        token = daraja._token()
-        with httpx.Client(timeout=20) as c:
-            r = c.post(
-                f"{daraja.base}/mpesa/c2b/v1/registerurl", json=body, headers={"Authorization": f"Bearer {token}"}
-            )
+        r = daraja._post("/mpesa/c2b/v2/registerurl", body)
         data = r.json()
     except (httpx.HTTPError, ValueError) as e:
         raise PaymentError(f"Daraja is unreachable ({e})") from e
@@ -104,6 +98,22 @@ def register_c2b_urls(shortcode=None):
         detail = (data.get("errorMessage") or data.get("ResponseDescription")) if isinstance(data, dict) else data
         raise PaymentError(f"Daraja didn't register the URLs: {detail or f'HTTP {r.status_code}'}")
     return {"shortcode": shortcode, "urls": urls, "response": data}
+
+
+def _check_production_url(url):
+    """Safaricom's production rules: your own domain (URL testers such as ngrok are blocked) and none of the words
+    its filter rejects."""
+    if tunnel_host(url):
+        raise PaymentError(
+            f"Safaricom blocks tunnel hosts like {urlsplit(url).hostname} in production - set PUBLIC_URL to your own "
+            "https:// domain."
+        )
+    banned = [word for word in BANNED_URL_WORDS if word in url.lower()]
+    if banned:
+        raise PaymentError(
+            f"Safaricom rejects C2B URLs containing {' or '.join(repr(w) for w in banned)}: {url} - change PUBLIC_URL "
+            "or DARAJA_CALLBACK_SECRET (a hex secret is always safe)."
+        )
 
 
 def normalise_ref(text):
@@ -201,22 +211,48 @@ def receive(payload):
         return C2BTransaction.objects.get(trans_id=trans_id)
     # an M-Pesa prompt paid into the same shortcode can be echoed here too: never count the money twice
     prompt = Payment.objects.filter(provider_ref=trans_id, status="success").exclude(provider="c2b").first()
+    b = find_booking(t.bill_ref)
+    guessed = False
+    if prompt is None and b is not None:
+        prompt = _settled_without_receipt(b, t)
+        guessed = prompt is not None  # matched by amount and time, not by M-Pesa code
     if prompt:
         C2BTransaction.objects.filter(pk=t.pk).update(
             status="matched",
             booking_id=prompt.booking_id,
             payment_id=prompt.pk,
             matched_at=timezone.now(),
-            note="Already received as an M-Pesa prompt payment",
+            note="Counted once with an M-Pesa prompt of the same amount and time"
+            if guessed
+            else "Already received as an M-Pesa prompt payment",
         )
+        if guessed:
+            services.flag_same_money(prompt.booking, prompt, trans_id)
+    elif b is None:
+        _hold_for_review(t, f"No booking matches account '{t.bill_ref}'" if t.bill_ref else "No account number")
     else:
-        b = find_booking(t.bill_ref)
-        if b is None:
-            _hold_for_review(t, f"No booking matches account '{t.bill_ref}'" if t.bill_ref else "No account number")
-        else:
-            apply(t, b, strict=True)
+        apply(t, b, strict=True)
     t.refresh_from_db()
     return t
+
+
+def _settled_without_receipt(b, t):
+    """The prompt this Paybill notice echoes when STK Query settled it (Query answers carry no M-Pesa receipt): a
+    Daraja prompt for the same booking and amount, sent within ECHO_WINDOW of the payment and still without a
+    receipt. Its receipt is filled in here; the claim is atomic, so one notice completes one prompt."""
+    when = t.trans_time or timezone.now()
+    candidates = Payment.objects.filter(
+        booking=b,
+        provider="daraja",
+        status="success",
+        provider_ref="",
+        amount=t.amount,
+        created_at__range=(when - ECHO_WINDOW, when + ECHO_WINDOW),
+    )
+    for p in candidates.order_by("-id"):
+        if Payment.objects.filter(pk=p.pk, provider_ref="").update(provider_ref=t.trans_id, updated_at=timezone.now()):
+            return p
+    return None
 
 
 def apply(t, booking, *, actor=None, strict=False):

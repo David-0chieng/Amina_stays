@@ -173,3 +173,44 @@ def test_search_filters_by_property_type_and_free_cancellation(api, unit, area):
     assert [c["name"] for c in flexible] == ["Palm Suite"]
     assert flexible[0]["free_cancellation"] is True
     assert api.get("/api/listings?guest_favourite=1").data["count"] == 0  # no reviews yet, so no favourites
+
+
+def test_go_live_check_names_what_a_live_site_still_needs(settings):
+    from apps.core.checks import go_live_check
+
+    settings.DEMO, settings.AT_API_KEY, settings.AT_WEBHOOK_SECRET = True, "", ""
+    settings.MPESA_PROVIDER = settings.CARD_PROVIDER = "simulate"
+    ids = {w.id for w in go_live_check()}
+    assert {"amina.W001", "amina.W002", "amina.W004", "amina.W005", "amina.W006", "amina.W009", "amina.W017"} <= ids
+
+
+def test_go_live_check_is_quiet_once_every_key_is_set(settings):
+    from django.test import override_settings
+
+    from apps.core.checks import go_live_check
+
+    settings.DEMO = False
+    settings.AT_USERNAME, settings.AT_API_KEY, settings.AT_SANDBOX = "aminastays", "atsk_live", False
+    settings.AT_SENDER_ID, settings.AMINA_PHONE = "AMINASTAYS", "+254712345678"
+    settings.AT_WEBHOOK_SECRET, settings.PUBLIC_URL = "long-random-secret", "https://aminastays.co.ke"
+    settings.ALLOWED_HOSTS = ["aminastays.co.ke"]
+    settings.MPESA_PROVIDER, settings.DARAJA_ENV, settings.DARAJA_SHORTCODE = "daraja", "production", "522533"
+    settings.DARAJA_CONSUMER_KEY = settings.DARAJA_CONSUMER_SECRET = settings.DARAJA_PASSKEY = "set"
+    settings.CARD_PROVIDER, settings.PAYSTACK_SECRET_KEY = "paystack", "sk_live_set"
+    settings.ID_ENCRYPTION_KEY = "set"
+    settings.IGLOOHOME_API_KEY, settings.LOCK_PROVIDER_API_BASE = "set", "https://locks.example"
+    assert go_live_check() == []
+
+    def warned(**changes):
+        with override_settings(**changes):
+            return [w.id for w in go_live_check()]
+
+    assert warned(AT_SENDER_ID="") == ["amina.W013"]  # AT's default sender reaches Airtel only
+    assert warned(AT_SENDER_ID="", AT_SMS_NUMBER="22384") == []  # the two-way shortcode sends instead
+    assert warned(DARAJA_SHORTCODE="174379") == ["amina.W014"]
+    assert warned(ALLOWED_HOSTS=["localhost", ".ngrok-free.app"]) == ["amina.W015"]
+    assert warned(PUBLIC_URL="https://abc123.ngrok-free.app", ALLOWED_HOSTS=[".ngrok-free.app"]) == ["amina.W016"]
+    assert warned(DARAJA_ENV="sandbox", PUBLIC_URL="https://abc123.ngrok-free.app", ALLOWED_HOSTS=["*"]) == [
+        "amina.W008"
+    ]  # a sandbox demo through a tunnel is fine
+    assert warned(AMINA_PHONE="+254 700 000 001") == ["amina.W017"]

@@ -54,13 +54,14 @@ def bodies(phone, after=0, **filters):
 
 
 def ussd(chain, phone=KE_GUEST, session="s-flow"):
-    """One USSD hop. Every screen must fit Safaricom's 160 characters (prefix included), say CON or END,
-    and a menu must never lose an option to truncation."""
+    """One USSD hop. Every screen must fit Safaricom's 160 characters (prefix included), say CON or END, use
+    plain ASCII (telcos can't render special characters), and a menu must never lose an option to truncation."""
     out = process_ussd(phone, chain, session)
     assert out.startswith(("CON ", "END ")), out
     assert len(out) <= 160, f"{chain!r} answers {len(out)} chars:\n{out}"
+    assert out.isascii(), f"{chain!r} has characters a phone may not show:\n{out}"
     if out.startswith("CON") and options(out):
-        assert not out.endswith("…"), f"{chain!r} cuts its menu off:\n{out}"
+        assert not out.endswith("..."), f"{chain!r} cuts its menu off:\n{out}"
         nums = [int(n) for n in options(out) if n != "98"]
         assert nums == list(range(nums[0], nums[0] + len(nums))), f"{chain!r} skips options:\n{out}"
     return out

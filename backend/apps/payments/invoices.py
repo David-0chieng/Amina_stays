@@ -84,10 +84,10 @@ def invoice_lines(b):
             key = (x.get("label") or "Standard", x["price"])
             groups[key] = groups.get(key, 0) + 1
         for (label, price), count in groups.items():
-            lines.append(_line(f"{stay} - {label} night" if len(groups) > 1 else f"{stay} - night", count, price))
+            lines.append(_line(f"{stay}, {label} nights" if len(groups) > 1 else f"{stay}, per night", count, price))
     elif b.accommodation_amount:
         lines.append(
-            _line(f"{stay} - accommodation", n or 1, round(b.accommodation_amount / (n or 1)), b.accommodation_amount)
+            _line(f"{stay}, accommodation", n or 1, round(b.accommodation_amount / (n or 1)), b.accommodation_amount)
         )
     if b.discount_amount:
         lines.append(_line("Stay discount", 1, -b.discount_amount))

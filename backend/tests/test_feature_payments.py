@@ -2,14 +2,16 @@
 Paystack verification, the ledger's balances due / unmatched queue / CSV, eTIMS-ready invoices and credit notes,
 and the Lipa na M-Pesa Paybill fallback (Daraja C2B, "I've paid" claims, SMS PAID)."""
 
+import base64
 import csv
 import io
 import json
 import threading
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import pytest
+from django.core.cache import cache
 from django.core.management import CommandError, call_command
 from django.db import connection
 from django.urls import resolve
@@ -19,17 +21,18 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.bookings import services as bookings
 from apps.bookings.models import Booking
+from apps.comms import deferred
 from apps.core.models import SiteSettings
 from apps.core.utils import kes, today
 from apps.messaging.models import Message
 from apps.payments import c2b, invoices
 from apps.payments import services as payments
 from apps.payments.models import C2BTransaction, CreditNote, Invoice, Payment, Refund
-from apps.payments.providers import DarajaMpesa, PaymentError, PaystackCard
+from apps.payments.providers import SETUP_FAILED, DarajaMpesa, PaymentError, PaystackCard
 from apps.safety.models import Alert
 
 from .conftest import days
-from .flowkit import sms
+from .flowkit import frozen, sms
 
 pytestmark = pytest.mark.django_db
 
@@ -117,10 +120,10 @@ def test_daraja_result_codes_become_a_reason_a_message_and_a_next_step(
 
 def test_unknown_codes_keep_darajas_words_and_a_safe_message(client, unit, guest):
     b = hold(unit, guest)
-    p = prompt(b, checkout_id="ws_CO_17")
-    client.post(DARAJA, daraja_result(p, 17, desc="Rule limited."), content_type=JSON)
+    p = prompt(b, checkout_id="ws_CO_8006")
+    client.post(DARAJA, daraja_result(p, 8006, desc="The security credential is locked."), content_type=JSON)
     info = failure(p)
-    assert (p.failure_code, p.failure_reason) == ("17", "Rule limited.")
+    assert (p.failure_code, p.failure_reason) == ("8006", "The security credential is locked.")
     assert info["suggest"] == "retry" and "don't pay again" in info["failure_message"]
     assert payments.public_failure(Payment(status="success", booking=b)) == {
         "failure_code": None,
@@ -548,8 +551,8 @@ def test_invoices_are_issued_on_confirmation_with_gap_free_numbers(guest_api, un
         "vat_registered": False,
     }
     assert inv["buyer"] == {"name": "Wanjiru Test", "phone": guest.phone, "kra_pin": ""}
-    assert [(x["label"].split(" - ")[-1], x["qty"], x["unit_price"]) for x in inv["lines"]] == [
-        ("night", 2, 10_000),
+    assert [(x["label"].split(", ")[-1], x["qty"], x["unit_price"]) for x in inv["lines"]] == [
+        ("per night", 2, 10_000),
         ("Cleaning fee", 1, 2_000),
         ("Breakfast", 4, 650),
     ]
@@ -940,7 +943,7 @@ def test_register_c2b_calls_daraja_registerurl(settings):
     ):
         call_command("register_c2b", "--shortcode", "600981", stdout=out)
     assert sent == {
-        "url": "https://sandbox.safaricom.co.ke/mpesa/c2b/v1/registerurl",
+        "url": "https://sandbox.safaricom.co.ke/mpesa/c2b/v2/registerurl",
         "body": {
             "ShortCode": "600981",
             "ResponseType": "Completed",
@@ -1007,3 +1010,315 @@ def test_a_pending_date_change_gets_first_call_on_paybill_money(client, guest_ap
     monkeypatch.setattr(bookings, "attach_change_payment", broken)
     client.post(C2B.format("confirmation"), json.dumps(c2b_payload(b.ref, 500, "SCHANGE004")), content_type=JSON)
     assert Payment.objects.get(transaction_id="SCHANGE004").status == "success"  # never left pending
+
+
+# ---------- going live: what Daraja really answers ----------
+
+
+class FakeDaraja:
+    """Stands in for httpx.Client: each POST gets the next (status, json) answer (the last one repeats) and is
+    recorded; a GET is the OAuth call and hands out tok1, tok2, ..."""
+
+    def __init__(self, *answers):
+        self.answers, self.sent, self.tokens = list(answers), [], 0
+
+    def __call__(self, timeout):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url, params, auth):
+        self.tokens += 1
+        token = f"tok{self.tokens}"
+        return mock.Mock(status_code=200, json=lambda: {"access_token": token, "expires_in": "3599"})
+
+    def post(self, url, json, headers):
+        self.sent.append({"url": url, "body": json, "auth": headers["Authorization"]})
+        status, body = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        return mock.Mock(status_code=status, json=lambda: body)
+
+
+def daraja_prompt(b):
+    return Payment.objects.create(
+        booking=b, amount=b.total, method="mpesa", purpose="full", phone=b.guest.phone, provider="daraja"
+    )
+
+
+BUSY = "Unable to lock subscriber, a transaction is already in process for the current subscriber"
+
+
+@pytest.mark.parametrize(
+    ("error", "message", "code"),
+    [
+        ("500.001.1001", BUSY, "1001"),
+        ("500.001.1001", "Merchant does not exist", None),
+        ("500.001.1001", "Wrong credentials", None),
+        ("400.002.02", "Bad Request - Invalid BusinessShortCode", None),
+        ("404.001.03", "Invalid Access Token", None),  # still refused with a fresh token
+    ],
+)
+def test_only_a_busy_phone_is_blamed_on_the_guest_and_a_setup_error_alerts_amina(
+    unit, guest, host, settings, error, message, code
+):
+    _live_daraja(settings)
+    b = hold(unit, guest)
+    fake = FakeDaraja((int(error[:3]), {"requestId": "29115-1", "errorCode": error, "errorMessage": message}))
+    with mock.patch("apps.payments.providers.httpx.Client", fake):
+        for _ in range(2):  # the guest tries again
+            with pytest.raises(PaymentError) as e:
+                payments.start_payment(b, method="mpesa")
+    p = b.payments.latest("id")
+    if code:
+        assert e.value.as_dict() == {"error": message, "failure_code": "1001", "suggest": "wait"}
+        assert not Alert.objects.exists()
+        return
+    assert e.value.as_dict() == {"error": SETUP_FAILED, "failure_code": None, "suggest": "retry"}
+    assert p.failure_code == "" and "already open on your phone" not in failure(p)["failure_message"]
+    [alert] = Alert.objects.filter(kind="payment")  # once, however many guests try
+    assert alert.severity == "high" and alert.summary.startswith("Daraja is misconfigured") and message in alert.summary
+    assert Message.objects.filter(phone=host.phone, kind="alert").count() == 1
+
+
+def test_a_token_another_worker_replaced_is_fetched_again_once(unit, guest, settings):
+    _live_daraja(settings)
+    b = hold(unit, guest)
+    stale = (404, {"requestId": "1", "errorCode": "404.001.03", "errorMessage": "Invalid Access Token"})
+    cache.set("daraja_token", "old")  # each new token invalidates the previous one
+    fake = FakeDaraja(stale, (200, {"ResponseCode": "0", "CheckoutRequestID": "ws_CO_fresh"}))
+    with mock.patch("apps.payments.providers.httpx.Client", fake):
+        payments.start_payment(b, method="mpesa")
+    assert [s["auth"] for s in fake.sent] == ["Bearer old", "Bearer tok1"] and cache.get("daraja_token") == "tok1"
+    p = Payment.objects.get(booking=b)
+    assert (p.status, p.transaction_id) == ("pending", "ws_CO_fresh")
+
+    cache.set("daraja_token", "old")
+    fake = FakeDaraja((401, {}), (200, {"ResponseCode": "0", "ResultCode": "1032", "ResultDesc": "Cancelled"}))
+    with mock.patch("apps.payments.providers.httpx.Client", fake):
+        assert DarajaMpesa().query(p)["ResultCode"] == "1032"
+    assert [s["auth"] for s in fake.sent] == ["Bearer old", "Bearer tok1"]
+
+    cache.set("daraja_token", "old")
+    fake = FakeDaraja(stale, (200, {"ResponseCode": "0", "ResponseDescription": "Success"}))
+    with mock.patch("apps.payments.providers.httpx.Client", fake):
+        assert c2b.register_c2b_urls("600981")["response"]["ResponseDescription"] == "Success"
+    assert [s["auth"] for s in fake.sent] == ["Bearer old", "Bearer tok1"]
+
+
+def test_the_stk_push_for_a_till_with_a_kenya_time_stamp_and_the_shared_secret(unit, guest, settings):
+    _live_daraja(settings)
+    settings.DARAJA_SHORTCODE, settings.DARAJA_PASSKEY, settings.DARAJA_CALLBACK_SECRET = "4123456", "pk", "d4r4j4"
+    settings.DARAJA_TRANSACTION_TYPE, settings.DARAJA_PARTY_B = "CustomerBuyGoodsOnline", "5123456"
+    p = daraja_prompt(hold(unit, guest))
+    fake = FakeDaraja((200, {"ResponseCode": "0", "CheckoutRequestID": "ws_CO_till"}))
+    with (
+        mock.patch("apps.payments.providers.httpx.Client", fake),
+        frozen(datetime(2026, 11, 25, 21, 30, tzinfo=UTC)),
+    ):
+        DarajaMpesa().request(p)
+    body = fake.sent[0]["body"]
+    assert (body["BusinessShortCode"], body["TransactionType"], body["PartyB"]) == (
+        "4123456",
+        "CustomerBuyGoodsOnline",
+        "5123456",
+    )
+    assert body["Timestamp"] == "20261126003000"  # 00:30 in Nairobi, whatever zone the server runs in
+    assert base64.b64decode(body["Password"]).decode() == "4123456pk20261126003000"
+    assert body["CallBackURL"] == "https://stays.example.co.ke/api/payments/daraja/callback/d4r4j4"
+    assert payments.paybill_number() is None  # a Till takes no account number: no Paybill to fall back on
+
+    settings.DARAJA_TRANSACTION_TYPE, settings.DARAJA_PARTY_B = "CustomerPayBillOnline", ""
+    fake = FakeDaraja((200, {"ResponseCode": "0", "CheckoutRequestID": "ws_CO_paybill"}))
+    with mock.patch("apps.payments.providers.httpx.Client", fake):
+        DarajaMpesa().request(daraja_prompt(hold(unit, guest, ci=30)))
+    assert (fake.sent[0]["body"]["TransactionType"], fake.sent[0]["body"]["PartyB"]) == (
+        "CustomerPayBillOnline",
+        "4123456",
+    )
+    assert payments.paybill_number() == "4123456"
+
+
+def test_one_secret_guards_the_stk_and_paybill_callbacks(client, unit, guest, settings):
+    settings.DARAJA_CALLBACK_SECRET = "d4r4j4"  # and no AT_WEBHOOK_SECRET
+    b = hold(unit, guest)
+    p = prompt(b, checkout_id="ws_CO_shared")
+    for secret in ("cb", "guess", "caf%C3%A9"):
+        url = f"/api/payments/daraja/callback/{secret}"
+        assert client.post(url, daraja_result(p, 0), content_type=JSON).status_code == 403
+    assert Payment.objects.get(pk=p.pk).status == "pending"
+    r = client.post("/api/payments/daraja/callback/d4r4j4", daraja_result(p, 0), content_type=JSON)
+    assert r.status_code == 200 and Booking.objects.get(pk=b.pk).status == "confirmed"
+    assert c2b.c2b_urls()["confirmation"].endswith("/c2b/confirmation/d4r4j4")
+
+
+def test_a_non_ascii_secret_or_signature_is_refused_not_a_server_error(client, unit, foreign_guest, settings):
+    settings.AT_WEBHOOK_SECRET = "s3cret"
+    for url in ("/api/payments/at/callback/caf%C3%A9", "/api/payments/daraja/c2b/confirmation/caf%C3%A9"):
+        assert client.post(url, "{}", content_type=JSON).status_code == 403
+    _, _, body, _ = _paystack_card(unit, foreign_guest, settings)
+    assert client.post(PAYSTACK, body, content_type=JSON, HTTP_X_PAYSTACK_SIGNATURE="é").status_code == 403
+
+
+def test_a_paybill_notice_for_a_prompt_settled_by_stk_query_is_the_same_money(client, unit, guest, settings):
+    b = hold(unit, guest)
+    p = prompt(b, checkout_id="ws_CO_query")
+    Payment.objects.filter(pk=p.pk).update(provider="daraja", created_at=timezone.now() - timedelta(minutes=3))
+    settings.MPESA_PROVIDER = "daraja"
+    with mock.patch.object(DarajaMpesa, "query", return_value={"ResultCode": "0", "ResultDesc": "Processed"}):
+        payments.reconcile_pending()
+    b.refresh_from_db()
+    assert b.amount_paid == b.total and Payment.objects.get(pk=p.pk).provider_ref == ""  # Query has no receipt
+
+    later = c2b_payload(b.ref, b.total, "SLATE00001")  # the same amount hours away from the prompt: more money
+    later["TransTime"] = (timezone.localtime() + timedelta(hours=2)).strftime("%Y%m%d%H%M%S")
+    client.post(C2B.format("confirmation"), json.dumps(later), content_type=JSON)
+    b.refresh_from_db()
+    assert b.amount_paid == 2 * b.total and Refund.objects.get(booking=b).amount == b.total
+
+    echo = c2b_payload(b.ref, b.total, "SQRY000001")  # the prompt's own payment, echoed to the Paybill
+    client.post(C2B.format("confirmation"), json.dumps(echo), content_type=JSON)
+    b.refresh_from_db()
+    t = C2BTransaction.objects.get(trans_id="SQRY000001")
+    assert (t.status, t.payment_id) == ("matched", p.pk) and Payment.objects.get(pk=p.pk).provider_ref == "SQRY000001"
+    assert b.amount_paid == 2 * b.total and b.payments.count() == 2 and Refund.objects.filter(booking=b).count() == 1
+    # matched by amount and time, not by M-Pesa code: Amina checks her statement
+    alert = Alert.objects.get(booking=b, summary__startswith="Check M-Pesa")
+    assert "SQRY000001" in alert.summary and f"refund {kes(b.total)}" in alert.summary
+
+
+def test_a_prompt_settled_by_stk_query_after_its_paybill_echo_counts_once(client, unit, guest, settings):
+    b = hold(unit, guest)
+    p = prompt(b, checkout_id="ws_CO_rev")
+    Payment.objects.filter(pk=p.pk).update(provider="daraja", created_at=timezone.now() - timedelta(minutes=3))
+    # the prompt's callback never comes, but its money is echoed to the Paybill and confirms the stay
+    client.post(C2B.format("confirmation"), json.dumps(c2b_payload(b.ref, b.total, "SREV000001")), content_type=JSON)
+    b.refresh_from_db()
+    assert b.status == "confirmed" and b.amount_paid == b.total
+    before = Message.objects.order_by("-id").values_list("id", flat=True).first()
+    settings.MPESA_PROVIDER = "daraja"
+    with mock.patch.object(DarajaMpesa, "query", return_value={"ResultCode": "0", "ResultDesc": "Processed"}):
+        payments.reconcile_pending()  # STK Query: paid, with no M-Pesa code to tell the two apart
+    b.refresh_from_db()
+    assert b.amount_paid == b.total and not Refund.objects.filter(booking=b).exists()
+    assert Payment.objects.get(pk=p.pk).status == "cancelled"
+    assert not Message.objects.filter(id__gt=before, phone=guest.phone, kind__in=("refund_queued", "payment_received"))
+    alert = Alert.objects.get(booking=b, summary__startswith="Check M-Pesa")
+    assert "SREV000001" in alert.summary and f"refund {kes(b.total)}" in alert.summary
+
+
+def test_a_same_amount_prompt_that_the_stay_still_needs_is_flagged_to_be_recorded(client, unit, guest, settings):
+    b = hold(unit, guest, payment_plan="deposit")
+    deposit = b.amount_due_now
+    client.post(C2B.format("confirmation"), json.dumps(c2b_payload(b.ref, deposit, "SDEP000001")), content_type=JSON)
+    b.refresh_from_db()
+    assert b.status == "confirmed" and b.balance_due >= deposit
+    p = prompt(b, checkout_id="ws_CO_bal", amount=deposit)  # a second payment of the same amount, for the balance
+    Payment.objects.filter(pk=p.pk).update(provider="daraja", created_at=timezone.now() - timedelta(minutes=3))
+    settings.MPESA_PROVIDER = "daraja"
+    with mock.patch.object(DarajaMpesa, "query", return_value={"ResultCode": "0", "ResultDesc": "Processed"}):
+        payments.reconcile_pending()
+    alert = Alert.objects.get(booking=b, summary__startswith="Check M-Pesa")
+    assert "record the second one on the reservation" in alert.summary and "refund" not in alert.summary
+
+
+def test_a_late_receipt_for_a_prompt_settled_by_stk_query_is_kept(client, unit, guest, settings):
+    b = hold(unit, guest)
+    p = prompt(b, checkout_id="ws_CO_late")
+    Payment.objects.filter(pk=p.pk).update(provider="daraja", created_at=timezone.now() - timedelta(minutes=3))
+    settings.MPESA_PROVIDER = "daraja"
+    with mock.patch.object(DarajaMpesa, "query", return_value={"ResultCode": "0", "ResultDesc": "Processed"}):
+        payments.reconcile_pending()
+    client.post(DARAJA, daraja_result(p, 0, receipt="SLATERCPT1"), content_type=JSON)
+    assert Payment.objects.get(pk=p.pk).provider_ref == "SLATERCPT1"
+    client.post(C2B.format("confirmation"), json.dumps(c2b_payload(b.ref, b.total, "SLATERCPT1")), content_type=JSON)
+    b.refresh_from_db()
+    assert b.amount_paid == b.total and C2BTransaction.objects.get().status == "matched"
+    assert not Alert.objects.filter(summary__startswith="Check M-Pesa").exists()  # matched by its M-Pesa code
+
+
+@pytest.mark.parametrize(
+    ("public_url", "secret", "why"),
+    [
+        ("http://aminastays.co.ke", "s3cret", "own https:// domain"),
+        ("https://abc123.ngrok-free.app", "s3cret", "tunnel hosts like abc123.ngrok-free.app"),
+        ("https://amina.trycloudflare.com", "s3cret", "tunnel hosts"),
+        ("https://mpesa.aminastays.co.ke", "s3cret", "containing 'mpesa'"),
+        ("https://aminastays.co.ke", "SqlQuery", "containing 'sql' or 'query'"),
+        ("https://aminastays.co.ke", "exec", "containing 'exe' or 'exec'"),
+    ],
+)
+def test_register_c2b_refuses_urls_safaricom_blocks_in_production(settings, public_url, secret, why):
+    _live_daraja(settings)
+    settings.DARAJA_ENV, settings.PUBLIC_URL, settings.AT_WEBHOOK_SECRET = "production", public_url, secret
+    with mock.patch("apps.payments.providers.httpx.Client", side_effect=AssertionError("nothing is registered")):
+        with pytest.raises(PaymentError, match=why):
+            c2b.register_c2b_urls("522533")
+
+
+def test_a_tunnel_is_fine_for_a_sandbox_registration(settings):
+    _live_daraja(settings)
+    settings.PUBLIC_URL = "https://abc123.ngrok-free.app"
+    with mock.patch("apps.payments.providers.httpx.Client", FakeDaraja((200, {"ResponseCode": "0"}))):
+        assert c2b.register_c2b_urls("600981")["shortcode"] == "600981"
+
+
+# ---------- going live: the rest of Daraja's result codes ----------
+
+
+@pytest.mark.parametrize(
+    ("code", "suggest", "retryable", "words"),
+    [
+        (17, "wait", True, "Wait 2 minutes, then resend"),
+        (2, "card", False, "Please pay by card"),
+        (3, "deposit", False, "Pay by card, or pay only the 30% deposit"),
+        (4, "deposit", False, "daily M-Pesa limit"),
+        (8, "deposit", False, "balance limit"),
+    ],
+)
+def test_limit_and_repeat_codes_get_their_own_next_step(client, unit, guest, code, suggest, retryable, words):
+    b = hold(unit, guest, ci=20)  # far enough ahead for a deposit
+    p = prompt(b, checkout_id=f"ws_CO_rule{code}")
+    client.post(DARAJA, daraja_result(p, code, desc="Declined due to limit rule"), content_type=JSON)
+    info = failure(p)
+    assert (info["failure_code"], info["suggest"], info["retryable"]) == (str(code), suggest, retryable)
+    assert words in info["failure_message"] and "don't pay again" not in info["failure_message"]
+    assert not Alert.objects.exists()
+
+
+@pytest.mark.parametrize("code", ["2028", "SFC_IC0003"])
+def test_a_wrong_transaction_type_or_party_b_alerts_amina(client, unit, host, code):
+    juma = User.objects.create_user("+254722000778", name="Juma", lang="sw")
+    b = hold(unit, juma, channel="sms")
+    p = prompt(b, checkout_id=f"ws_CO_{code}")
+    client.post(DARAJA, daraja_result(p, code, desc="The request is not permitted"), content_type=JSON)
+    info = failure(p)
+    assert (info["suggest"], info["retryable"]) == ("card", False) and "Amina has been told" in info["failure_message"]
+    alert = Alert.objects.get(kind="payment")
+    assert alert.severity == "high" and "DARAJA_TRANSACTION_TYPE" in alert.summary
+    [body] = Message.objects.filter(phone=juma.phone, kind="payment_failed").values_list("body", flat=True)
+    assert "tatizo la mipangilio yetu ya M-Pesa" in body
+
+
+# ---------- going live: Paystack is answered before Verify Transaction runs ----------
+
+
+def test_the_paystack_webhook_answers_before_verify_transaction_runs(
+    client, unit, foreign_guest, settings, django_capture_on_commit_callbacks
+):
+    b, p, body, sig = _paystack_card(unit, foreign_guest, settings)
+    settings.PAYMENTS_INLINE = False  # production: no Paystack call inside the webhook
+    with mock.patch.object(PaystackCard, "query", return_value=verified(p)) as verify:
+        with django_capture_on_commit_callbacks() as callbacks:
+            r = client.post(PAYSTACK, body, content_type=JSON, HTTP_X_PAYSTACK_SIGNATURE=sig)
+        assert r.status_code == 200 and not verify.called and Payment.objects.get(pk=p.pk).status == "pending"
+        with (
+            mock.patch.object(deferred._executor, "submit", side_effect=lambda fn, *args: fn(*args)),
+            mock.patch("apps.comms.deferred.close_old_connections"),
+        ):
+            for callback in callbacks:
+                callback()
+    verify.assert_called_once()
+    assert Payment.objects.get(pk=p.pk).status == "success" and Booking.objects.get(pk=b.pk).status == "confirmed"

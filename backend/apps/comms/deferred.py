@@ -1,9 +1,9 @@
-"""Slow provider calls that must not hold up an Africa's Talking callback.
+"""Slow provider calls that must not hold up a callback.
 
 A USSD hop has to be answered within seconds (Airtel allows 15) while a Daraja STK push can take ~35 s (token
 and push timeouts), so the push goes to a small worker pool once the response is on its way - the screen has
-already told the guest to check their phone. PAYMENTS_INLINE=True runs it inline instead (the default under tests,
-so flows stay deterministic).
+already told the guest to check their phone. Paystack's webhook is answered the same way, before its Verify
+Transaction call. PAYMENTS_INLINE=True runs it inline instead (the default under tests, so flows stay deterministic).
 """
 
 import logging

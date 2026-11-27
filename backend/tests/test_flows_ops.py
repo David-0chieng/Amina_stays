@@ -654,6 +654,21 @@ def test_settings_read_and_change_and_the_new_host_number_takes_over(homes, host
 
 
 @pytest.mark.django_db
+def test_the_numbers_alerts_ring_are_checked_and_kept_in_international_format(host_api):
+    r = host_api.patch(
+        "/api/host/settings", {"host_phone": "0712 345 678", "backup_phone": "254 733 000 111"}, format="json"
+    )
+    assert r.status_code == 200 and (r.json()["host_phone"], r.json()["backup_phone"]) == (
+        "+254712345678",
+        "+254733000111",
+    )
+    r = host_api.patch("/api/host/settings", {"backup_phone": "call Juma"}, format="json")
+    assert r.status_code == 400 and r.json()["error"] == "Backup phone: Enter a valid phone number, e.g. +254712345678."
+    assert SiteSettings.load().backup_phone == "+254733000111"
+    assert host_api.patch("/api/host/settings", {"backup_phone": ""}, format="json").json()["backup_phone"] == ""
+
+
+@pytest.mark.django_db
 def test_channels_page_shows_callbacks_and_jobs(host_api, settings):
     settings.PUBLIC_URL = "https://amina.example"
     JobRun.objects.create(key="outbox", run_count=3)

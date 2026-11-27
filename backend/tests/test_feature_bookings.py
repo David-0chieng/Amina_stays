@@ -2,10 +2,14 @@
 balance flag (C3), changing / extending a reservation on the web, by SMS and through Amina (C4), and manual host
 bookings with a deposit or an agreed price (C8)."""
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import timedelta
+from unittest import mock
 
 import pytest
 from django.conf import settings as django_settings
+from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -315,6 +319,64 @@ def test_dearer_change_waits_for_payment_then_applies(unit, guest, booked, guest
     trip = guest_api.get(f"/api/bookings/{booked.ref}").data
     assert trip["changes"][0]["status"] == "applied" and trip["changes"][0]["pay_now"] == 0
     assert any(e["kind"] == "change" for e in trip["timeline"])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_money_for_a_change_commits_with_the_change(booked, guest, guest_api):
+    c, pay = bookings.request_change(booked, check_in=days(10), check_out=days(15), actor=guest)
+    p = Payment.objects.get(pk=pay["payment_id"])
+    trips, armed, real_event = [], [], bookings.event
+
+    def event(b, kind, *args, **kw):
+        if kind == "payment" and not armed:  # inside the transaction that counts the money:
+            armed.append(True)  # read the trip the moment it commits
+            transaction.on_commit(lambda: trips.append(guest_api.get(f"/api/bookings/{b.ref}").data))
+        return real_event(b, kind, *args, **kw)
+
+    with mock.patch.object(bookings, "event", event):
+        settle(p)
+    [trip] = trips
+    assert (trip["changes"][0]["status"], trip["check_out"], trip["price"]["total"]) == (
+        "applied",
+        days(15),
+        c.new_total,
+    )
+    assert (trip["price"]["amount_paid"], trip["price"]["balance_due"]) == (c.new_total, 0)
+    assert next(x["status"] for x in trip["payments"] if x["id"] == p.pk) == "success"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_trip_read_while_the_change_is_being_paid_shows_one_state(booked, guest, guest_api):
+    from apps.bookings import serializers
+
+    c, pay = bookings.request_change(booked, check_in=days(10), check_out=days(15), actor=guest)
+    p = Payment.objects.get(pk=pay["payment_id"])
+    booking_read, carry_on = threading.Event(), threading.Event()
+    real_payments = serializers._payments
+
+    def payments_list(b):  # the trip has read the booking row: the payment races the rest of the read
+        booking_read.set()
+        carry_on.wait(10)
+        return real_payments(b)
+
+    def own_connection(fn):
+        try:
+            return fn()
+        finally:
+            connection.close()
+
+    with mock.patch.object(serializers, "_payments", payments_list), ThreadPoolExecutor(2) as pool:
+        reading = pool.submit(own_connection, lambda: guest_api.get(f"/api/bookings/{booked.ref}").data)
+        assert booking_read.wait(10)
+        paying = pool.submit(own_connection, lambda: settle(p))
+        wait([paying], timeout=1)  # the trip holds the booking, so the payment waits for it
+        carry_on.set()
+        trip = reading.result(10)
+        paying.result(10)
+    payment = next(x["status"] for x in trip["payments"] if x["id"] == p.pk)
+    assert (trip["changes"][0]["status"], trip["check_out"], payment) == ("pending_payment", days(13), "pending")
+    booked.refresh_from_db()
+    assert (booked.check_out, ChangeRequest.objects.get(pk=c.pk).status) == (days(15), "applied")
 
 
 def test_cheaper_change_applies_now_and_refunds_under_the_policy(unit, guest, booked, guest_api):
@@ -748,6 +810,15 @@ def test_host_booking_with_an_agreed_price_and_a_deposit(unit, host, host_api, s
     b = bookings.confirm(b)
     q = bookings.change_quote(b, days(12), days(16))
     assert q["available"] and q["lines"][0] == {"label": "KES 8,000 x 4 nights", "amount": 32_000}
+
+
+def test_the_new_reservation_quote_shows_the_agreed_price_total_to_hosts_only(unit, host_api, guest_api):
+    body = {"check_in": days(12).isoformat(), "check_out": days(15).isoformat(), "adults": 2, "price_override": 24_000}
+    agreed = host_api.post(f"/api/listings/{unit.slug}/quote", body, format="json").data
+    booked = _walk_in(host_api, unit, price_override=24_000, override_reason="Returning guest").data["booking"]
+    assert (agreed["accommodation"], agreed["total"]) == (24_000, booked["price"]["total"])
+    listed = guest_api.post(f"/api/listings/{unit.slug}/quote", body, format="json").data
+    assert listed["accommodation"] == 30_000 and listed["total"] > agreed["total"]
 
 
 def test_host_booking_by_card_charges_the_deposit_and_validates_the_override(unit, host_api, site):

@@ -14,20 +14,26 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.bookings.models import Booking
+from apps.comms import deferred
 from apps.core.api import IsGuest, IsHost
 from apps.core.utils import today
 
 from . import c2b, invoices, services
 from .models import C2BTransaction, Payment, Refund
-from .providers import PaymentError, PaystackCard
+from .providers import PaymentError, PaystackCard, callback_secret
 from .results import code_from_text
 
 log = logging.getLogger("amina.payments")
 
 
+def _same(given, expected):
+    """Constant-time comparison that is simply False (never a 500) for a non-ASCII secret or signature."""
+    return hmac.compare_digest(str(given or "").encode(), str(expected or "").encode())
+
+
 def _secret_ok(secret):
     expected = settings.AT_WEBHOOK_SECRET
-    return not expected or hmac.compare_digest(secret or "", expected)
+    return not expected or _same(secret, expected)
 
 
 def _json(request):
@@ -77,8 +83,8 @@ def at_callback(request, secret=""):
 @csrf_exempt
 @require_POST
 def daraja_callback(request, secret=""):
-    """Safaricom Daraja STK push result (ResultCode 0 = paid)."""
-    if not _secret_ok(secret if secret != "cb" else ""):
+    """Safaricom Daraja STK push result (ResultCode 0 = paid), on the same path secret as the Paybill callbacks."""
+    if not _same(secret, callback_secret()):
         return HttpResponseForbidden("bad secret")
     cb = (_json(request).get("Body") or {}).get("stkCallback") or {}
     checkout_id = cb.get("CheckoutRequestID")
@@ -106,7 +112,7 @@ def daraja_callback(request, secret=""):
 @require_POST
 def c2b_callback(request, kind, secret):
     """Daraja C2B (Paybill/Till): register .../c2b/validation/<secret> and .../c2b/confirmation/<secret>."""
-    if not hmac.compare_digest(secret or "", c2b.callback_secret()):
+    if not _same(secret, callback_secret()):
         return HttpResponseForbidden("bad secret")
     payload = _json(request)
     if kind == "validation":
@@ -124,9 +130,10 @@ def c2b_callback(request, kind, secret):
 @csrf_exempt
 @require_POST
 def paystack_webhook(request):
+    """Answered at once (Paystack waits only a few seconds); Verify Transaction runs after the response."""
     sig = request.headers.get("x-paystack-signature", "")
     expected = hmac.new((settings.PAYSTACK_SECRET_KEY or "").encode(), request.body, hashlib.sha512).hexdigest()
-    if not settings.PAYSTACK_SECRET_KEY or not hmac.compare_digest(sig, expected):
+    if not settings.PAYSTACK_SECRET_KEY or not _same(sig, expected):
         return HttpResponseForbidden("bad signature")
     event = _json(request)
     data = event.get("data") or {}
@@ -134,7 +141,7 @@ def paystack_webhook(request):
     p = Payment.objects.filter(checkout_token=reference, method="card").first() if reference else None
     if p and event.get("event") == "charge.success" and data.get("status") == "success":
         if p.provider == "paystack":  # a webhook only says "look": the money counts once Verify Transaction agrees
-            services.settle_card(p, PaystackCard().query(p))
+            deferred.after_response(_verify_card, p.pk)
         elif str(data.get("currency") or "KES").upper() == "KES":
             services.on_success(
                 p,
@@ -144,6 +151,11 @@ def paystack_webhook(request):
                 amount=(data.get("amount") or 0) / 100,
             )
     return HttpResponse("OK")
+
+
+def _verify_card(payment_id):
+    p = Payment.objects.get(pk=payment_id)
+    services.settle_card(p, PaystackCard().query(p))
 
 
 # ---------- simulated hosted card page (the Next.js /pay/card/[token] page calls these) ----------

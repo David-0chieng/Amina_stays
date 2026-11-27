@@ -500,6 +500,52 @@ def test_a_live_sos_call_is_pre_registered_by_session_id(homes, host, wanjiru, s
     assert "needs help. Press 1" in spoken(root)
 
 
+@pytest.mark.django_db
+def test_a_call_africas_talking_could_not_place_leaves_no_session(homes, host, wanjiru, settings):
+    b = stay(homes["Blue Reef Apartment"], wanjiru, days(0), days(2))
+    settings.AT_API_KEY, settings.AT_VOICE_NUMBER = "live-key", "+254711082000"
+    refused = {"entries": [{"phoneNumber": HOST, "status": "InvalidPhoneNumber", "sessionId": "None"}]}
+    with mock.patch("apps.comms.at._post", return_value=refused):
+        sms("HELP")
+        ivr.place_welcome_call(b)
+    assert not VoiceSession.objects.exists()  # AT's sessionId "None" is not a call
+    assert Alert.objects.get().call_status == "InvalidPhoneNumber"
+
+
+@pytest.mark.django_db
+def test_numbers_go_to_africas_talking_in_international_format(settings, site):
+    from apps.comms import at
+
+    settings.AT_API_KEY, settings.AT_VOICE_NUMBER = "live-key", "0711 082 000"
+    with mock.patch("apps.comms.at._post", return_value={"entries": []}) as post:
+        at.voice_call(["0722 333 444", "", "+44 7700 900555", "not a number"])
+    assert post.call_args.kwargs["data"]["to"] == "+254722333444,+447700900555"
+    assert post.call_args.kwargs["data"]["from"] == "+254711082000"
+    with pytest.raises(at.ATError):
+        at.voice_call("ext 12")
+    site.host_phone, site.backup_phone = "0700 000 001", "254700000099"  # saved before Settings checked numbers
+    site.save()
+    dial = call("1", "4", "1", session="v-dial", phone=NEW).find("Dial")
+    assert dial.get("phoneNumbers") == "+254700000001,+254700000099"
+
+
+@pytest.mark.django_db
+def test_the_guest_on_a_call_is_whichever_number_is_not_ours(homes, wanjiru, settings):
+    settings.AT_VOICE_NUMBER = "+254711082000"
+    b = stay(homes["Blue Reef Apartment"], wanjiru, days(0), days(2))
+    placed = {"direction": "Outbound", "clientRequestId": f"welcome-{b.ref}"}  # not pre-registered
+    # AT documents callerNumber as the person and destinationNumber as our number, for calls we place too
+    root = voice("", session="ATVId_doc", phone=KE_GUEST, destinationNumber="+254711082000", **placed)
+    assert spoken(root).startswith("Karibu Wanjiru! This is Amina Stays.")
+    voice("", session="ATVId_swap", phone="+254711082000", destinationNumber="0722 333 444", **placed)
+    voice("", session="ATVId_in", phone="0722333444")
+    assert dict(VoiceSession.objects.values_list("session_id", "phone")) == {
+        "ATVId_doc": KE_GUEST,
+        "ATVId_swap": KE_GUEST,
+        "ATVId_in": KE_GUEST,
+    }
+
+
 # ---------- the optional welcome call ----------
 
 

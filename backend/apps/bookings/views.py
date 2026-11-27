@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -27,10 +28,11 @@ from .serializers import (
 )
 
 
-def _mine(request, ref):
-    return get_object_or_404(
-        Booking.objects.select_related("unit", "unit__area", "guest"), ref=ref.upper(), guest=request.user
-    )
+def _mine(request, ref, *, lock=False):
+    qs = Booking.objects.select_related("unit", "unit__area", "guest")
+    if lock:
+        qs = qs.select_for_update(no_key=True, of=("self",))
+    return get_object_or_404(qs, ref=ref.upper(), guest=request.user)
 
 
 def _err(e, status=400):
@@ -132,6 +134,11 @@ def bookings(request):
 @api_view(["GET", "PATCH"])
 @permission_classes([IsGuest])
 def booking_detail(request, ref):
+    if request.method == "GET":
+        # One consistent trip: a payment being settled (with the change it pays for) holds this booking's row until
+        # it commits, so the trip waits for it - or keeps it waiting - rather than mix rows from before and after.
+        with transaction.atomic():
+            return Response(trip_dict(_mine(request, ref, lock=True)))
     b = _mine(request, ref)
     if request.method == "PATCH":
         d = request.data

@@ -11,6 +11,8 @@ import logging
 import httpx
 from django.conf import settings
 
+from apps.core.utils import normalize_phone
+
 log = logging.getLogger("amina.at")
 
 
@@ -56,7 +58,9 @@ def send_sms(to, message, sender_id=None):
         log.info("[dry-run SMS] -> %s: %s", to, message)
         return {"dry_run": True, "recipients": []}
     data = {"username": settings.AT_USERNAME, "to": to, "message": message, "bulkSMSMode": 1}
-    sender = sender_id or settings.AT_SENDER_ID
+    # AT's default sender only reaches Airtel numbers in Kenya: without an approved sender ID, send from the
+    # two-way shortcode (which also lets guests reply to "Ask Amina")
+    sender = sender_id or settings.AT_SENDER_ID or settings.AT_SMS_NUMBER
     if sender:
         data["from"] = sender
     body = _post(
@@ -77,10 +81,14 @@ def voice_call(to, client_request_id=""):
     if not configured() or not settings.AT_VOICE_NUMBER:
         log.info("[dry-run CALL] -> %s (%s)", to, client_request_id)
         return {"dry_run": True, "entries": [{"phoneNumber": to, "status": "NotConfigured"}]}
+    numbers = to.split(",") if isinstance(to, str) else to
+    callees = ",".join(p for p in (normalize_phone(n) for n in numbers) if p)  # AT only dials +E.164 numbers
+    if not callees:
+        raise ATError(f"no valid phone number to call: {to!r}")
     data = {
         "username": settings.AT_USERNAME,
-        "from": settings.AT_VOICE_NUMBER,
-        "to": to if isinstance(to, str) else ",".join(to),
+        "from": normalize_phone(settings.AT_VOICE_NUMBER) or settings.AT_VOICE_NUMBER,
+        "to": callees,
     }
     if client_request_id:
         data["clientRequestId"] = client_request_id
@@ -189,6 +197,7 @@ def balance():
                 params={"username": settings.AT_USERNAME},
                 headers={"apiKey": settings.AT_API_KEY, "Accept": "application/json"},
             )
-        return r.json().get("UserData", {}).get("balance")
+        data = r.json()
+        return (data.get("UserData") or data.get("userData") or {}).get("balance")  # AT's docs show both spellings
     except Exception:  # status panel only
         return None

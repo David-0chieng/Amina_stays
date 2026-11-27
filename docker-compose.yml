@@ -27,7 +27,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py seed_demo &&
-             gunicorn config.wsgi -b 0.0.0.0:8000 -w 3 --threads 4 --access-logfile -"
+             gunicorn config.wsgi -b 0.0.0.0:8000 -w 3 --threads 4 --keep-alive 0 --access-logfile -"
     ports: ["8000:8000"]
     depends_on:
       db: { condition: service_healthy }

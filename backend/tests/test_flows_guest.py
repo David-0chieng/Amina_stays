@@ -3,14 +3,17 @@
 from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
+from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import OTPCode, User
 from apps.bookings import services as bookings
 from apps.bookings.models import Addon, Booking, BookingAddon, BookingGuest
+from apps.comms.at import ATError
 from apps.core import crypto
 from apps.core.models import SiteSettings
 from apps.core.utils import kes
@@ -25,6 +28,7 @@ from apps.reviews.models import Review
 from apps.safety.models import Alert
 
 from .conftest import days
+from .flowkit import frozen
 
 pytestmark = pytest.mark.django_db
 
@@ -204,7 +208,7 @@ def test_otp_request_normalises_the_phone_number(api, raw, phone):
     row = OTPCode.objects.get(phone=phone)
     assert len(code) == 6 and code not in row.code_hash  # only a keyed hash of the code is stored
     sms = Message.objects.get(phone=phone, kind="otp")
-    assert code in sms.body and sms.direction == "out"
+    assert code not in sms.body and messaging.REDACTED in sms.body and sms.direction == "out"  # only the SMS has it
 
 
 def test_otp_login_logout_and_single_use_code(api):
@@ -260,6 +264,25 @@ def test_otp_resend_gap_and_hourly_cap_per_number(api):
     assert Message.objects.filter(phone=phone, kind="otp").count() == 5
 
 
+def test_otp_hourly_cap_lasts_the_hour_on_the_shared_database_cache(api, settings):
+    # production's workers share a DatabaseCache, whose incr() would cut the hour to its 5-minute default timeout
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.db.DatabaseCache", "LOCATION": "otp_cap"}}
+    call_command("createcachetable")
+    phone, start = "+254712000445", timezone.now().replace(minute=1, second=0, microsecond=0)
+    with frozen(start):
+        for i in range(5):
+            allow_resend(phone)
+            assert otp(api, phone, ip=f"10.0.3.{i}").status_code == 200
+    cache_clock = timezone.now() + timedelta(minutes=40)  # the cache judges expiry on its own clock
+    with (
+        frozen(start + timedelta(minutes=40)),
+        mock.patch("django.core.cache.backends.db.tz_now", return_value=cache_clock),
+    ):
+        allow_resend(phone)
+        r = otp(api, phone, ip="10.0.4.1")
+    assert r.status_code == 400 and "Too many codes" in r.data["error"]
+
+
 def test_otp_requests_are_rate_limited_per_ip(api):
     for i in range(6):
         assert otp(api, f"+25471200050{i}", ip="10.9.9.9").status_code == 200
@@ -279,6 +302,66 @@ def test_disabled_account_cannot_log_in(api):
     r = verify(api, "+254712000777", code)
     assert r.status_code == 400 and "disabled" in r.data["error"]
     assert api.get("/api/me").data == {"authenticated": False}
+
+
+def test_a_login_code_reaches_the_guests_phone_and_no_one_elses_screen(
+    api, guest, guest_api, host_api, settings, django_capture_on_commit_callbacks
+):
+    messaging.send(guest.phone, "Karibu! Your booking is confirmed.")  # the guest already has a thread in the inbox
+    settings.AT_API_KEY = "live-key"
+    at_took_it = {
+        "SMSMessageData": {
+            "Recipients": [{"number": guest.phone, "status": "Success", "statusCode": 101, "messageId": "ATXid_otp"}]
+        }
+    }
+    with (
+        mock.patch("apps.accounts.services.secrets.randbelow", return_value=531_642),
+        mock.patch("apps.comms.at._post", return_value=at_took_it) as post,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        code = otp(api, guest.phone).data["debug_code"]  # on screen in DEMO mode only
+    assert code == "631642" and code in post.call_args.kwargs["data"]["message"]  # the SMS carries the code...
+    stored = Message.objects.get(phone=guest.phone, kind="otp")
+    assert stored.status == "sent" and code not in stored.body and code not in str(stored)  # ...nothing else does
+    [row] = [r for r in host_api.get("/api/host/inbox").json() if r["phone"] == guest.phone]
+    thread = host_api.get(f"/api/host/inbox/{row['id']}").json()
+    assert row["last_preview"] == thread["thread"]["last_preview"] == "Karibu! Your booking is confirmed."
+    assert [m["body"] for m in thread["messages"] if m["kind"] == "otp"] == [stored.body]
+    assert all(code not in m["body"] for m in thread["messages"])
+    assert host_api.get(f"/api/host/inbox?q={code}").json() == []
+    assert all(code not in m["body"] for m in guest_api.get("/api/messages").json()["messages"])
+    api.post("/at/sms/delivery", {"id": "ATXid_otp", "status": "Success"})  # delivery reports still land
+    stored.refresh_from_db()
+    assert stored.status == "delivered"
+
+
+def test_a_login_sms_that_fails_is_never_sent_again_from_storage(api, settings, django_capture_on_commit_callbacks):
+    settings.AT_API_KEY = "live-key"
+    phone = "+254712000888"
+    with (
+        mock.patch("apps.comms.at._post", side_effect=ATError("network error: timeout")),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        otp(api, phone)
+    m = Message.objects.get(phone=phone, kind="otp")
+    assert (m.status, m.next_attempt_at, m.attempts) == ("failed", None, 1)  # the guest asks for a new code instead
+    Message.objects.filter(pk=m.pk).update(status="queued")  # say a worker died mid-send and its lease ran out
+    with mock.patch("apps.comms.at._post") as post:
+        messaging.dispatch(m.pk)
+    assert not post.called and Message.objects.get(pk=m.pk).status == "failed"
+
+
+def test_login_codes_stored_before_the_fix_are_redacted(guest):
+    from importlib import import_module
+
+    from django.apps import apps
+
+    old = messaging.send(guest.phone, "Your Amina Stays code is 638059. It expires in 5 minutes.", kind="otp")
+    note = messaging.send("+254733000999", "Booking AMS-638059: 638059 is not a login code", kind="booking")
+    import_module("apps.messaging.migrations.0003_redact_login_codes").redact_login_codes(apps, None)
+    old.refresh_from_db(), note.refresh_from_db()
+    assert old.body == "Your Amina Stays code is ••••••. It expires in 5 minutes." == old.thread.last_preview
+    assert note.body == "Booking AMS-638059: 638059 is not a login code"
 
 
 # ---------- profile & privacy ----------

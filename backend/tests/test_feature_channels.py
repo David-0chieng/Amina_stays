@@ -463,6 +463,40 @@ def test_gateway_and_network_errors_retry_after_one_then_five_minutes_then_stay_
         assert messaging.dispatch_pending() == 0  # used up: never sent again
 
 
+@pytest.mark.django_db
+def test_without_a_sender_id_sms_go_out_from_the_two_way_shortcode(settings, homes, wanjiru):
+    settings.AT_API_KEY = "live-key"
+    senders = []
+    with mock.patch("apps.comms.at._post", return_value=at_answer(101, "Success")) as post:
+        for sender_id, shortcode in (("", "22384"), ("AMINASTAYS", "22384"), ("", "")):
+            settings.AT_SENDER_ID, settings.AT_SMS_NUMBER = sender_id, shortcode
+            messaging.dispatch(messaging.send(KE_GUEST, "Your login code is 482113").pk)
+            senders.append(post.call_args.kwargs["data"].get("from"))
+    assert senders == ["22384", "AMINASTAYS", None]  # None: AT's default sender, which reaches Airtel only
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("answer", "status"),
+    [
+        ({"messageId": "wamid.1", "status": "SENT"}, "sent"),
+        ({"messageId": "wamid.2", "status": "DELIVERED"}, "sent"),
+        ({"status": "FAILED", "errorMessage": "Outside the 24 hour window"}, "queued"),
+        ({"messageId": "wamid.4", "status": "DELETED"}, "queued"),
+    ],
+)
+def test_a_whatsapp_message_is_sent_only_when_africas_talking_took_it(settings, homes, wanjiru, answer, status):
+    settings.AT_API_KEY, settings.AT_WHATSAPP_NUMBER = "live-key", "+254711000222"
+    settings.AT_USERNAME, settings.AT_SANDBOX = "aminastays", False  # WhatsApp has no sandbox
+    m = messaging.send(KE_GUEST, "Your door code is 4821", channel="whatsapp")
+    with mock.patch("apps.comms.at._post", return_value=answer):
+        messaging.dispatch(m.pk)
+    m.refresh_from_db()
+    assert (m.status, m.provider_status) == (status, answer["status"])
+    if status == "queued":  # a failed send: retried like any other, then left failed
+        assert m.attempts == 1 and m.next_attempt_at and answer["status"] in m.failure_reason
+
+
 # ---------- inbound SMS: Africa's Talking retries webhooks ----------
 
 
@@ -584,3 +618,16 @@ def test_the_channels_page_lists_the_paybill_callbacks(host_api, settings):
     assert callbacks["Paybill confirmation"].startswith("https://amina.example/api/payments/daraja/c2b/confirmation/")
     settings.MPESA_PROVIDER = "daraja"
     assert mpesa()["detail"] == "daraja - run manage.py register_c2b once"
+    settings.AT_WEBHOOK_SECRET, settings.DARAJA_CALLBACK_SECRET = "at-secret", "d4r4j4"
+    callbacks = mpesa()["callbacks"]  # the M-Pesa prompt callback shares the Paybill ones' secret
+    assert callbacks["Daraja"] == "https://amina.example/api/payments/daraja/callback/d4r4j4"
+    assert callbacks["Paybill confirmation"].endswith("/confirmation/d4r4j4")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("key", ["UserData", "userData"])  # AT's docs spell it both ways
+def test_the_channels_page_shows_the_africas_talking_balance(host_api, settings, key):
+    settings.AT_API_KEY = "live-key"
+    with mock.patch("apps.comms.at.httpx.Client") as client:
+        client.return_value.__enter__.return_value.get.return_value.json.return_value = {key: {"balance": "KES 1,250"}}
+        assert host_api.get("/api/host/channels?balance=1").json()["balance"] == "KES 1,250"

@@ -15,7 +15,7 @@ from django.utils import timezone
 from apps.accounts.services import get_or_create_user
 from apps.bookings import services as bookings
 from apps.core.models import OnceMarker, SiteSettings
-from apps.core.utils import first_name, is_kenyan, spoken_digits, today, weekend_start
+from apps.core.utils import first_name, is_kenyan, normalize_phone, spoken_digits, today, weekend_start
 from apps.messaging import services as messaging
 from apps.properties.services import available_units
 from apps.properties.services import quote as price_quote
@@ -133,7 +133,7 @@ def end(text, lang="en"):
 
 
 def dial(prompt, numbers, lang="en"):
-    nums = ",".join(n for n in numbers if n)
+    nums = ",".join(p for p in (normalize_phone(n) for n in numbers if n) if p)  # AT only dials +E.164 numbers
     return xml(
         f'{say(prompt, lang)}<Dial phoneNumbers={quoteattr(nums)} sequential="true" record="false" maxDuration="900"/>'
     )
@@ -455,9 +455,9 @@ def place_welcome_call(booking):
         log.warning("welcome call failed: %s", e)
         return None
     for entry in res.get("entries") or []:
-        if entry.get("sessionId"):
+        if sid := _placed(entry):
             VoiceSession.objects.update_or_create(
-                session_id=entry["sessionId"],
+                session_id=sid,
                 defaults={
                     "phone": booking.guest.phone,
                     "direction": "outbound",
@@ -469,15 +469,22 @@ def place_welcome_call(booking):
 
 def register_outbound(res, purpose, **state):
     for entry in (res or {}).get("entries") or []:
-        if entry.get("sessionId"):
+        if sid := _placed(entry):
             VoiceSession.objects.update_or_create(
-                session_id=entry["sessionId"],
+                session_id=sid,
                 defaults={
                     "phone": entry.get("phoneNumber", ""),
                     "direction": "outbound",
                     "state": {"purpose": purpose, **state},
                 },
             )
+
+
+def _placed(entry):
+    """The sessionId of a call Africa's Talking queued. A call it couldn't place has another status and sessionId
+    "None" (a string), which must never become a session."""
+    sid = str(entry.get("sessionId") or "")
+    return sid if entry.get("status") == "Queued" and sid not in ("", "None") else None
 
 
 # ---------- end of call ----------
@@ -606,11 +613,24 @@ def _placed_for(client_request_id):
     return None
 
 
+def _their_number(data, outbound):
+    """The other party on the call. Africa's Talking documents callerNumber as the phone user and destinationNumber as
+    our number, so rather than trust the direction take whichever one isn't AT_VOICE_NUMBER (the direction decides
+    only when neither number is ours)."""
+    caller, destination = (
+        normalize_phone(data.get(k)) or data.get(k) or "" for k in ("callerNumber", "destinationNumber")
+    )
+    ours = normalize_phone(settings.AT_VOICE_NUMBER)
+    if ours and ours in (caller, destination):
+        return destination if caller == ours else caller
+    return destination if outbound else caller
+
+
 def handle(data):
     """Entry point for the AT voice callback. Returns XML (or '' for the final notification)."""
     sid = data.get("sessionId") or ""
     outbound = (data.get("direction") or "").lower() == "outbound"
-    phone = data.get("destinationNumber") if outbound else data.get("callerNumber")
+    phone = _their_number(data, outbound)
     session, created = VoiceSession.objects.get_or_create(
         session_id=sid, defaults={"phone": phone or "", "direction": "outbound" if outbound else "inbound"}
     )

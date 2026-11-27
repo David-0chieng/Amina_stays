@@ -36,11 +36,22 @@ def test_every_ussd_screen_fits_160_characters(unit, other_unit, breakfast):
         seen.add(chain)
         out = ussd(chain)
         assert len(out[4:]) <= 160, f"{chain!r} is {len(out[4:])} chars:\n{out}"
+        assert out.isascii(), f"{chain!r} has characters a phone may not show:\n{out}"
         if out.startswith("CON") and chain.count("*") < 3:
             queue += [
                 f"{chain}*{n}" if chain else n for n in _options(out) if n != "9"
             ]  # 9 = emergency: tested separately
     assert len(seen) > 20
+
+
+def test_a_long_ussd_text_is_cut_with_plain_dots_inside_the_limit():
+    from apps.comms.ussd import LIMIT, fit
+
+    text = "Karibu Amina Stays - nyumba nzuri karibu na bahari. " * 6
+    for limit in (LIMIT - 4, 40):
+        cut = fit(text, limit)
+        assert cut.endswith("...") and cut.isascii() and len(cut) <= limit and text.startswith(cut[:-3])
+    assert fit("Karibu", 10) == "Karibu"
 
 
 @pytest.mark.django_db

@@ -63,6 +63,13 @@ def test_every_hook_accepts_the_plain_path_without_a_secret_and_only_the_secret_
 
 
 @pytest.mark.django_db
+def test_a_non_ascii_secret_is_refused_not_a_server_error(client, settings, homes):
+    settings.AT_WEBHOOK_SECRET = SECRET
+    assert client.post("/at/caf%C3%A9/ussd", {}).status_code == 403
+    assert client.post("/at/ussd?key=caf%C3%A9", {}).status_code == 403
+
+
+@pytest.mark.django_db
 def test_a_rejected_callback_does_nothing(client, settings, homes):
     settings.AT_WEBHOOK_SECRET = SECRET
     client.post("/at/sms/incoming", {"from": KE_GUEST, "text": "HELP", "id": "ATXid_x"})
@@ -232,9 +239,17 @@ def test_airtime_and_data_status_reach_the_activity_feed(client, homes):
         {"phoneNumber": KE_GUEST, "status": "Success", "value": "KES 50.0000", "requestId": "ATQid_1"},
     )
     client.post("/at/data/status", {"phoneNumber": KE_GUEST, "status": "Success", "transactionId": "ATPid_1"})
+    documented = {
+        "requestId": "ATQid_2",
+        "transactionId": "ATPid_2",
+        "status": "Failed",
+        "destination": "+254705****48",
+    }
+    client.post("/at/data/status", documented, content_type="application/json")
     titles = list(Activity.objects.filter(kind="system").values_list("title", flat=True))
     assert f"Airtime Success to {KE_GUEST} (KES 50.0000)" in titles
     assert f"Mobile data Success to {KE_GUEST}" in titles
+    assert "Mobile data Failed to +254705****48" in titles  # AT names the (masked) destination
 
 
 @pytest.mark.django_db
@@ -256,6 +271,47 @@ def test_sim_swap_callback_updates_the_check_and_the_booking(client, settings, h
     assert simswap.status_for(b) == "swapped"
     unknown = {"requestId": "nope", "status": "Swapped"}
     assert client.post("/at/insights/simswap", unknown, content_type="application/json").status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("shape", "read", "state"),
+    [
+        ("%d-%m-%Y", True, "swapped"),  # the shape AT's docs show
+        ("%Y-%m-%d", True, "swapped"),
+        ("%d/%m/%Y", True, "swapped"),
+        ("%Y-%m-%dT08:15:00+03:00", True, "swapped"),
+        ("01-01-1900", True, "clear"),  # the docs' sample: swapped long ago is no reason to hold a door code
+        ("sometime", False, "clear"),  # unreadable: logged, and no reason either
+    ],
+)
+def test_sim_swap_dates_hold_the_code_only_for_a_recent_swap(
+    client, settings, homes, wanjiru, caplog, shape, read, state
+):
+    from apps.comms import simswap
+
+    settings.SIM_SWAP_PROVIDER, settings.AT_API_KEY = "africastalking", "live-key"
+    b = stay(homes["Old Town Loft"], wanjiru, days(0), days(1))
+    queued = {"responses": [{"phoneNumber": KE_GUEST, "requestId": "ATSwpid_2", "status": "Queued"}]}
+    with mock.patch("apps.comms.at._post", return_value=queued):
+        assert simswap.status_for(b) == "pending"
+    swapped_on = (timezone.localdate() - timedelta(days=2)).strftime(shape)
+    payload = {"requestId": "ATSwpid_2", "status": "Swapped", "lastSimSwapDate": swapped_on}
+    client.post("/at/insights/simswap", payload, content_type="application/json")
+    assert (SimSwapCheck.objects.get(request_id="ATSwpid_2").last_swap_date is not None) == read
+    assert simswap.status_for(b) == state
+    assert ("unreadable SIM swap date" in caplog.text) == (not read)
+
+
+@pytest.mark.django_db
+def test_a_sim_swap_answered_at_once_is_read_too(settings, homes, wanjiru):
+    from apps.comms import simswap
+
+    settings.SIM_SWAP_PROVIDER, settings.AT_API_KEY = "africastalking", "live-key"
+    b = stay(homes["Old Town Loft"], wanjiru, days(0), days(1))
+    answer = {"responses": [{"requestId": "ATSwpid_3", "status": "Swapped", "lastSimSwapDate": "01-01-1900"}]}
+    with mock.patch("apps.comms.at._post", return_value=answer):
+        assert simswap.status_for(b) == "clear"
 
 
 # ---------- Demo Lab ----------

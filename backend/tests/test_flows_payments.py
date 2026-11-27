@@ -236,7 +236,7 @@ def test_daraja_success_confirms_once(client, unit, guest):
         (1, "insufficient M-Pesa balance"),
         (2001, "wrong M-Pesa PIN"),
         (1037, "the phone didn't respond in time"),
-        (17, "Rule limited."),
+        (17, "the same payment was tried again too soon"),
     ],
 )
 def test_daraja_failures_keep_the_hold(client, unit, guest, code, reason):

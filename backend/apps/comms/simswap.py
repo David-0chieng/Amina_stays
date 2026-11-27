@@ -6,7 +6,7 @@ code and ask Amina to call the guest. Simulation: numbers ending in 999 report a
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.utils import timezone
@@ -18,6 +18,7 @@ from .models import SimSwapCheck
 log = logging.getLogger("amina.simswap")
 PENDING_TIMEOUT = timedelta(minutes=10)
 RECENT = timedelta(days=7)
+DATE_FORMATS = ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y")  # AT's docs show "01-01-1900"; the live format isn't documented
 
 
 def _simulated():
@@ -39,6 +40,7 @@ def request_check(booking):
             first = first[0] if isinstance(first, list) and first else res
             check.request_id = str(first.get("requestId") or first.get("transactionId") or "")[:80]
             check.status = first.get("status") or "Queued"
+            check.last_swap_date = _swap_date(first.get("lastSimSwapDate"))
             check.raw = res
         except Exception as e:
             log.warning("SIM swap request failed: %s", e)
@@ -57,11 +59,33 @@ def _sync_booking(check):
         )
 
 
+def _swap_date(value):
+    """lastSimSwapDate as an aware datetime: dd-mm-yyyy, yyyy-mm-dd, dd/mm/yyyy or an ISO datetime. None (and a
+    warning in the log) when there's nothing we can read."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in DATE_FORMATS:
+        try:
+            return timezone.make_aware(datetime.strptime(text, fmt))
+        except ValueError:
+            pass
+    try:
+        when = parse_datetime(text)
+    except ValueError:
+        when = None
+    if when is None:
+        log.warning("unreadable SIM swap date %r", value)
+        return None
+    return when if timezone.is_aware(when) else timezone.make_aware(when)
+
+
 def _state(check):
     if check.status == "Queued":
         return "pending" if timezone.now() - check.created_at < PENDING_TIMEOUT else "unavailable"
     if check.status == "Swapped":
-        if check.last_swap_date is None or timezone.now() - check.last_swap_date <= RECENT:
+        # only a swap inside the window holds the code: an old date (AT's "01-01-1900") or an unreadable one doesn't
+        if check.last_swap_date and timezone.now() - check.last_swap_date <= RECENT:
             return "swapped"
         return "clear"
     if check.status == "NoSwapDate":
@@ -84,8 +108,7 @@ def on_callback(data):
     if check is None:
         return None
     check.status = data.get("status") or check.status
-    swap = data.get("lastSimSwapDate")
-    check.last_swap_date = parse_datetime(swap) if isinstance(swap, str) else None
+    check.last_swap_date = _swap_date(data.get("lastSimSwapDate"))
     check.raw = {**check.raw, "callback": data}
     check.save()
     _sync_booking(check)

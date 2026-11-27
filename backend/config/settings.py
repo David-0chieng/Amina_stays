@@ -116,6 +116,16 @@ DATABASES = {
     )
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# One cache for every process (web workers and the scheduler): the Daraja token (each new token invalidates the
+# previous one), per-number login-code caps and login throttles. The table comes from core/0003; tests keep memory.
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+        if TESTING
+        else {"BACKEND": "django.core.cache.backends.db.DatabaseCache", "LOCATION": "amina_cache"}
+    )
+}
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -234,6 +244,12 @@ DARAJA_CONSUMER_KEY = env("DARAJA_CONSUMER_KEY", "")
 DARAJA_CONSUMER_SECRET = env("DARAJA_CONSUMER_SECRET", "")
 DARAJA_SHORTCODE = env("DARAJA_SHORTCODE", "174379")
 DARAJA_PASSKEY = env("DARAJA_PASSKEY", "")
+DARAJA_TRANSACTION_TYPE = env("DARAJA_TRANSACTION_TYPE", "CustomerPayBillOnline")  # CustomerBuyGoodsOnline = Till
+if DARAJA_TRANSACTION_TYPE not in ("CustomerPayBillOnline", "CustomerBuyGoodsOnline"):
+    raise ImproperlyConfigured(
+        "DARAJA_TRANSACTION_TYPE must be CustomerPayBillOnline (Paybill) or CustomerBuyGoodsOnline (Till)."
+    )
+DARAJA_PARTY_B = env("DARAJA_PARTY_B", "")  # the Till number for CustomerBuyGoodsOnline ('' = DARAJA_SHORTCODE)
 CARD_PROVIDER = (env("CARD_PROVIDER", "simulate")).lower()  # simulate | paystack
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", "")
 SIM_PAY_DELAY_SECONDS = float(env("SIM_PAY_DELAY_SECONDS", "6"))
