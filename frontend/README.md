@@ -10,6 +10,8 @@ npm run lint
 npx tsc --noEmit
 ```
 
+Settings, both optional: `BACKEND_URL` (where the API runs) and `NEXT_PUBLIC_TILE_URL` (the map tiles: use a tile provider's key for a live site). Copy [.env.example](.env.example) to `.env.local` to change them; the backend's settings are in the root [.env.example](../.env.example).
+
 | Path | |
 |---|---|
 | `src/app/(site)` | Guest pages: home/search, `stays/[slug]`, `book/[slug]`, `trips`, `trips/[ref]`, `messages`, `wishlists`, `account`, `help`, `privacy`, `login`, `demo` |

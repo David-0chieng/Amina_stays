@@ -237,9 +237,9 @@ If you have Docker Desktop, you can skip installing PostgreSQL and step 2. When 
 | http://localhost:3000/host | Host console: log in as **+254 700 000 001** (Amina); in demo mode the login code is shown on screen |
 | http://localhost:8000/api/docs | OpenAPI docs |
 
-Configuration is environment-driven; every variable is documented in [.env.example](.env.example). With no keys at all you get:
+Configuration is environment-driven. Every variable is documented, with where to get each key, in [.env.example](.env.example) (the API, the scheduler and Docker Compose; copy it to `.env`) and [frontend/.env.example](frontend/.env.example) (the website; copy it to `frontend/.env.local`). With no keys at all you get:
 - dry-run SMS and voice (logged, not sent);
-- a simulated card checkout, until `STRIPE_SECRET_KEY` is set (M-Pesa is off; `MPESA_PROVIDER=simulate` adds a pretend M-Pesa prompt for demos);
+- a simulated card checkout, until a card provider's key is set (Paystack or Stripe; M-Pesa is off; `MPESA_PROVIDER=simulate` adds a pretend M-Pesa prompt for demos);
 - simulated smart-lock codes;
 - the Demo Lab to drive every channel.
 
@@ -267,7 +267,7 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 
 ### Payments
 
-Card payments go through **Stripe Checkout**, Stripe's hosted payment page, so card numbers never touch this server. Put two keys in `.env`:
+Card payments go through a hosted checkout page, so card numbers never touch this server. For a business registered in Kenya, use **Paystack** (`CARD_PROVIDER=paystack` and `PAYSTACK_SECRET_KEY`, webhook `https://<your-site>/api/payments/paystack/webhook`): Stripe doesn't open accounts for Kenyan businesses and sends them to Paystack, its African company. Paystack's page also takes M-Pesa, and its refunds are sent from the Paystack dashboard, then marked as sent in **Host › Payments**. Elsewhere, **Stripe Checkout** needs two keys in `.env`:
 
 | Variable | What it is |
 |---|---|
@@ -285,11 +285,11 @@ M-Pesa is built but **off** until Safaricom's Daraja Go-Live, which takes a whil
 | `MPESA_SHORTCODE` | The Paybill guests can pay into when a prompt fails (defaults to `DARAJA_SHORTCODE`). Paybill only: a Till payment carries no account number, so it can't be matched to a booking. Set `DARAJA_CALLBACK_SECRET` (a hex value: Safaricom rejects callback URLs containing words such as `exe`, `cmd` or `sql`); the M-Pesa prompt and Paybill callbacks share it. Then register the Paybill callbacks once by running `uv run python manage.py register_c2b` in `backend/` (it prints the validation and confirmation URLs). |
 | `CARD_PROVIDER` | Empty (default): Stripe once its key is set, else a simulated card page · `paystack` (`PAYSTACK_SECRET_KEY`; webhook `https://<your-site>/api/payments/paystack/webhook`) |
 
-Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable: Stripe for cards today, Safaricom Daraja for M-Pesa once it's approved.
+Africa's Talking no longer offers self-serve payments with a sandbox (see [research](docs/research/04-africas-talking.md)), so the payment layer is pluggable: Paystack or Stripe for cards today, Safaricom Daraja for M-Pesa once it's approved.
 
 ## Going live
 
-Real guests need no code changes. Each simulated service switches to the real one as soon as its keys are set, and the only keys a live site needs are **Africa's Talking's and Stripe's**. M-Pesa can be added later.
+Real guests need no code changes. Each simulated service switches to the real one as soon as its keys are set, and the only keys a live site needs are **Africa's Talking's** and a card provider's: **Paystack** for a business in Kenya, **Stripe** where it operates. Direct M-Pesa prompts (Daraja) can be added later.
 
 1. In `backend/`, run `uv run python manage.py check --deploy`. Along with Django's own checks, it lists every key or setting a live site still needs and the variable to set (warnings `amina.W001`–`W020`). It also catches the mistakes that only show up with real guests: no SMS sender, a `PUBLIC_URL` missing from `ALLOWED_HOSTS`, a Stripe test key on a live site, a tunnel URL with live M-Pesa, the sandbox shortcode in production and the demo host phone. Once those are gone, only hosting is left.
 2. Fill in `.env` (or your host's environment variables):
@@ -298,9 +298,10 @@ Real guests need no code changes. Each simulated service switches to the real on
    |---|---|
    | The site | `DEBUG=0`, `DEMO=0`, `SECRET_KEY`, `ALLOWED_HOSTS`, `FRONTEND_URL` and `PUBLIC_URL` (your https address), `ID_ENCRYPTION_KEY`, `AMINA_PHONE` (the host's own number) |
    | Africa's Talking | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` (a sender ID approved in the AT dashboard; without it or `AT_SMS_NUMBER`, AT's default sender only reaches Airtel numbers), `AT_SMS_NUMBER`, `AT_USSD_CODE`, `AT_VOICE_NUMBER`, `AT_WEBHOOK_SECRET`; optionally `AT_DATA_PRODUCT` (the Mobile Data product for outage and reward bundles: without it, live sites offer no data bundles) and `AT_WHATSAPP_NUMBER` |
+   | Cards (Paystack, for Kenya) | `CARD_PROVIDER=paystack` and `PAYSTACK_SECRET_KEY` (the live `sk_live_…` key) |
    | Cards (Stripe) | `STRIPE_SECRET_KEY` (the live `sk_live_…` key) and `STRIPE_WEBHOOK_SECRET` |
    | M-Pesa (later, optional) | `MPESA_PROVIDER=daraja`, `DARAJA_ENV=production`, `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`, `DARAJA_SHORTCODE`, `DARAJA_PASSKEY` (emailed after Daraja Go-Live), `DARAJA_CALLBACK_SECRET`, `MPESA_SHORTCODE`; for a Till, `DARAJA_TRANSACTION_TYPE=CustomerBuyGoodsOnline` and `DARAJA_PARTY_B` |
-   | Smart locks (optional) | `IGLOOHOME_API_KEY`, `IGLOOHOME_API_BASE`, and each home's lock device ID in the listing editor |
+   | Smart locks (optional) | `IGLOOHOME_API_KEY`, `IGLOOHOME_API_BASE`, and each home's lock device ID in the listing editor. igloohome's API tokens now expire every 24 hours while the app takes one fixed token, so real locks need a code change first (see `.env.example`) |
 
 3. Register the callback URLs:
    - the [Africa's Talking table above](#connecting-africas-talking);
