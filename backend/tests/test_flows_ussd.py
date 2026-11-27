@@ -286,8 +286,12 @@ def test_prices_and_homes_lists_every_home_and_texts_the_details(homes):
 
 @pytest.mark.django_db
 def test_my_booking_without_a_booking_and_the_other_stay_menus(homes):
-    for chain in ("3", "4", "5", "7"):
+    for chain in ("3", "5", "7"):
         assert ussd(chain, phone=NEW) == "END No active booking for this number. Dial again and choose 1 to book."
+    assert ussd("4", phone=NEW) == (
+        "END Breakfast KES 650/person/day, 7:30-10:00: Swahili, Continental, Full English, Vegetarian. "
+        "Choose it when you book (1)."
+    )
 
 
 @pytest.mark.django_db

@@ -428,6 +428,9 @@ class GuestBot:
 
     def _add(self, b, code):
         if not b or b.status not in ("held", "confirmed", "checked_in"):
+            # a question about an extra ("airport pickup?", "late checkout?") is for the knowledge base
+            if len(self.low.split()) > 1 and (answer := self.faq()) is not None:
+                return answer
             return self.say("no_booking")
         try:
             ba = bookings.add_addon(b, code, channel="sms", details=addon_defaults(code))

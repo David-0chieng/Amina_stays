@@ -113,11 +113,11 @@ DEFAULTS = {
         "fr": "La reglementation touristique kenyane exige un registre des clients. Ajoutez votre passeport avant l'arrivee : {trip_link} - ou repondez ID suivi du numero.",
     },
     "directions": {
-        "en": "Karibu tomorrow! {unit}: {directions} Landmark: {landmark}. Map: {map_link} Wi-Fi: {wifi}. Check-in from {checkin_time}. Your door code arrives by SMS on arrival day.",
-        "sw": "Karibu kesho! {unit}: {directions} Alama: {landmark}. Ramani: {map_link} Wi-Fi: {wifi}. Kuingia kuanzia {checkin_time}. Nambari ya mlango itakuja kwa SMS siku ya kufika.",
-        "it": "Benvenuto domani! {unit}: {directions} Punto di riferimento: {landmark}. Mappa: {map_link} Wi-Fi: {wifi}. Check-in dalle {checkin_time}. Il codice della porta arriva via SMS il giorno dell'arrivo.",
-        "de": "Willkommen morgen! {unit}: {directions} Orientierung: {landmark}. Karte: {map_link} WLAN: {wifi}. Check-in ab {checkin_time}. Den Türcode bekommst du am Anreisetag per SMS.",
-        "fr": "Bienvenue demain ! {unit} : {directions} Repere : {landmark}. Carte : {map_link} Wi-Fi : {wifi}. Arrivee des {checkin_time}. Votre code de porte arrive par SMS le jour J.",
+        "en": "Karibu on {check_in}! {unit}: {directions} Landmark: {landmark}. Map: {map_link} Wi-Fi: {wifi}. Check-in from {checkin_time}. Your door code arrives by SMS on arrival day.",
+        "sw": "Karibu {check_in}! {unit}: {directions} Alama: {landmark}. Ramani: {map_link} Wi-Fi: {wifi}. Kuingia kuanzia {checkin_time}. Nambari ya mlango itakuja kwa SMS siku ya kufika.",
+        "it": "Benvenuto il {check_in}! {unit}: {directions} Punto di riferimento: {landmark}. Mappa: {map_link} Wi-Fi: {wifi}. Check-in dalle {checkin_time}. Il codice della porta arriva via SMS il giorno dell'arrivo.",
+        "de": "Willkommen am {check_in}! {unit}: {directions} Orientierung: {landmark}. Karte: {map_link} WLAN: {wifi}. Check-in ab {checkin_time}. Den Türcode bekommst du am Anreisetag per SMS.",
+        "fr": "Bienvenue le {check_in} ! {unit} : {directions} Repere : {landmark}. Carte : {map_link} Wi-Fi : {wifi}. Arrivee des {checkin_time}. Votre code de porte arrive par SMS le jour J.",
     },
     "checkin_code": {
         "en": "Welcome to {unit}! Door code: {code} (valid {valid_from} - {valid_until}). Wi-Fi: {wifi}. Reply CHECKOUT when you leave, or HELP for urgent help.",

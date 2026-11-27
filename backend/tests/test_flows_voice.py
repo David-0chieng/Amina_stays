@@ -282,7 +282,7 @@ def test_directions_wait_for_the_48_hour_reveal_on_the_phone_too(homes, wanjiru)
         "Blue Reef Apartment is in Nyali. The full directions and Wi-Fi details are shared by text message "
         "2 days before you arrive. Goodbye."
     )
-    assert not bodies(KE_GUEST, kind="directions")  # no "Karibu tomorrow!" and no Wi-Fi password three weeks early
+    assert not bodies(KE_GUEST, kind="directions")  # no directions and no Wi-Fi password three weeks early
     with frozen(kenya(days(18), "14:00")):  # 48 h before the 2pm check-in
         root = call("1", "3", "1", session="v-2")
     assert spoken(root).startswith("Blue Reef Apartment. Head down Mount Kenya Road")

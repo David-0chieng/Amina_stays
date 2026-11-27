@@ -234,9 +234,10 @@ def from_price(unit):
 
 
 def price_list_text(limit=6):
+    """Each home's all-in 'from' price per night, the same figure as the website, USSD and voice."""
     units = Unit.objects.filter(status="active").select_related("area")[:limit]
     return "; ".join(
-        f"{u.name} ({u.area.name}, {u.bedrooms}BR, {u.max_guests} guests) {kes(u.base_price)}" for u in units
+        f"{u.name} ({u.area.name}, {u.bedrooms}BR, {u.max_guests} guests) {kes(from_price(u))}" for u in units
     )
 
 

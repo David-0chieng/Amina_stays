@@ -13,6 +13,7 @@ from apps.core.utils import kes
 from apps.messaging.models import Conversation, Message, Thread
 from apps.operations.models import Task
 from apps.payments.models import Payment
+from apps.properties.services import from_price
 from apps.reviews.models import Review
 from apps.reviews.services import request_review
 from apps.safety.models import Alert
@@ -121,8 +122,13 @@ def test_a_new_guest_writing_kiswahili_is_answered_in_kiswahili(homes):
 @pytest.mark.parametrize("word", ["PRICES", "price", "rates", "cost?", "tariff", "prezzi", "Preise", "prix"])
 def test_price_keywords_list_every_home(homes, word):
     [reply] = sms(word, phone=NEW)
-    assert reply.startswith("Our homes (per night, from): Nyali Breeze Studio (Nyali, 1BR, 2 guests) KES 4,500;")
-    assert "Mtwapa Creek Cottage (Mtwapa, 2BR, 4 guests) KES 6,800" in reply
+    nyali, mtwapa = homes["Nyali Breeze Studio"], homes["Mtwapa Creek Cottage"]
+    # the all-in 'from' price (cleaning and levy included), the same figure as the website, USSD and voice
+    assert reply.startswith(
+        f"Our homes (per night, from): Nyali Breeze Studio (Nyali, 1BR, 2 guests) {kes(from_price(nyali))};"
+    )
+    assert f"Mtwapa Creek Cottage (Mtwapa, 2BR, 4 guests) {kes(from_price(mtwapa))}" in reply
+    assert from_price(nyali) > nyali.base_price
 
 
 @pytest.mark.django_db
@@ -272,6 +278,10 @@ def test_requests_without_a_booking_say_so(homes):
         assert sms(word, phone=NEW) == [
             "We couldn't find an active booking for this number. Reply BOOK to make one."
         ], word
+    # a question about an extra is for the knowledge base: what it costs, and that it comes with a booking
+    [answer] = sms("airport pickup?", phone=NEW)
+    assert answer.startswith("Yes - Amina's trusted driver can meet you at Moi International Airport (KES 2,500)")
+    assert answer.endswith("Reply PICKUP once booked. Uber, Bolt and Little also work well.")
 
 
 # ---------- ID, door code ----------

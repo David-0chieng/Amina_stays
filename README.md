@@ -27,10 +27,10 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 | Criterion | Where to look |
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
-| **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
+| **Solves the problem** | Prices: the same all-in price on web/USSD/SMS/voice. Suites: what's free on the guest's dates, by SMS, USSD (book, or just ask) and voice. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. Other details: a knowledge base that answers on SMS and USSD, and passes anything else to Amina's phone. See the [simulator demo](#demo-script-on-the-africas-talking-simulator-5-minutes) and the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
 | **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 629 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out, service alerts), USSD, Voice (IVR, call-back bridging, voice complaints, escalation and safety calls), Airtime (rewards, referrals, gifts), Mobile Data (outage and reward bundles), SIM Swap; WhatsApp and AT checkout optional. Every challenge area is covered: see [the add-ons](#africas-talking-challenge-add-ons). |
-| **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
+| **Demo** | On the free Africa's Talking sandbox: five guests and Amina in the [simulator](#demo-script-on-the-africas-talking-simulator-5-minutes), with real USSD sessions, SMS and airtime. Or `/demo` (`DEMO=1`) runs every channel in the browser, with no handset or API key needed. |
 
 ---
 
@@ -345,7 +345,19 @@ docker push <registry-host>/<username>/amina-stays:v1.0.0
 
 [marketplace/README.md](marketplace/README.md) has every field of the submission form: name, slug, descriptions, logo, image URL, database (PostgreSQL), environment variables, AT products (USSD, Voice, Airtime, Insights, Bulk SMS, Mobile Data), industry and pricing plans. It also covers what a customer does after deploying. [marketplace/listing.json](marketplace/listing.json) has the same in machine-readable form. The [CI workflow](.github/workflows/ci.yml) runs the tests, then builds the image and pushes it from `main` or a tag once the `AT_REGISTRY`, `AT_REGISTRY_USERNAME` and `AT_REGISTRY_PASSWORD` repository secrets are set. `docker compose up` works as before.
 
-## Demo script (5 minutes)
+## Demo script on the Africa's Talking simulator (5 minutes)
+
+With `DEMO=0`, the five guests from [Five guests in the simulator](#five-guests-in-the-simulator), and Amina's number, each in its own simulator tab (`*384*30249#` and shortcode `88539` below stand for your `AT_USSD_CODE` and `AT_SMS_NUMBER`). Keep the host console open at `/host`, logged in as Amina. The steps follow the challenge: Amina struggles to communicate **room prices, available suites, breakfast preferences, check-in information and other details**.
+
+1. **The problem (30 s).** Amina runs apartments across Mombasa and answers the same questions all day, by phone and chat. Now every guest asks on any phone, with or without data, and every answer comes from one database.
+2. **Room prices.** As Asha, text `Bei?` to 88539: every home's all-in price per night, the same figure as the website. Dial `*384*30249#`, choose 2 (Prices & homes) and pick a home: its beds, price and breakfast on screen, photos by SMS.
+3. **Available suites.** Asha dials, chooses 6 (Talk to Amina) → 2 (Ask a question) and types `free suites this weekend`: what's free and what the stay costs. Then she books: 1 → Nyali → This weekend → 2 nights → 2 guests → the home → breakfast → confirm. The card link arrives by SMS; pay on the card page, and "Booked!" arrives by SMS while Amina's phone gets "New booking".
+4. **Breakfast preferences.** As Kevin (arriving), dial and choose 4 (Breakfast) → Swahili → 2 people: "Kitchen told". Amina's console has it on the kitchen sheet, which goes to the cook at 18:00. Daniel can do the same by SMS: `BREAKFAST`, then `2`.
+5. **Check-in information.** As Grace (staying), text `wifi` (her own home's Wi-Fi) and `CODE` (her door code). As Kevin, dial 3 (My booking) → 1: directions, landmark, map and Wi-Fi by SMS, released 48 hours before arrival.
+6. **Other details, and Amina managing it all.** Asha texts `Is there parking?` and `Can my cousin visit?`. The first is answered at once; the second reaches Amina's phone as `#<n> Asha Njeri: …`. As Amina, reply `#<n> Of course, karibu!` and Asha gets it. As Grace, dial 5 (Report problem) → Wi-Fi: the caretaker gets a task and Amina an SMS. Amina texts `STATUS`, or dials the code for her own menu: today, free tonight, requests, message all guests. In the console, Messages shows every guest's SMS and USSD in one inbox.
+7. **Airtime.** As Halima (returning, Kiswahili), dial 8 (Zaidi) → 3 (Zawadi) → 1: KES 100 of airtime sent through Africa's Talking.
+
+## Demo script with the Demo Lab (5 minutes, `DEMO=1`)
 
 1. **The problem.** Amina answers the same questions all day across WhatsApp, calls and SMS. Breakfast orders get lost, guests wait outside for keys, and she can't see who's arriving.
 2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 1 (Nyali) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (confirm & pay). The session ends with "We'll text you a secure card payment link"; tap that link on the SMS phone and pay (with Stripe test keys: card 4242 4242 4242 4242, any future date and CVC). The confirmation SMS with a trip link arrives on the SMS phone.

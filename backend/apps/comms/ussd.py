@@ -73,6 +73,7 @@ S = {
         "cancel_opts": ["Yes, cancel", "No, keep it"],
         "kept": "Your booking is kept. See you soon!",
         "bf_menu": "Breakfast ({price}/person/day):",
+        "bf_offer": "Breakfast {price}/person/day, {hours}: {styles}. Choose it when you book (1).",
         "bf_people": "For how many people? (1-{max})",
         "bf_saved": "Breakfast saved: {summary}. Kitchen told.",
         "bf_unavailable": "Breakfast isn't available at this home.",
@@ -174,6 +175,7 @@ S = {
         "cancel_opts": ["Ndiyo, ghairi", "Hapana, iweke"],
         "kept": "Nafasi yako iko. Karibu!",
         "bf_menu": "Kifungua kinywa ({price}/mtu/siku):",
+        "bf_offer": "Kifungua kinywa {price}/mtu/siku, {hours}: {styles}. Kichague ukiweka nafasi (1).",
         "bf_people": "Kwa watu wangapi? (1-{max})",
         "bf_saved": "Kimehifadhiwa: {summary}.",
         "bf_unavailable": "Kifungua kinywa hakipatikani katika nyumba hii.",
@@ -595,6 +597,10 @@ class Ussd:
         b = bookings.current_booking(self.phone)
         bf = Addon.objects.filter(code="breakfast", active=True).first()
         if not b:
+            if bf:  # not booked yet: what's served, chosen while booking
+                hours = (bf.options or {}).get("hours", "7:30-10:00")
+                styles = ", ".join(self.t["bf_opts"][:4])
+                self.end(self.t["bf_offer"].format(price=kes(bf.price), hours=hours, styles=styles))
             self.end(self.t["no_booking"])
         if not bf or not b.unit.breakfast_available:
             self.end(self.t["bf_unavailable"])

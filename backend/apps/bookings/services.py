@@ -19,7 +19,7 @@ from apps.core.models import OnceMarker, SiteSettings
 from apps.core.utils import at_local, daterange, first_name, is_kenyan, kes, nice_date, nice_time, today
 from apps.messaging import services as messaging
 from apps.properties.models import Unit
-from apps.properties.services import is_available
+from apps.properties.services import from_price, is_available
 from apps.properties.services import quote as price_quote
 
 from . import locks
@@ -1086,7 +1086,7 @@ def notify_waitlist(unit):
             "waitlist_offer",
             w.guest.lang,
             unit=unit.name,
-            price=kes(unit.base_price),
+            price=kes(from_price(unit)),
             dates=dates_text(w.check_in, w.check_out, w.guest.lang),
             link=link,
         )

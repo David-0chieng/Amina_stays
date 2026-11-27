@@ -19,6 +19,7 @@ from apps.core import scheduler
 from apps.core.management.commands.seed_demo import Command as SeedDemo
 from apps.core.management.commands.seed_demo import sample_ics
 from apps.core.models import JobRun, OnceMarker, SiteSettings
+from apps.core.utils import nice_date
 from apps.messaging import services as messaging
 from apps.messaging.automations import ensure_defaults
 from apps.messaging.models import Conversation, Message
@@ -271,7 +272,9 @@ def test_day_before_balance_id_and_directions(homes):
     assert "directions" not in kinds(g.phone, before)
     run("automations", at=kenya(days(1), "16:00"))
     [directions] = bodies(g.phone, before, kind="directions")
-    assert directions.startswith("Karibu tomorrow! Diani Palm Suite:") and "Wi-Fi: DianiPalm" in directions
+    assert (
+        directions.startswith(f"Karibu on {nice_date(days(2))}! Diani Palm Suite:") and "Wi-Fi: DianiPalm" in directions
+    )
 
 
 @pytest.mark.django_db
