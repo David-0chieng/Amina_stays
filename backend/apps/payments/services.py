@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -30,7 +31,14 @@ from apps.properties.models import Unit
 from apps.properties.services import is_available
 
 from .models import Payment, Refund
-from .providers import PaymentError, PaystackCard, card_provider, mpesa_provider, setup_alert
+from .providers import (
+    PaymentError,
+    PaystackCard,
+    StripeCard,
+    card_provider,
+    mpesa_provider,
+    setup_alert,
+)
 from .results import MPESA_RESULTS, result_for, sms_reason
 
 log = logging.getLogger("amina.payments")
@@ -41,10 +49,29 @@ OPEN_PUSH_MESSAGE = (
 )
 NO_CONFIRMATION = "no confirmation received"
 CARD_FAILED = "Your card payment didn't go through. Try again, or pay with M-Pesa."
+CARD_FAILED_NO_MPESA = "Your card payment didn't go through. Please try again, or use another card."
 MISMATCH = (
     "We received a different amount than expected, so this payment is on hold. Amina has been alerted and will "
     "sort it out - please don't pay again."
 )
+
+
+# ---------- which methods are on ----------
+
+
+def mpesa_on():
+    """M-Pesa is offered at all (MPESA_PROVIDER isn't "off"). When it's off every payment is a card payment."""
+    return settings.MPESA_PROVIDER != "off"
+
+
+def can_prompt(phone):
+    """Whether this phone gets M-Pesa prompts: M-Pesa is on and the number is Kenyan. Everyone else pays by card,
+    through a link sent by SMS when they aren't on the website."""
+    return mpesa_on() and is_kenyan(phone)
+
+
+def default_method(phone):
+    return "mpesa" if can_prompt(phone) else "card"
 
 
 # ---------- Paybill / deposit options ----------
@@ -53,6 +80,8 @@ MISMATCH = (
 def paybill_number():
     """The Paybill guests can pay into with their booking ref as the account number (None = not offered). A Till
     (CustomerBuyGoodsOnline) takes no account number, so DARAJA_SHORTCODE only counts for a Paybill."""
+    if not mpesa_on():
+        return None
     paybill = settings.MPESA_PROVIDER == "daraja" and settings.DARAJA_TRANSACTION_TYPE == "CustomerPayBillOnline"
     number = (
         getattr(settings, "MPESA_SHORTCODE", "")
@@ -131,9 +160,11 @@ def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None
     purpose="change" with amount=X charges exactly X (a reservation change applied once it's paid)."""
     b = Booking.objects.select_related("guest", "unit").get(pk=booking.pk)
     phone = phone or b.guest.phone
-    method = method or ("mpesa" if is_kenyan(phone) else "card")
+    method = method or default_method(phone)
     if method not in ("mpesa", "card"):
         raise PaymentError("Choose M-Pesa or card.")
+    if method == "mpesa" and not mpesa_on():
+        raise PaymentError("M-Pesa isn't available here - please pay by card.", suggest="card")
     if method == "mpesa" and not is_kenyan(phone):
         raise PaymentError("M-Pesa needs a Kenyan (+254) number - please pay by card.", suggest="card")
     if b.status not in ("held", "confirmed", "checked_in"):
@@ -198,16 +229,26 @@ def start_payment(booking, *, method=None, purpose=None, amount=None, phone=None
     )
 
 
-def _checkout_url(p):
+def checkout_url(p):
+    """The provider's own payment page for a card payment: where the website sends the guest straight away."""
     if p.method != "card" or not p.checkout_token:
         return None
     if p.provider == "simulate":
-        return f"{settings.FRONTEND_URL}/pay/card/{p.checkout_token}"
+        return pay_link(p)
     for entry in reversed(p.raw or []):
-        url = ((entry.get("request") or {}).get("data") or {}).get("authorization_url")
+        request = entry.get("request") or {}
+        url = request.get("url") or (request.get("data") or {}).get("authorization_url")  # Stripe, Paystack
         if url:
             return url
     return None
+
+
+def pay_link(p):
+    """The short link for a card payment that goes out by SMS: our /pay/card/<token> page opens the provider's page
+    (a Stripe Checkout URL runs to hundreds of characters), and is where Stripe brings the guest back."""
+    if p.method != "card" or not p.checkout_token:
+        return None
+    return f"{settings.FRONTEND_URL.rstrip('/')}/pay/card/{p.checkout_token}"
 
 
 def _result(p, res, simulated=None):
@@ -217,7 +258,8 @@ def _result(p, res, simulated=None):
         "status": p.status,
         "amount": p.amount,
         "purpose": p.purpose,
-        "checkout_url": res.get("checkout_url") or _checkout_url(p),
+        "checkout_url": res.get("checkout_url") or checkout_url(p),
+        "pay_link": pay_link(p),
         "message": res.get("message", ""),
         "provider_message": res.get("provider_message", ""),
         "simulated": simulated if simulated is not None else p.provider == "simulate",
@@ -238,7 +280,7 @@ def start_remote_payment(booking):
         **bookings.guest_context(b),
         "amount": kes(r["amount"]),
         "minutes": SiteSettings.load().hold_minutes,
-        "link": r.get("checkout_url") or "",
+        "link": r.get("pay_link") or r.get("checkout_url") or "",
     }
     if r["method"] == "card":
         messaging.send(b.guest.phone, messaging.render("hold_card", b.lang, **ctx), booking=b, kind="hold_card")
@@ -522,7 +564,8 @@ def public_failure(payment):
     code = p.failure_code or None
     if p.failure_reason.startswith("Amount mismatch"):
         return {"failure_code": code, "failure_message": MISMATCH, "retryable": False, "suggest": None}
-    entry = result_for(code) if p.method == "mpesa" else {"retryable": True, "suggest": "retry", "message": CARD_FAILED}
+    card_failed = CARD_FAILED if mpesa_on() else CARD_FAILED_NO_MPESA
+    entry = result_for(code) if p.method == "mpesa" else {"retryable": True, "suggest": "retry", "message": card_failed}
     suggest = _suggest(p, b, code, entry["suggest"])
     ctx = {"amount": kes(p.amount), "deposit_option": "", "or_deposit": "", "hold_note": ""}
     if suggest == "deposit":
@@ -570,14 +613,29 @@ def _can_retry(p, b):
 
 
 def refund(booking, amount, *, reason="", actor=None, method=None, queue=False):
-    """Simulated payments refund instantly; real ones - and any queue=True refund - wait for Amina to send them
-    (M-Pesa B2C / card reversal) and mark them as sent."""
+    """Simulated payments refund instantly. A refund the stay's Stripe card payments can cover goes back through Stripe
+    by itself once the transaction commits, split across them (newest first) when one isn't enough. Any other refund -
+    and any queue=True one - waits for Amina to send it (M-Pesa B2C / card reversal) and mark it as sent."""
     b = booking
     last = b.payments.filter(status="success").order_by("-id").first()
     method = method or (
         "card" if last and last.method == "card" else "mpesa_b2c" if last and last.method == "mpesa" else "manual"
     )
     simulated = last is not None and last.provider == "simulate" and not queue
+    parts = None if simulated or queue else _stripe_parts(b, amount)
+    if parts:
+        from apps.comms import deferred
+
+        rows = [
+            Refund.objects.create(
+                booking=b, payment=p, amount=part, method="card", reason=reason[:200], created_by=actor
+            )
+            for p, part in parts
+        ]
+        bookings.event(b, "refund", f"Refund {kes(amount)} going back to the card through Stripe", actor=actor)
+        for r in rows:
+            deferred.after_response(refund_by_stripe, r.pk)  # never call Stripe inside a transaction that may roll back
+        return rows[0]
     r = Refund.objects.create(
         booking=b,
         payment=last,
@@ -588,22 +646,65 @@ def refund(booking, amount, *, reason="", actor=None, method=None, queue=False):
         status="success" if simulated else "pending",
         completed_at=timezone.now() if simulated else None,
     )
-    if simulated:
-        _refund_sent(r)
-    else:
-        from apps.safety.services import raise_alert
-
-        raise_alert(
-            "payment",
-            f"Refund to send: {kes(amount)} to {b.guest.phone} for {b.ref} ({r.get_method_display()})",
-            severity="medium",
-            booking=b,
-            dedupe=f"refund:{r.pk}",
-        )
     bookings.event(
         b, "refund", f"Refund {kes(amount)} {'sent' if simulated else 'queued'} ({r.get_method_display()})", actor=actor
     )
+    if simulated:
+        _refund_sent(r)
+    else:
+        _refund_to_send(r)
     return r
+
+
+def _refund_to_send(r, note=""):
+    from apps.safety.services import raise_alert
+
+    raise_alert(
+        "payment",
+        f"Refund to send: {kes(r.amount)} to {r.booking.guest.phone} for {r.booking.ref} ({r.get_method_display()})"
+        f"{note}",
+        severity="medium",
+        booking=r.booking,
+        dedupe=f"refund:{r.pk}",
+    )
+
+
+def _stripe_parts(b, amount):
+    """How a refund goes back through Stripe: from the stay's Stripe card payments, newest first, each within what it
+    has left. None when they can't cover all of it (some of the money came as cash or M-Pesa): Amina sends that one."""
+    if not settings.STRIPE_SECRET_KEY or amount <= 0:
+        return None
+    left, parts = amount, []
+    for p in b.payments.filter(status="success", method="card", provider="stripe").order_by("-id"):
+        room = p.amount - sum(r.amount for r in p.refunds.exclude(status="failed"))
+        if room > 0:
+            part = min(left, room)
+            parts.append((p, part))
+            left -= part
+            if not left:
+                return parts
+    return None
+
+
+def refund_by_stripe(refund_id):
+    """Send a queued card refund through Stripe; if Stripe won't take it, Amina is asked to send it herself."""
+    r = Refund.objects.select_related("payment", "booking", "booking__guest").get(pk=refund_id)
+    if r.status != "pending":
+        return r
+    key = f"amina-refund-{r.pk}-{int(r.created_at.timestamp())}"  # the same refund is never sent twice
+    try:
+        res = StripeCard().refund(r.payment, r.amount, key=key, note=r.reason)
+    except PaymentError as e:
+        log.warning("Stripe refund %s failed: %s", r.pk, e)
+        _refund_to_send(r, f" - Stripe couldn't send it: {str(e)[:120]}")
+        return r
+    state = res.get("status")
+    Refund.objects.filter(pk=r.pk).update(raw=[*r.raw, {"stripe": {"id": res.get("id"), "status": state}}])
+    if state not in ("succeeded", "pending"):  # failed, canceled or requires_action: a person has to look
+        _refund_to_send(r, f" - Stripe answered '{state}'")
+        return r
+    r.refresh_from_db()
+    return mark_refund_sent(r, provider_ref=str(res.get("id") or ""))
 
 
 def mark_refund_sent(r, provider_ref="", actor=None):
@@ -689,6 +790,29 @@ def reconcile_pending():
         cards = Payment.objects.filter(status="pending", method="card", provider="paystack", created_at__lt=cutoff)
         for p in cards.order_by("created_at")[:20]:
             reconcile_payment(p)
+    if settings.STRIPE_SECRET_KEY:
+        _reconcile_stripe()
+
+
+def _reconcile_stripe(limit=20):
+    """Stripe Checkout payments nobody has confirmed yet: every run for their first quarter hour, then every
+    15 minutes until the session's day is over (newest first, at most `limit` lookups a run)."""
+    now = timezone.now()
+    pending = Payment.objects.filter(
+        status="pending", method="card", provider="stripe", created_at__lt=now - timedelta(minutes=1)
+    )
+    asked = 0
+    for p in pending.order_by("-created_at")[:200]:
+        age = now - p.created_at
+        if age > timedelta(hours=26):  # sessions last 24 hours at most: it was never paid
+            on_failure(p, NO_CONFIRMATION)
+            continue
+        if asked >= limit:
+            continue
+        every = 100 if age < timedelta(minutes=15) else 15 * 60
+        if cache.add(f"stripe-poll:{p.pk}", 1, every):
+            settle_stripe(p, StripeCard().query(p))
+            asked += 1
 
 
 def reconcile_payment(p):
@@ -696,6 +820,8 @@ def reconcile_payment(p):
     if p.method == "card":
         if p.provider == "paystack":
             settle_card(p, PaystackCard().query(p))
+        elif p.provider == "stripe":
+            settle_stripe(p, StripeCard().query(p))
         return
     res = mpesa_provider().query(p) if p.transaction_id else None
     code = str((res or {}).get("ResultCode", "")).strip()
@@ -703,6 +829,19 @@ def reconcile_payment(p):
         on_mpesa_result(p, code, desc=(res or {}).get("ResultDesc", ""), raw=res)
     elif p.created_at < timezone.now() - timedelta(minutes=30):
         on_failure(p, NO_CONFIRMATION)
+
+
+def _wrong_currency(p, currency, provider, raw):
+    from apps.safety.services import raise_alert
+
+    on_failure(p, f"Paid in {currency}, expected KES", raw=raw)
+    raise_alert(
+        "payment",
+        f"Card payment for {p.booking.ref} was made in {currency}, not KES - check it in {provider}.",
+        severity="high",
+        booking=p.booking,
+        dedupe=f"currency:{p.pk}",
+    )
 
 
 def settle_card(p, res):
@@ -716,16 +855,7 @@ def settle_card(p, res):
     if state == "success":
         currency = str(data.get("currency") or "KES").upper()
         if currency != "KES":
-            from apps.safety.services import raise_alert
-
-            on_failure(p, f"Paid in {currency}, expected KES", raw=data)
-            raise_alert(
-                "payment",
-                f"Card payment for {p.booking.ref} was made in {currency}, not KES - check it in Paystack.",
-                severity="high",
-                booking=p.booking,
-                dedupe=f"currency:{p.pk}",
-            )
+            _wrong_currency(p, currency, "Paystack", data)
             return p
         on_success(
             p,
@@ -738,6 +868,52 @@ def settle_card(p, res):
         on_failure(p, str(data.get("gateway_response") or f"card payment {state}"), raw=data)
     elif state == "abandoned" and p.created_at < timezone.now() - timedelta(minutes=30):
         on_failure(p, "card checkout not completed", raw=data)
+    return p
+
+
+STRIPE_FIELDS = ("id", "status", "payment_status", "amount_total", "currency", "payment_intent")
+
+
+def settle_stripe(p, session):
+    """Apply a Stripe Checkout Session, whether from the webhook, the guest coming back or the scheduler: only a
+    complete, paid session for this payment, in KES and for the full amount counts; an expired one ends the attempt.
+    on_success settles once, so it doesn't matter which of the three gets here first."""
+    s = session
+    if not isinstance(s, dict) or s.get("object") != "checkout.session":
+        if p.created_at < timezone.now() - timedelta(hours=26):  # a session lasts 24 hours at most
+            on_failure(p, NO_CONFIRMATION)
+        return p
+    if s.get("client_reference_id") != p.checkout_token:
+        log.warning("Stripe session %s doesn't belong to payment %s", s.get("id"), p.pk)
+        return p
+    intent = s.get("payment_intent")
+    intent = str((intent.get("id") if isinstance(intent, dict) else intent) or "")
+    summary = {**{k: s.get(k) for k in STRIPE_FIELDS}, "payment_intent": intent or None}
+    state, paid = s.get("status"), s.get("payment_status")
+    if state == "complete" and paid in ("paid", "no_payment_required"):
+        currency = str(s.get("currency") or "").upper()
+        if currency != "KES":
+            _wrong_currency(p, currency or "an unknown currency", "Stripe", summary)
+            return p
+        on_success(
+            p,
+            transaction_id=intent or None,
+            provider_ref=(intent or str(s.get("id") or ""))[:80],
+            raw=summary,
+            amount=int(s.get("amount_total") or 0) / 100,
+        )
+    elif state == "expired":
+        on_failure(p, "card checkout not completed", raw=summary)
+    return p
+
+
+def check_stripe(p, every=3):
+    """Ask Stripe about a pending Checkout payment right now (the guest is back on our page), at most once every
+    `every` seconds per payment however often the page asks, and settle it if it's done."""
+    if p.provider != "stripe" or p.status != "pending" or not cache.add(f"stripe-check:{p.pk}", 1, every):
+        return p
+    settle_stripe(p, StripeCard().query(p))
+    p.refresh_from_db()
     return p
 
 

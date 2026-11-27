@@ -10,7 +10,7 @@ from django.core.checks import Tags, Warning, register
 from django.http.request import validate_host
 
 from apps.core.utils import normalize_phone
-from apps.payments.providers import tunnel_host
+from apps.payments.providers import stripe_test_mode, tunnel_host
 
 DEMO_AMINA_PHONE = "+254700000001"  # the AMINA_PHONE default in settings and .env.example
 
@@ -93,8 +93,8 @@ def go_live_check(app_configs=None, **kwargs):
             _warn(
                 6,
                 "M-Pesa is simulated: bookings are confirmed without any money moving.",
-                "Set MPESA_PROVIDER=daraja with DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_SHORTCODE and "
-                "DARAJA_PASSKEY.",
+                "Set MPESA_PROVIDER=off to take card payments only, or MPESA_PROVIDER=daraja with "
+                "DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_SHORTCODE and DARAJA_PASSKEY.",
             )
         )
     elif s.MPESA_PROVIDER == "daraja":
@@ -123,12 +123,41 @@ def go_live_check(app_configs=None, **kwargs):
         found.append(
             _warn(
                 9,
-                "Card payments are simulated.",
-                "Set CARD_PROVIDER=paystack and PAYSTACK_SECRET_KEY.",
+                "Card payments are simulated: the card page confirms bookings without any money moving.",
+                "Set STRIPE_SECRET_KEY (and STRIPE_WEBHOOK_SECRET); Stripe is used as soon as the key is set.",
             )
         )
     elif s.CARD_PROVIDER == "paystack" and not s.PAYSTACK_SECRET_KEY:
         found.append(_warn(10, "Paystack is selected but PAYSTACK_SECRET_KEY is empty.", "Copy it from Paystack."))
+    elif s.CARD_PROVIDER == "stripe":
+        if not s.STRIPE_SECRET_KEY:
+            found.append(
+                _warn(
+                    18,
+                    "Stripe is selected but STRIPE_SECRET_KEY is empty, so card payments can't start.",
+                    "Copy the secret key from the Stripe Dashboard (Developers > API keys).",
+                )
+            )
+        elif stripe_test_mode():
+            found.append(
+                _warn(
+                    19,
+                    "STRIPE_SECRET_KEY is a test key: guests pay with Stripe's test cards and no real money moves.",
+                    "Use the live secret key (sk_live_...) and the signing secret of a live-mode webhook.",
+                )
+            )
+        if s.STRIPE_SECRET_KEY and not s.STRIPE_WEBHOOK_SECRET:
+            found.append(
+                _warn(
+                    20,
+                    "STRIPE_WEBHOOK_SECRET is empty: a card payment confirms when the guest comes back to the site, "
+                    "or within 2 minutes, instead of at once.",
+                    f"In the Stripe Dashboard (Developers > Webhooks), add {s.PUBLIC_URL.rstrip('/')}/api/payments/"
+                    "stripe/webhook for checkout.session.completed, checkout.session.async_payment_succeeded, "
+                    "checkout.session.async_payment_failed and checkout.session.expired; set STRIPE_WEBHOOK_SECRET "
+                    "to its signing secret (whsec_...).",
+                )
+            )
     if not s.ID_ENCRYPTION_KEY:
         found.append(
             _warn(

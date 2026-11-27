@@ -15,7 +15,7 @@ from django.utils import timezone
 from apps.accounts.services import get_or_create_user
 from apps.bookings import services as bookings
 from apps.core.models import OnceMarker, SiteSettings
-from apps.core.utils import first_name, is_kenyan, normalize_phone, spoken_digits, today, weekend_start
+from apps.core.utils import first_name, normalize_phone, spoken_digits, today, weekend_start
 from apps.messaging import services as messaging
 from apps.properties.services import available_units
 from apps.properties.services import quote as price_quote
@@ -310,7 +310,9 @@ class Call:
             return end(str(e), self.lang)
         self.save(step="done", ref=b.ref)
         deferred.after_response(deferred.push_payment, b.pk)  # never wait on Daraja inside a voice callback
-        pay_line = tr(self.lang, "pay_mpesa" if is_kenyan(b.guest.phone) else "pay_card")
+        from apps.payments.services import can_prompt
+
+        pay_line = tr(self.lang, "pay_mpesa" if can_prompt(b.guest.phone) else "pay_card")
         return end(tr(self.lang, "held", name=unit.name, total=b.total, pay=pay_line), self.lang)
 
     def prices(self):

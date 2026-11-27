@@ -18,7 +18,7 @@ from apps.bookings.models import Addon, BookingAddon
 from apps.core.activity import record
 from apps.core.api import STAFF_ROLES
 from apps.core.models import SiteSettings
-from apps.core.utils import first_name, is_kenyan, kes, same_phone, today, weekend_start
+from apps.core.utils import first_name, kes, same_phone, today, weekend_start
 from apps.messaging import services as messaging
 from apps.properties.models import Area, PriceOverride, Unit
 from apps.properties.services import available_units, from_price
@@ -389,7 +389,9 @@ class Ussd:
         if b.status == "held" and not b.hold_active:
             return self.t["hold_gone"]
         deferred.after_response(deferred.push_payment, b.pk)
-        return self.t["prompt" if is_kenyan(b.guest.phone) else "card_link"].format(amount=kes(due))
+        from apps.payments.services import can_prompt
+
+        return self.t["prompt" if can_prompt(b.guest.phone) else "card_link"].format(amount=kes(due))
 
     def check_in_date(self):
         """Check-in typed as DDMM ('0512'); a day already past means next year. A typo is asked again."""

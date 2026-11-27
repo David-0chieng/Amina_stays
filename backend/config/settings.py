@@ -237,8 +237,11 @@ AT_DATA_PRODUCT = env("AT_DATA_PRODUCT", "")  # Mobile Data product name for the
 AT_WEBHOOK_SECRET = env("AT_WEBHOOK_SECRET", "")  # if set, callbacks must carry it: /at/<secret>/… or ?key=<secret>
 AT_HTTP_TIMEOUT = float(env("AT_HTTP_TIMEOUT", "10"))
 
-# M-Pesa: AT's Payments product is no longer self-serve (onboarding-gated), so it is one provider of three.
-MPESA_PROVIDER = (env("MPESA_PROVIDER", "simulate")).lower()  # simulate | daraja | africastalking
+# M-Pesa is off unless chosen: Daraja needs Safaricom's Go-Live first, so guests pay by card until then.
+# AT's Payments product is no longer self-serve (onboarding-gated), so it is one provider of three.
+MPESA_PROVIDER = (env("MPESA_PROVIDER", "off")).lower()  # off | simulate | daraja | africastalking
+if MPESA_PROVIDER not in ("off", "simulate", "daraja", "africastalking"):
+    raise ImproperlyConfigured("MPESA_PROVIDER must be off, simulate, daraja or africastalking.")
 DARAJA_ENV = (env("DARAJA_ENV", "sandbox")).lower()  # sandbox | production
 DARAJA_CONSUMER_KEY = env("DARAJA_CONSUMER_KEY", "")
 DARAJA_CONSUMER_SECRET = env("DARAJA_CONSUMER_SECRET", "")
@@ -250,7 +253,13 @@ if DARAJA_TRANSACTION_TYPE not in ("CustomerPayBillOnline", "CustomerBuyGoodsOnl
         "DARAJA_TRANSACTION_TYPE must be CustomerPayBillOnline (Paybill) or CustomerBuyGoodsOnline (Till)."
     )
 DARAJA_PARTY_B = env("DARAJA_PARTY_B", "")  # the Till number for CustomerBuyGoodsOnline ('' = DARAJA_SHORTCODE)
-CARD_PROVIDER = (env("CARD_PROVIDER", "simulate")).lower()  # simulate | paystack
+# Cards: Stripe Checkout as soon as its secret key is set; until then a simulated card page (the demo).
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", "")  # sk_test_… or sk_live_… (a restricted rk_… key works too)
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", "")  # whsec_…: instant confirmation (optional, recommended)
+STRIPE_API_BASE = (env("STRIPE_API_BASE", "https://api.stripe.com")).rstrip("/")  # only tests point this elsewhere
+CARD_PROVIDER = (env("CARD_PROVIDER", "stripe" if STRIPE_SECRET_KEY else "simulate")).lower()
+if CARD_PROVIDER not in ("simulate", "stripe", "paystack"):
+    raise ImproperlyConfigured("CARD_PROVIDER must be simulate, stripe or paystack.")
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", "")
 SIM_PAY_DELAY_SECONDS = float(env("SIM_PAY_DELAY_SECONDS", "6"))
 SIM_SWAP_PROVIDER = (env("SIM_SWAP_PROVIDER", "")).lower()  # africastalking | simulate ('' = auto)

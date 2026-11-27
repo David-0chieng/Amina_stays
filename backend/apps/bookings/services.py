@@ -134,6 +134,38 @@ def details_visible(booking, now=None):
     return booking.status == "confirmed" and (now or timezone.now()) >= details_reveal_at(booking)
 
 
+# How to pay, in the guest's words: an M-Pesa prompt only where one really goes out (M-Pesa on, a Kenyan number)
+PAY_WORDS = {
+    "en": {
+        "both": "M-Pesa or card",
+        "card": "card",
+        "prompt": "Check your phone for an M-Pesa prompt or pay here",
+        "link": "Pay by card here",
+        "reply_prompt": "Reply PAY for an M-Pesa prompt or pay here",
+        "reply_link": "Reply PAY for a card payment link or pay here",
+    },
+    "sw": {
+        "both": "M-Pesa au kadi",
+        "card": "kadi",
+        "prompt": "Angalia ombi la M-Pesa au lipa hapa",
+        "link": "Lipa kwa kadi hapa",
+        "reply_prompt": "Jibu PAY kupata ombi la M-Pesa au lipa hapa",
+        "reply_link": "Jibu PAY kupata kiungo cha kulipa kwa kadi au lipa hapa",
+    },
+}
+
+
+def pay_words(phone, lang):
+    from apps.payments.services import can_prompt
+
+    w, prompt = PAY_WORDS.get(lang, PAY_WORDS["en"]), can_prompt(phone)
+    return {
+        "pay_by": w["both" if prompt else "card"],
+        "pay_prompt": w["prompt" if prompt else "link"],
+        "reply_pay": w["reply_prompt" if prompt else "reply_link"],
+    }
+
+
 def guest_context(booking, *, reveal=False):
     """Everything a message template or knowledge-base answer may mention about this stay. Wi-Fi, directions,
     landmark and parking follow the trip page's reveal (details_visible) unless `reveal` (Amina sending them)."""
@@ -163,6 +195,7 @@ def guest_context(booking, *, reveal=False):
         "taxi": settings_taxi(),
         "status": booking.get_status_display(),
         "breakfast": breakfast_summary(breakfast) if breakfast else "",
+        **pay_words(g.phone, lang),
     }
     if booking.status in ("confirmed", "checked_in"):
         ctx.update(map_link=u.map_link, address=u.address)  # on the trip page from confirmation
@@ -770,7 +803,7 @@ def release_code(booking, *, force=False, actor=None, allow_early=False):
     if b.balance_due > 0 and not force:
         if OnceMarker.mark(f"code-wait-balance:{b.ref}"):
             send_guest(b, "code_waiting_balance")
-            if is_kenyan(b.guest.phone):
+            if payments.can_prompt(b.guest.phone):  # everyone else pays through the link in that SMS
                 payments.start_payment(b, method="mpesa", purpose="balance")
         return "waiting_balance"
     if s.require_id_before_code and not b.guest.has_id and not force:
@@ -1139,7 +1172,7 @@ def decide_addon(ba, approve, *, actor=None):
         price_line = f" {kes(added)} has been added to your bill." if added > 0 else ""
         send_guest(b, "request_approved", what=what, price_line=price_line)
         due = min(added, owed(b))  # never ask again for money the guest has already paid
-        if due > 0 and is_kenyan(b.guest.phone) and b.status in ("confirmed", "checked_in"):
+        if due > 0 and payments.can_prompt(b.guest.phone) and b.status in ("confirmed", "checked_in"):
             try:
                 payments.start_payment(b, method="mpesa", purpose="addon", amount=due)
             except PaymentError:  # already on the timeline; the guest can still pay from the trip page
@@ -1680,12 +1713,12 @@ def _ask_host(c):
 
 
 def _start_change_payment(c, method=None):
-    """Ask for the difference (M-Pesa for Kenyan numbers, else card) and link the payment to the change."""
+    """Ask for the difference (M-Pesa for Kenyan numbers when it's on, else card) and link the payment to it."""
     from apps.payments import services as payments
     from apps.payments.providers import PaymentError
 
     b = c.booking
-    method = method or ("mpesa" if is_kenyan(b.guest.phone) else "card")
+    method = method or payments.default_method(b.guest.phone)
     try:
         r = payments.start_payment(b, method=method, purpose="change", amount=c.delta)
     except PaymentError as e:
@@ -1725,8 +1758,8 @@ def change_text(c, payment=None):
     payment = payment or {}
     if c.status == "pending_host":
         next_step = step["host"]
-    elif payment.get("checkout_url"):
-        next_step = step["card"].format(amount=amount, link=payment["checkout_url"])
+    elif payment.get("pay_link") or payment.get("checkout_url"):
+        next_step = step["card"].format(amount=amount, link=payment.get("pay_link") or payment["checkout_url"])
     elif payment.get("method") == "mpesa" and not payment.get("error"):
         next_step = step["mpesa"].format(amount=amount)
     else:

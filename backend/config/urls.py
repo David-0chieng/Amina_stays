@@ -82,6 +82,7 @@ api = [
     path("payments/daraja/callback/<str:secret>", payments.daraja_callback),
     path("payments/daraja/c2b/<str:kind>/<str:secret>", payments.c2b_callback),
     path("payments/paystack/webhook", payments.paystack_webhook),
+    path("payments/stripe/webhook", payments.stripe_webhook),
     # host console
     path("host/today", insights.today_view),
     path("host/insights", insights.insights),

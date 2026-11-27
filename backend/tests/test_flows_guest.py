@@ -553,7 +553,7 @@ def test_public_config(api, site, settings):
     d = r.data
     assert d["business"]["name"] == site.business_name and d["business"]["checkin_time"] == "14:00"
     assert (d["deposit_percent"], d["hold_minutes"], d["levy_percent"]) == (30, 10, 2.0)
-    assert d["payments"] == {"mpesa": "simulate", "card": "simulate", "simulated": True}
+    assert d["payments"] == {"mpesa": "simulate", "card": "simulate", "simulated": True, "card_test_mode": False}
     assert d["demo"] is True and "demo_lab" in d and d["require_id"] is True
     settings.DEMO = False
     assert "demo_lab" not in api.get("/api/config").data

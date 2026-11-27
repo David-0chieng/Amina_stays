@@ -25,6 +25,7 @@ def health(request):
 
 @api_view(["GET"])
 def config(request):
+    from apps.payments.providers import stripe_test_mode
     from apps.payments.services import paybill_config
 
     s = SiteSettings.load()
@@ -46,9 +47,10 @@ def config(request):
                 "whatsapp": settings.AT_WHATSAPP_NUMBER,
             },
             "payments": {
-                "mpesa": settings.MPESA_PROVIDER,
+                "mpesa": settings.MPESA_PROVIDER,  # "off": card only, everywhere
                 "card": settings.CARD_PROVIDER,
                 "simulated": settings.MPESA_PROVIDER == "simulate" or settings.CARD_PROVIDER == "simulate",
+                "card_test_mode": settings.CARD_PROVIDER == "stripe" and stripe_test_mode(),
             },
             "paybill": paybill_config(),  # Lipa na M-Pesa fallback when a prompt can't get through (None = off)
             "currencies": {"USD": float(s.usd_rate), "EUR": float(s.eur_rate), "GBP": float(s.gbp_rate)},
@@ -128,6 +130,52 @@ def host_settings(request):
     return Response(SettingsSerializer(s).data)
 
 
+def _mpesa_product(base, paybill, secret):
+    return {
+        "key": "payments",
+        "name": f"M-Pesa ({settings.MPESA_PROVIDER})",
+        "ready": settings.MPESA_PROVIDER != "simulate",
+        "detail": "simulated for the demo"
+        if settings.MPESA_PROVIDER == "simulate"
+        else f"{settings.MPESA_PROVIDER} - run manage.py register_c2b once"
+        if settings.MPESA_PROVIDER == "daraja"
+        else settings.MPESA_PROVIDER,
+        "callbacks": {
+            "AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
+            "Daraja": f"{base}/api/payments/daraja/callback/{secret}",
+            "Paybill validation": paybill["validation"],
+            "Paybill confirmation": paybill["confirmation"],
+        },
+    }
+
+
+def _card_product(base):
+    """Card payments: Stripe Checkout once STRIPE_SECRET_KEY is set (its webhook is optional but instant)."""
+    from apps.payments.providers import stripe_test_mode
+
+    provider = settings.CARD_PROVIDER
+    if provider == "stripe":
+        ready = bool(settings.STRIPE_SECRET_KEY)
+        detail = (
+            "no STRIPE_SECRET_KEY set"
+            if not ready
+            else "test mode - pay with card 4242 4242 4242 4242"
+            if stripe_test_mode()
+            else "live"
+        )
+        if ready and not settings.STRIPE_WEBHOOK_SECRET:
+            detail += "; no webhook yet, so payments confirm when guests return or within 2 minutes"
+        callbacks = {"Stripe webhook": f"{base}/api/payments/stripe/webhook"}
+    elif provider == "paystack":
+        ready = bool(settings.PAYSTACK_SECRET_KEY)
+        detail = "Paystack" if ready else "no PAYSTACK_SECRET_KEY set"
+        callbacks = {"Paystack webhook": f"{base}/api/payments/paystack/webhook"}
+    else:
+        ready, detail, callbacks = False, "simulated for the demo - set STRIPE_SECRET_KEY for real payments", {}
+    name = {"stripe": "Card payments - Stripe", "paystack": "Card payments - Paystack"}.get(provider, "Card payments")
+    return {"key": "card", "name": name, "ready": ready, "detail": detail, "callbacks": callbacks}
+
+
 @api_view(["GET"])
 @permission_classes([IsHost])
 def channels(request):
@@ -204,22 +252,8 @@ def channels(request):
                     "detail": settings.AT_WHATSAPP_NUMBER or "optional",
                     "callbacks": {},
                 },
-                {
-                    "key": "payments",
-                    "name": f"M-Pesa ({settings.MPESA_PROVIDER})",
-                    "ready": settings.MPESA_PROVIDER != "simulate",
-                    "detail": "simulated for the demo"
-                    if settings.MPESA_PROVIDER == "simulate"
-                    else f"{settings.MPESA_PROVIDER} - run manage.py register_c2b once"
-                    if settings.MPESA_PROVIDER == "daraja"
-                    else settings.MPESA_PROVIDER,
-                    "callbacks": {
-                        "AT checkout": f"{base}/api/payments/at/callback/{settings.AT_WEBHOOK_SECRET or 'cb'}",
-                        "Daraja": f"{base}/api/payments/daraja/callback/{callback_secret()}",
-                        "Paybill validation": paybill["validation"],
-                        "Paybill confirmation": paybill["confirmation"],
-                    },
-                },
+                *([_mpesa_product(base, paybill, callback_secret())] if settings.MPESA_PROVIDER != "off" else []),
+                _card_product(base),
             ],
             "last_seen": last,
             "jobs": [
@@ -330,6 +364,9 @@ def _demo_guard():
     return None
 
 
+MPESA_OFF = "M-Pesa is off on this site (MPESA_PROVIDER=off): guests pay by card."
+
+
 @api_view(["POST"])
 def demo_pay(request, ref):
     """Settle the newest pending payment as the provider would. Body {"result": <M-Pesa ResultCode>} other than 0
@@ -346,6 +383,8 @@ def demo_pay(request, ref):
         result = int(data.get("result") or 0)
     except (TypeError, ValueError):
         return Response({"error": "Give an M-Pesa result code, e.g. 1032."}, status=400)
+    if result and not payments.mpesa_on():
+        return Response({"error": MPESA_OFF}, status=400)
     pending = Payment.objects.filter(booking=b, status="pending").order_by("-id")
     p = (pending.filter(method="mpesa").first() if result else None) or pending.first()
     if not p:
@@ -383,7 +422,10 @@ def demo_c2b(request):
         return blocked
     from apps.payments import c2b
     from apps.payments.providers import PaymentError
+    from apps.payments.services import mpesa_on
 
+    if not mpesa_on():
+        return Response({"error": MPESA_OFF}, status=400)
     data = request.data if hasattr(request.data, "get") else {}
     try:
         t = c2b.simulate(str(data.get("ref") or "").strip(), amount=data.get("amount"), phone=data.get("phone"))

@@ -20,7 +20,7 @@ from apps.core.utils import today
 
 from . import c2b, invoices, services
 from .models import C2BTransaction, Payment, Refund
-from .providers import PaymentError, PaystackCard, callback_secret
+from .providers import STRIPE_EVENTS, PaymentError, PaystackCard, callback_secret, stripe_signature_ok, stripe_test_mode
 from .results import code_from_text
 
 log = logging.getLogger("amina.payments")
@@ -158,6 +158,32 @@ def _verify_card(payment_id):
     services.settle_card(p, PaystackCard().query(p))
 
 
+@csrf_exempt
+@require_POST
+def stripe_webhook(request):
+    """Stripe's Checkout Session events, signed with STRIPE_WEBHOOK_SECRET over the raw body. The answer goes back at
+    once; the session is applied after the response (on_success settles once, so retries and duplicates are safe)."""
+    signature = request.headers.get("Stripe-Signature", "")
+    if not stripe_signature_ok(request.body, signature, settings.STRIPE_WEBHOOK_SECRET):
+        return HttpResponse("bad signature", status=400)
+    event = _json(request)
+    session = (event.get("data") or {}).get("object") or {}
+    if event.get("type") in STRIPE_EVENTS and isinstance(session, dict) and session.get("object") == "checkout.session":
+        token = session.get("client_reference_id")
+        p = Payment.objects.filter(checkout_token=token, method="card", provider="stripe").first() if token else None
+        if p:
+            deferred.after_response(_stripe_event, p.pk, event["type"], session)
+    return HttpResponse("OK")
+
+
+def _stripe_event(payment_id, kind, session):
+    p = Payment.objects.get(pk=payment_id)
+    if kind == "checkout.session.async_payment_failed":
+        services.on_failure(p, "card payment failed", raw={k: session.get(k) for k in services.STRIPE_FIELDS})
+    else:
+        services.settle_stripe(p, session)
+
+
 # ---------- simulated hosted card page (the Next.js /pay/card/[token] page calls these) ----------
 
 
@@ -169,8 +195,14 @@ def _card(token):
 
 @api_view(["GET", "POST"])
 def card_checkout(request, token):
+    """The /pay/card/<token> page: the simulated card form, or for a real provider the page that opens its checkout
+    and where Stripe brings the guest back. Opening it asks Stripe about a pending payment (throttled), so the stay
+    confirms the moment the guest is back, webhook or not."""
     p = _card(token)
     b = p.booking
+    if request.method == "GET" and p.provider == "stripe" and p.status == "pending":
+        p = services.check_stripe(p)
+        b.refresh_from_db()
     if request.method == "POST" and p.provider == "simulate":
         if (
             p.status in ("pending", "failed")
@@ -200,6 +232,9 @@ def card_checkout(request, token):
             "expires_at": b.hold_expires_at if b.status == "held" else None,
             "expired": (b.status == "held" and not b.hold_active) or b.status == "expired",
             "simulated": p.provider == "simulate",
+            "provider": p.provider,
+            "checkout_url": services.checkout_url(p) if p.status == "pending" and p.provider != "simulate" else None,
+            "test_mode": p.provider == "stripe" and stripe_test_mode(),
         }
     )
 

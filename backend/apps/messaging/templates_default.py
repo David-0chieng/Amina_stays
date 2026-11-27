@@ -62,16 +62,16 @@ DEFAULTS = {
         "sw": "Malipo yamepokelewa: {amount} kwa {ref}. {balance_line}",
     },
     "balance_due": {
-        "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) is due before arrival. Check your phone for an M-Pesa prompt or pay here: {trip_link}",
-        "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) linadaiwa kabla ya kufika. Angalia ombi la M-Pesa au lipa hapa: {trip_link}",
+        "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) is due before arrival. {pay_prompt}: {trip_link}",
+        "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) linadaiwa kabla ya kufika. {pay_prompt}: {trip_link}",
     },
     "balance_reminder_soon": {
-        "en": "Hi {first_name}, a quick heads-up: the balance of {balance} for {ref} ({unit}) is due on {due_date}. Pay any time by M-Pesa or card: {trip_link}",
-        "sw": "Habari {first_name}, kumbusho: salio la {balance} kwa {ref} ({unit}) linadaiwa {due_date}. Lipa wakati wowote kwa M-Pesa au kadi: {trip_link}",
+        "en": "Hi {first_name}, a quick heads-up: the balance of {balance} for {ref} ({unit}) is due on {due_date}. Pay any time by {pay_by}: {trip_link}",
+        "sw": "Habari {first_name}, kumbusho: salio la {balance} kwa {ref} ({unit}) linadaiwa {due_date}. Lipa wakati wowote kwa {pay_by}: {trip_link}",
     },
     "balance_overdue": {
-        "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) was due on {due_date} and is still unpaid. Pay by M-Pesa or card on your trip page: {trip_link}{paybill_line} Your door code is sent once it's paid.",
-        "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) lilipaswa kulipwa {due_date} na bado halijalipwa. Lipa kwa M-Pesa au kadi kwenye ukurasa wa safari yako: {trip_link}{paybill_line} Nambari ya mlango itatumwa ukishalipa.",
+        "en": "Hi {first_name}, the balance of {balance} for {ref} ({unit}) was due on {due_date} and is still unpaid. Pay by {pay_by} on your trip page: {trip_link}{paybill_line} Your door code is sent once it's paid.",
+        "sw": "Habari {first_name}, salio la {balance} kwa {ref} ({unit}) lilipaswa kulipwa {due_date} na bado halijalipwa. Lipa kwa {pay_by} kwenye ukurasa wa safari yako: {trip_link}{paybill_line} Nambari ya mlango itatumwa ukishalipa.",
     },
     "pay_prompt_failed": {
         "en": "We couldn't send the M-Pesa prompt for {ref} ({reason}). Reply PAY to try again, or pay by card here: {trip_link}",
@@ -134,8 +134,8 @@ DEFAULTS = {
         "fr": "Votre code pour {unit} est pret, mais il nous faut votre passeport pour le registre : {trip_link} ou repondez ID et numero.",
     },
     "code_waiting_balance": {
-        "en": "Your door code for {unit} is ready once the balance of {balance} is paid. Reply PAY for an M-Pesa prompt or pay here: {trip_link}",
-        "sw": "Nambari ya mlango wa {unit} itatumwa ukilipa salio la {balance}. Jibu PAY kupata ombi la M-Pesa au lipa hapa: {trip_link}",
+        "en": "Your door code for {unit} is ready once the balance of {balance} is paid. {reply_pay}: {trip_link}",
+        "sw": "Nambari ya mlango wa {unit} itatumwa ukilipa salio la {balance}. {reply_pay}: {trip_link}",
     },
     "code_security_hold": {
         "en": "For your security we need to confirm your number before sending the door code for {unit}. Amina will call you shortly.",
@@ -427,6 +427,9 @@ PLACEHOLDERS = [
     "landmark",
     "map_link",
     "trip_link",
+    "pay_by",
+    "pay_prompt",
+    "reply_pay",
     "business",
     "host",
     "tips",

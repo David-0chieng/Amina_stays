@@ -1,18 +1,22 @@
 """Payment providers. Each takes a pending Payment and starts collection; results arrive by callback.
 
-M-Pesa:  simulate (default, auto-succeeds) | daraja (Safaricom Daraja STK push, the production path)
+M-Pesa:  off (default: guests pay by card) | simulate (auto-succeeds, for demos)
+         | daraja (Safaricom Daraja STK push, the production path once Safaricom's Go-Live is done)
          | africastalking (AT Mobile Checkout — now onboarding-gated, kept for accounts that have it)
-Card:    simulate (hosted test page, no card data) | paystack (hosted checkout; webhook HMAC-verified, then
-         confirmed with Verify Transaction before it counts)
+Card:    simulate (hosted test page, no card data) | stripe (Stripe Checkout; picked as soon as STRIPE_SECRET_KEY is
+         set) | paystack (hosted checkout; webhook HMAC-verified, then confirmed with Verify Transaction)
 Card numbers never touch this server: guests are always sent to a hosted page.
 """
 
 import base64
+import hashlib
+import hmac
 import logging
 import os
 import re
 import secrets
 import threading
+import time
 from urllib.parse import urlsplit
 
 import httpx
@@ -348,9 +352,148 @@ class PaystackCard:
             return None
 
 
+# ---------- Stripe ----------
+
+STRIPE_EVENTS = (
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "checkout.session.expired",
+)
+STRIPE_TOLERANCE = 300  # seconds, as in Stripe's own libraries: an older signature is a replay
+STRIPE_LOCALES = {"en": "en", "it": "it", "de": "de", "fr": "fr"}  # no Kiswahili in Checkout: the browser decides
+HELD_SESSION_SECONDS = 31 * 60  # Stripe's minimum is 30 minutes; a hold paid late is handled like any late payment
+OPEN_SESSION_SECONDS = 23 * 3600  # balances and changes: a day to pay (Stripe's maximum is 24 hours)
+
+
+def stripe_signature_ok(payload, header, secret, now=None):
+    """The Stripe-Signature check from docs.stripe.com/webhooks ("Verify webhook signatures manually"): an HMAC-SHA256
+    of "<t>.<raw body>" with the endpoint's signing secret must equal one of the v1 entries, and t must be under
+    5 minutes old. Every other entry (v0, and the secret/destination/payload debug metadata) is ignored, in any order."""
+    if not (secret and header):
+        return False
+    timestamp, signatures = "", []
+    for item in str(header).split(","):
+        key, _, value = item.strip().partition("=")
+        if key == "t":
+            timestamp = value
+        elif key == "v1":
+            signatures.append(value)
+    if not re.fullmatch(r"[0-9]{1,12}", timestamp) or not signatures:
+        return False
+    body = payload if isinstance(payload, bytes) else str(payload).encode()
+    expected = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest().encode()
+    if not any(hmac.compare_digest(expected, s.encode()) for s in signatures):
+        return False
+    return int(timestamp) >= (time.time() if now is None else now) - STRIPE_TOLERANCE
+
+
+def stripe_session_id(payment):
+    """The Checkout Session a Stripe payment opened (kept in payment.raw: its id is longer than our token field)."""
+    for entry in reversed(payment.raw or []):
+        session = (entry.get("request") or {}).get("session")
+        if session:
+            return session
+    return None
+
+
+def stripe_test_mode():
+    return settings.STRIPE_SECRET_KEY.startswith(("sk_test_", "rk_test_"))
+
+
+class StripeCard:
+    """Stripe Checkout, Stripe's hosted payment page. Stripe sends the guest back to /pay/card/<token>, which asks
+    Stripe how the session ended; the webhook and the scheduler settle it as well, so a payment counts even if the
+    guest never comes back. Amounts are KES in cents (KES is a two-decimal currency at Stripe)."""
+
+    name, simulated = "stripe", False
+
+    def _call(self, method, path, data=None, *, idempotency_key=None):
+        if not settings.STRIPE_SECRET_KEY:
+            raise PaymentError("Card payments are not configured")
+        headers = {"Authorization": f"Bearer {settings.STRIPE_SECRET_KEY}"}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        try:
+            with httpx.Client(timeout=20) as c:
+                r = c.request(method, f"{settings.STRIPE_API_BASE}/v1/{path}", data=data, headers=headers)
+            body = r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise PaymentError(f"Card service unreachable ({e})") from e
+        if r.status_code >= 400 or not isinstance(body, dict) or "error" in body:
+            error = body.get("error") if isinstance(body, dict) else None
+            message = (error or {}).get("message") if isinstance(error, dict) else None
+            raise PaymentError(message or f"Stripe answered HTTP {r.status_code}")
+        return body
+
+    def request(self, payment):
+        b = payment.booking
+        payment.checkout_token = secrets.token_hex(16)
+        page = f"{settings.FRONTEND_URL.rstrip('/')}/pay/card/{payment.checkout_token}"
+        seconds = HELD_SESSION_SECONDS if b.status == "held" else OPEN_SESSION_SECONDS
+        data = {
+            "mode": "payment",
+            "client_reference_id": payment.checkout_token,
+            "success_url": f"{page}?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{page}?cancelled=1",
+            "expires_at": str(int(time.time()) + seconds),
+            "locale": STRIPE_LOCALES.get(b.lang, "auto"),
+            "line_items[0][quantity]": "1",
+            "line_items[0][price_data][currency]": "kes",
+            "line_items[0][price_data][unit_amount]": str(int(payment.amount) * 100),
+            "line_items[0][price_data][product_data][name]": f"{b.unit.name} ({b.ref})",
+            "line_items[0][price_data][product_data][description]": (
+                f"{payment.get_purpose_display()}: {b.check_in:%d %b} - {b.check_out:%d %b %Y}"
+            ),
+            "metadata[ref]": b.ref,
+            "metadata[payment_id]": str(payment.pk),
+            "payment_intent_data[description]": f"{b.ref} {b.unit.name}",
+            "payment_intent_data[metadata][ref]": b.ref,
+            "payment_intent_data[metadata][payment_id]": str(payment.pk),
+        }
+        if b.guest.email:
+            data["customer_email"] = b.guest.email
+        s = self._call("POST", "checkout/sessions", data)
+        if not s.get("id") or not s.get("url"):
+            raise PaymentError("Stripe didn't return a checkout page")
+        payment.raw = [
+            *payment.raw,
+            {"request": {"session": s["id"], "url": s["url"], "expires_at": s.get("expires_at")}},
+        ]
+        payment.save(update_fields=["checkout_token", "raw"])
+        return {"status": "pending", "checkout_url": s["url"]}
+
+    def query(self, payment):
+        """The Checkout Session as Stripe sees it, or None when it can't be asked."""
+        session = stripe_session_id(payment)
+        if not session or not settings.STRIPE_SECRET_KEY:
+            return None
+        try:
+            return self._call("GET", f"checkout/sessions/{session}")
+        except PaymentError as e:
+            log.warning("Stripe session lookup failed for payment %s: %s", payment.pk, e)
+            return None
+
+    def refund(self, payment, amount, *, key, note=""):
+        """Refund amount (KES) of a settled Checkout payment. key makes a repeated request (after a timeout, say)
+        return the same refund instead of a second one. Returns Stripe's Refund object."""
+        intent = payment.transaction_id or ""
+        if not intent.startswith("pi_"):
+            raise PaymentError("This card payment has no Stripe PaymentIntent to refund")
+        data = {
+            "payment_intent": intent,
+            "amount": str(int(amount) * 100),
+            "reason": "requested_by_customer",
+            "metadata[ref]": payment.booking.ref,
+            "metadata[payment_id]": str(payment.pk),
+            "metadata[note]": note[:450],
+        }
+        return self._call("POST", "refunds", data, idempotency_key=key)
+
+
 def mpesa_provider():
     return {"daraja": DarajaMpesa, "africastalking": ATMobileCheckout}.get(settings.MPESA_PROVIDER, SimulatedMpesa)()
 
 
 def card_provider():
-    return {"paystack": PaystackCard}.get(settings.CARD_PROVIDER, SimulatedCard)()
+    return {"stripe": StripeCard, "paystack": PaystackCard}.get(settings.CARD_PROVIDER, SimulatedCard)()

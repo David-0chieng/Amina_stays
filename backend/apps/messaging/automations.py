@@ -9,7 +9,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from apps.core.models import OnceMarker, SiteSettings
-from apps.core.utils import at_local, is_kenyan, today
+from apps.core.utils import at_local, today
 
 from .models import Automation
 
@@ -144,7 +144,7 @@ def _send(auto, b):
     from apps.messaging import services as messaging
     from apps.payments import services as payments
 
-    if auto.key == "balance_due" and is_kenyan(b.guest.phone):
+    if auto.key == "balance_due" and payments.can_prompt(b.guest.phone):
         try:
             payments.start_payment(b, method="mpesa", purpose="balance")
         except Exception as e:  # the SMS still goes out with the pay link
@@ -305,12 +305,12 @@ def _balance_overdue(b, t):
 
 
 def _auto_prompt(b, t):
-    """At most one automatic M-Pesa prompt per booking a day (Kenyan numbers), never on top of a recent prompt
-    (the due-day one, or one the guest asked for)."""
+    """At most one automatic M-Pesa prompt per booking a day (Kenyan numbers, when M-Pesa is on), never on top of
+    a recent prompt (the due-day one, or one the guest asked for)."""
     from apps.payments import services as payments
     from apps.payments.models import Payment
 
-    if not is_kenyan(b.guest.phone):
+    if not payments.can_prompt(b.guest.phone):
         return 0
     if Payment.objects.filter(booking=b, method="mpesa", created_at__gte=timezone.now() - PROMPT_GAP).exists():
         return 0

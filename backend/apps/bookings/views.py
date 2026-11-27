@@ -531,7 +531,7 @@ def _host_create(request):
                 **services.guest_context(b),
                 amount=kes(result["amount"]),
                 minutes=SiteSettings.load().hold_minutes,
-                link=result.get("checkout_url") or "",
+                link=result.get("pay_link") or result.get("checkout_url") or "",
             )
             messaging.send(guest.phone, body, booking=b, kind="hold_card")
         else:
@@ -597,10 +597,9 @@ def host_action(request, ref, action):
             )
         elif action == "request-payment":
             result = payments.start_payment(b, method=d.get("method"), amount=d.get("amount"), actor=user)
-            if result.get("method") == "card" and result.get(
-                "checkout_url"
-            ):  # M-Pesa prompts itself; a card link must be sent
-                services.send_guest(b, "pay_link", amount=kes(result["amount"]), link=result["checkout_url"])
+            link = result.get("pay_link") or result.get("checkout_url")
+            if result.get("method") == "card" and link:  # M-Pesa prompts itself; a card link must be sent
+                services.send_guest(b, "pay_link", amount=kes(result["amount"]), link=link)
         elif action == "release-code":
             state = services.release_code(b, force=bool(d.get("force", True)), actor=user)
             if state != "released":
