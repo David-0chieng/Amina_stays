@@ -30,7 +30,7 @@ from .flowkit import bodies, frozen, last_id, make_user, sms, stay
 
 pytestmark = pytest.mark.django_db
 
-HOST = django_settings.AMINA_PHONE
+HOST = "+254700000001"  # conftest's AMINA_PHONE: a developer's .env may set their own number
 
 
 def settle(p):

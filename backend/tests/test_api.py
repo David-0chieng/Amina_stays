@@ -1,5 +1,7 @@
 """HTTP API: phone login, permissions, staged disclosure of check-in details, and iCal sync."""
 
+from unittest import mock
+
 import pytest
 
 from apps.bookings import services as bookings
@@ -24,12 +26,22 @@ def test_otp_login_flow(api):
 
 
 @pytest.mark.django_db
-def test_otp_resend_gap_and_debug_code_only_in_demo(api, settings):
+def test_otp_resend_gap_and_debug_code_only_in_demo(api, settings, django_capture_on_commit_callbacks):
     assert api.post("/api/auth/otp/request", {"phone": "+254700555001"}, format="json").status_code == 200
     assert api.post("/api/auth/otp/request", {"phone": "+254700555001"}, format="json").status_code == 400  # 30 s gap
     settings.DEMO = False
     r = api.post("/api/auth/otp/request", {"phone": "+254700555002"}, format="json")
-    assert r.status_code == 200 and "debug_code" not in r.data
+    assert r.status_code == 200 and "debug_code" not in r.data and not r.data["simulator"]  # no key: the server log
+    settings.AT_API_KEY = "sandbox-key"
+    sent = {"SMSMessageData": {"Recipients": [{"number": "+254700555003", "statusCode": 101, "messageId": "ATXid_1"}]}}
+    with (
+        mock.patch("apps.comms.at._post", return_value=sent) as post,
+        django_capture_on_commit_callbacks(execute=True),  # the code goes out once the request commits
+    ):
+        r = api.post("/api/auth/otp/request", {"phone": "+254700555003"}, format="json")
+    assert r.data["simulator"] and "debug_code" not in r.data  # the code is only in the Africa's Talking simulator
+    assert post.call_args.args[0] == "https://api.sandbox.africastalking.com/version1/messaging"
+    assert post.call_args.kwargs["data"]["to"] == "+254700555003"
 
 
 @pytest.mark.django_db

@@ -248,7 +248,7 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 ## Connecting Africa's Talking
 
 1. Create a sandbox app at [africastalking.com](https://account.africastalking.com) and set `AT_USERNAME=sandbox`, `AT_API_KEY`, `AT_USSD_CODE`, `AT_SMS_NUMBER` and a long random `AT_WEBHOOK_SECRET` in `.env`.
-2. Expose port 3000: `ngrok http 3000` (or `cloudflared tunnel --url http://localhost:3000`) and set `PUBLIC_URL=https://<your-tunnel>`.
+2. Expose port 3000: `ngrok http 3000` (or `cloudflared tunnel --url http://localhost:3000`) and set `PUBLIC_URL=https://<your-tunnel>` and `FRONTEND_URL` to the same address. Links in SMS (card payments, trip pages) use `FRONTEND_URL`, and Africa's Talking rejects any SMS that contains a localhost link (HTTP 403).
 3. Register these callback URLs in the AT dashboard (replace `<secret>`):
 
 | Product | Callback URL |

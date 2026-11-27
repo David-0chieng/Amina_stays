@@ -64,7 +64,11 @@ def request_otp(raw_phone):
     messaging.send(phone, body, kind="otp", sync=True, secret=code)  # stored and shown with the code hidden
     if settings.AT_SANDBOX or not settings.AT_API_KEY or settings.DEMO:
         log.warning("Login code for %s: %s", phone, code)  # sandbox SMS never reach real handsets
-    result = {"phone": phone, "sandbox": settings.AT_SANDBOX or not settings.AT_API_KEY}
+    result = {
+        "phone": phone,
+        "sandbox": settings.AT_SANDBOX or not settings.AT_API_KEY,
+        "simulator": settings.AT_SANDBOX and bool(settings.AT_API_KEY),  # read it in the Africa's Talking simulator
+    }
     if settings.DEMO:
         result["debug_code"] = code
     return result

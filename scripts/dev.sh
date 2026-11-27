@@ -11,7 +11,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
-export DEBUG="${DEBUG:-1}" DEMO="${DEMO:-1}"
+# Demo mode by default for a fresh clone. A DEBUG or DEMO set in the shell, .env or backend/.env wins: Django only
+# reads .env for variables that aren't already in the environment, so exporting a default here would hide it.
+in_env_file() { grep -qsE "^[[:space:]]*(export[[:space:]]+)?$1=" .env backend/.env; }
+in_env_file DEBUG || export DEBUG="${DEBUG:-1}"
+in_env_file DEMO || export DEMO="${DEMO:-1}"
 
 say() { printf '\033[1;35m▸ %s\033[0m\n' "$*"; }
 
@@ -56,6 +60,6 @@ trap cleanup INT TERM EXIT
 
 say "Guest site  http://localhost:3000"
 say "Demo Lab    http://localhost:3000/demo"
-say "Host        http://localhost:3000/host   (log in as ${AMINA_PHONE:-+254700000001}; the code is shown on screen in DEMO mode)"
+say "Host        http://localhost:3000/host   (log in as AMINA_PHONE: with DEMO=1 the code shows on screen, otherwise it comes by SMS - in the Africa's Talking simulator with sandbox keys)"
 say "API docs    http://localhost:8000/api/docs"
 wait -n

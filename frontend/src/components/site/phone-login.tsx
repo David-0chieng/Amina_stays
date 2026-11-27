@@ -25,10 +25,18 @@ export function PhoneLogin({ onDone, title, subtitle, cta = "Continue" }: { onDo
     setBusy(true);
     setError(null);
     try {
-      const r = await post<{ phone: string; sandbox: boolean; debug_code?: string }>("/api/auth/otp/request", { phone });
+      const r = await post<{ phone: string; sandbox: boolean; simulator?: boolean; debug_code?: string }>("/api/auth/otp/request", { phone });
       setNormalized(r.phone);
       setStep("code");
-      setHint(r.debug_code ? `Demo mode: your code is ${r.debug_code}` : r.sandbox ? "Sandbox: the code is printed in the server log." : null);
+      setHint(
+        r.debug_code
+          ? `Demo mode: your code is ${r.debug_code}`
+          : r.simulator
+            ? `Sandbox: the code was sent to the Africa's Talking simulator - open it as ${r.phone} to read it.`
+            : r.sandbox
+              ? "Sandbox: the code is printed in the server log."
+              : null,
+      );
       if (r.debug_code) setCode(r.debug_code);
     } catch (err) {
       setError((err as Error).message);
