@@ -161,20 +161,32 @@ def voice_callback(request):
 
 @at_webhook
 def airtime_status(request):
+    from apps.rewards.services import on_status
+
     d = _data(request)
     record(
         "system",
         f"Airtime {d.get('status', '')} to {d.get('phoneNumber', '')} ({d.get('value', '')})",
         phone=d.get("phoneNumber", ""),
     )
+    try:
+        on_status(d, "airtime")  # a reward or gift: mark it delivered, or failed (redeemed points go back)
+    except Exception:
+        log.exception("airtime status handling failed")
     return HttpResponse("OK")
 
 
 @at_webhook
 def data_status(request):
+    from apps.rewards.services import on_status
+
     d = _data(request)
     phone = d.get("destination") or d.get("phoneNumber", "")  # AT sends the masked destination, e.g. +254705****48
     record("system", f"Mobile data {d.get('status', '')} to {phone}", phone=phone)
+    try:
+        on_status(d, "data")
+    except Exception:
+        log.exception("mobile data status handling failed")
     return HttpResponse("OK")
 
 
@@ -264,4 +276,12 @@ def demo_voice(request):
     }
     if d.get("direction") == "Outbound":
         payload["destinationNumber"] = phone
+        request_id = str(d.get("clientRequestId") or "")
+        if request_id == "bridge-latest":  # Amina's phone answers the newest call-back she asked for
+            from apps.support.models import Ticket
+
+            latest = Ticket.objects.filter(call_requested_at__isnull=False).order_by("-call_requested_at").first()
+            request_id = f"bridge-{latest.pk}" if latest else ""
+        if request_id:
+            payload["clientRequestId"] = request_id
     return JsonResponse({"xml": process_voice(payload)})

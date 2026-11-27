@@ -72,6 +72,10 @@ INSTALLED_APPS = [
     "apps.safety",
     "apps.reviews",
     "apps.insights",
+    "apps.support",
+    "apps.guide",
+    "apps.notices",
+    "apps.rewards",
 ]
 
 MIDDLEWARE = [
@@ -233,9 +237,10 @@ AT_USSD_CODE = env("AT_USSD_CODE", "")  # e.g. *384*1234#
 AT_VOICE_NUMBER = env("AT_VOICE_NUMBER", "")  # "Call Amina" — Voice has no sandbox
 AT_PAYMENT_PRODUCT = env("AT_PAYMENT_PRODUCT", "AminaStays")
 AT_WHATSAPP_NUMBER = env("AT_WHATSAPP_NUMBER", "")  # AT Chat (preview) — international guests prefer WhatsApp
-AT_DATA_PRODUCT = env("AT_DATA_PRODUCT", "")  # Mobile Data product name for the welcome bundle
+AT_DATA_PRODUCT = env("AT_DATA_PRODUCT", "")  # Mobile Data product: welcome, outage and reward bundles
 AT_WEBHOOK_SECRET = env("AT_WEBHOOK_SECRET", "")  # if set, callbacks must carry it: /at/<secret>/… or ?key=<secret>
 AT_HTTP_TIMEOUT = float(env("AT_HTTP_TIMEOUT", "10"))
+GUIDE_REGION = env("GUIDE_REGION", "Kenya")  # added to local-guide map searches ("Fort Jesus, Old Town, Kenya")
 
 # M-Pesa is off unless chosen: Daraja needs Safaricom's Go-Live first, so guests pay by card until then.
 # AT's Payments product is no longer self-serve (onboarding-gated), so it is one provider of three.

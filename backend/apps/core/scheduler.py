@@ -162,6 +162,24 @@ def _changes_expire():
     return expire() if expire else 0
 
 
+def _service_notices():
+    from apps.notices.services import run
+
+    return run()
+
+
+def _support_escalation():
+    from apps.support.services import escalate_overdue
+
+    return escalate_overdue()
+
+
+def _rewards():
+    from apps.rewards.services import run
+
+    return run()
+
+
 # (key, every-N-seconds | "daily@HH:MM", function)
 JOBS = [
     ("expire_holds", 0, _expire_holds),
@@ -172,6 +190,9 @@ JOBS = [
     ("reviews", 0, _reviews),
     ("alert_followups", 0, _followups),
     ("changes_expire", 0, _changes_expire),
+    ("service_notices", 0, _service_notices),
+    ("support_escalation", 60, _support_escalation),
+    ("rewards", 60, _rewards),
     ("payments_reconcile", 120, _reconcile),
     ("ical_sync", 900, _ical),
     ("host_digest", "daily@07:00", _digest),

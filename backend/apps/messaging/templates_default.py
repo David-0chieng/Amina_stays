@@ -403,6 +403,164 @@ DEFAULTS = {
         "en": "Good morning {host}! Today: {arrivals} arriving, {departures} leaving, {in_house} in-house, {breakfasts} breakfasts, {tasks} open tasks, {unread} chats waiting, {alerts} alerts. Week occupancy {occ}%.",
         "sw": "Habari za asubuhi {host}! Leo: {arrivals} wanafika, {departures} wanaondoka, {in_house} wako ndani, vifungua kinywa {breakfasts}, kazi {tasks}, ujumbe {unread}, tahadhari {alerts}.",
     },
+    # ---------- support desk ----------
+    "ticket_opened": {
+        "en": 'We\'ve logged your request {ref}: "{subject}". {host} will get back to you within {sla}. Reply {ref} any time to check on it.',
+        "sw": 'Tumepokea ombi lako {ref}: "{subject}". {host} atakujibu ndani ya {sla}. Jibu {ref} wakati wowote kujua hali yake.',
+    },
+    "ticket_callback": {
+        "en": "Got it - {host} will call you back within {sla} (ref {ref}). If it's an emergency, reply HELP.",
+        "sw": "Sawa - {host} atakupigia ndani ya {sla} (kumb. {ref}). Kama ni dharura, jibu MSAADA.",
+    },
+    "ticket_resolved": {
+        "en": "Your request {ref} is resolved.{note}{rate_line}",
+        "sw": "Ombi lako {ref} limeshughulikiwa.{note}{rate_line}",
+    },
+    "ticket_rate_line": {
+        "en": "How did we do? Reply 1-5 (5 = excellent).",
+        "sw": "Tulifanyaje? Jibu 1-5 (5 = bora kabisa).",
+    },
+    "ticket_thanks": {
+        "en": "Thank you for rating us {rating}/5 - karibu tena!",
+        "sw": "Asante kwa kutupa {rating}/5 - karibu tena!",
+    },
+    "ticket_sorry": {
+        "en": "Thank you for telling us ({rating}/5). We're sorry - {host} will call you to put it right.",
+        "sw": "Asante kwa kutueleza ({rating}/5). Samahani - {host} atakupigia kurekebisha.",
+    },
+    # ---------- service alerts ----------
+    "notice_active": {
+        "en": "Service alert at {unit}: {title}.{eta} {message}{data_line} Sorry for the trouble - we'll text you when it's fixed. Reply ALERTS for updates.",
+        "sw": "Taarifa ya huduma {unit}: {title}.{eta} {message}{data_line} Samahani kwa usumbufu - tutakutumia ujumbe ikirekebishwa. Jibu ALERTS kwa taarifa mpya.",
+    },
+    "notice_heads_up": {
+        "en": "Heads-up from {business}: {title} at {unit} on {when}.{eta} {message} Reply ALERTS for updates.",
+        "sw": "Taarifa kutoka {business}: {title} {unit} tarehe {when}.{eta} {message} Jibu ALERTS kwa taarifa mpya.",
+    },
+    "notice_update": {
+        "en": "Update - {title} at {unit}: {message}{eta}",
+        "sw": "Taarifa mpya - {title} {unit}: {message}{eta}",
+    },
+    "notice_restored": {
+        "en": "Good news: {title} at {unit} is over and everything is working again.{resolution} Asante for your patience!",
+        "sw": "Habari njema: {title} {unit} imekwisha na kila kitu kinafanya kazi tena.{resolution} Asante kwa uvumilivu wako!",
+    },
+    "notice_cancelled": {
+        "en": "Good news: the planned {title} at {unit} on {when} is cancelled - nothing changes for your stay.",
+        "sw": "Habari njema: {title} iliyopangwa {unit} tarehe {when} imeahirishwa - hakuna kinachobadilika.",
+    },
+    "notice_known": {
+        "en": "We know - {title} at {unit} since {since}.{eta} {message} No need to report it: we'll text you the moment it's fixed.",
+        "sw": "Tunafahamu - {title} {unit} tangu {since}.{eta} {message} Hakuna haja ya kuripoti: tutakutumia ujumbe ikirekebishwa.",
+    },
+    "notice_eta": {"en": "Expected back by {time}.", "sw": "Inatarajiwa kurudi kufikia {time}."},
+    "notice_data_line": {
+        "en": "We've sent you {mb} MB of mobile data so you stay connected.",
+        "sw": "Tumekutumia MB {mb} za data ili uendelee kuwa mtandaoni.",
+    },
+    "notice_data_sent": {
+        "en": "Done - {mb} MB of mobile data is on its way to keep you connected until it's fixed.",
+        "sw": "Tayari - MB {mb} za data zinakuja ili uendelee kuwa mtandaoni hadi irekebishwe.",
+    },
+    "notice_data_already": {
+        "en": "You've already had your data bundle for this outage - we'll text you as soon as it's fixed.",
+        "sw": "Tayari umepata data kwa tatizo hili - tutakutumia ujumbe likirekebishwa.",
+    },
+    "data_none": {
+        "en": "The Wi-Fi at your home is working normally, so there's no outage data to send. You can swap points for data any time: reply POINTS.",
+        "sw": "Wi-Fi ya nyumba yako inafanya kazi kama kawaida, kwa hivyo hakuna data ya tatizo. Unaweza kubadilisha pointi kuwa data: jibu POINTS.",
+    },
+    "notice_status": {"en": "Service status at {unit}: {list}", "sw": "Hali ya huduma {unit}: {list}"},
+    "notice_all_clear": {
+        "en": "All services are running normally at {unit}.",
+        "sw": "Huduma zote zinafanya kazi kama kawaida {unit}.",
+    },
+    "notice_none": {
+        "en": "No service alerts right now - everything is running normally.",
+        "sw": "Hakuna taarifa za huduma kwa sasa - kila kitu kiko sawa.",
+    },
+    # ---------- rewards: airtime & data ----------
+    "rewards_points": {
+        "en": "Asante for staying with us! You earned {points} Amina Rewards points ({balance} in total). {redeem} points = KES {airtime} airtime or {data} MB of data. Reply POINTS any time.",
+        "sw": "Asante kwa kukaa nasi! Umepata pointi {points} za Amina Rewards (jumla {balance}). Pointi {redeem} = salio la KES {airtime} au MB {data} za data. Jibu POINTS wakati wowote.",
+    },
+    "rewards_summary": {
+        "en": "Amina Rewards: {balance} points.{redeem_line} Invite friends with code {code}: after their first stay you get KES {referrer} airtime and they get KES {referee}. Reply REFER to share it.",
+        "sw": "Amina Rewards: pointi {balance}.{redeem_line} Alika marafiki kwa nambari {code}: baada ya safari yao ya kwanza utapata salio la KES {referrer} na wao KES {referee}. Jibu REFER kuishiriki.",
+    },
+    "rewards_can_redeem": {
+        "en": "Reply REDEEM AIRTIME for KES {airtime} airtime or REDEEM DATA for {data} MB ({points} points each).",
+        "sw": "Jibu REDEEM AIRTIME kwa salio la KES {airtime} au REDEEM DATA kwa MB {data} (pointi {points} kila moja).",
+    },
+    "rewards_progress": {
+        "en": "{need} more points to your first reward.",
+        "sw": "Pointi {need} zaidi hadi zawadi yako ya kwanza.",
+    },
+    "rewards_redeemed": {
+        "en": "Done! {amount} is on its way to {phone}. You have {balance} points left.",
+        "sw": "Tayari! {amount} inatumwa kwa {phone}. Umebaki na pointi {balance}.",
+    },
+    "rewards_redeem_sending": {
+        "en": "Sending {amount} to {phone} now - we'll text you when it's done. You have {balance} points left.",
+        "sw": "Tunatuma {amount} kwa {phone} sasa - tutakutumia ujumbe ikikamilika. Umebaki na pointi {balance}.",
+    },
+    "rewards_redeem_held": {
+        "en": "Thanks! Your {amount} reward is waiting for {host}'s OK and will follow shortly. You have {balance} points left.",
+        "sw": "Asante! Zawadi yako ya {amount} inasubiri idhini ya {host} na itafika hivi karibuni. Umebaki na pointi {balance}.",
+    },
+    "rewards_redeem_failed": {
+        "en": "Sorry - we couldn't send your {amount} just now, so your points are back ({balance}). Please try again later.",
+        "sw": "Samahani - hatukuweza kutuma {amount} sasa hivi, pointi zako zimerudishwa ({balance}). Tafadhali jaribu tena baadaye.",
+    },
+    "rewards_not_enough": {
+        "en": "You have {balance} points - {need} more to redeem a reward. You earn points with every stay and for sharing feedback.",
+        "sw": "Una pointi {balance} - unahitaji {need} zaidi kupata zawadi. Unapata pointi kila unapokaa nasi na ukitoa maoni.",
+    },
+    "rewards_not_kenyan": {
+        "en": "Airtime and data rewards need a Kenyan (+254) number - your points stay saved for your next visit.",
+        "sw": "Zawadi za salio na data zinahitaji nambari ya Kenya (+254) - pointi zako zimehifadhiwa.",
+    },
+    "rewards_data_off": {
+        "en": "Data rewards aren't available right now - reply REDEEM AIRTIME to swap your points for airtime instead.",
+        "sw": "Zawadi za data hazipatikani kwa sasa - jibu REDEEM AIRTIME kubadilisha pointi kuwa salio.",
+    },
+    "rewards_off": {
+        "en": "Amina Rewards is paused at the moment - your points are safe.",
+        "sw": "Amina Rewards imesimamishwa kwa sasa - pointi zako ziko salama.",
+    },
+    "rewards_refer": {
+        "en": 'Share this: "Stay with {business} and get KES {amount} airtime after your first stay - text REF {code} to {number} before you book."',
+        "sw": 'Shiriki hii: "Kaa na {business} upate salio la KES {amount} baada ya safari yako ya kwanza - tuma REF {code} kwa {number} kabla ya kuweka nafasi."',
+    },
+    "rewards_referral_ok": {
+        "en": "Code {code} saved - thanks to {referrer}! After your first stay you'll both get airtime (KES {amount} for you).",
+        "sw": "Nambari {code} imehifadhiwa - asante kwa {referrer}! Baada ya safari yako ya kwanza mtapata salio wote wawili (KES {amount} kwako).",
+    },
+    "rewards_referral_bad": {
+        "en": "Sorry, that code didn't work: {reason}",
+        "sw": "Samahani, nambari hiyo haikufanya kazi: {reason}",
+    },
+    "rewards_referrer_paid": {
+        "en": "Your friend {friend} just finished their first stay with us - KES {amount} airtime is on its way to you. Asante for spreading the word!",
+        "sw": "Rafiki yako {friend} amemaliza safari yake ya kwanza nasi - salio la KES {amount} linakuja kwako. Asante kwa kutuenezea!",
+    },
+    "rewards_referee_paid": {
+        "en": "Karibu to Amina Rewards! As a guest a friend invited, KES {amount} airtime is on its way to you.",
+        "sw": "Karibu Amina Rewards! Kama mgeni aliyealikwa na rafiki, salio la KES {amount} linakuja kwako.",
+    },
+    "rewards_gift": {
+        "en": "{host} from {business} has sent you {amount}{why}. Asante!",
+        "sw": "{host} wa {business} amekutumia {amount}{why}. Asante!",
+    },
+    # ---------- local guide ----------
+    "guide_menu": {
+        "en": "Explore the coast - reply with a number: {options}.",
+        "sw": "Gundua pwani - jibu kwa nambari: {options}.",
+    },
+    "guide_list": {
+        "en": "{title}: {list} Reply a number for hours, prices and a map.",
+        "sw": "{title}: {list} Jibu nambari kupata saa, bei na ramani.",
+    },
 }
 
 # Placeholder hints shown in the console template editor
@@ -437,6 +595,12 @@ PLACEHOLDERS = [
     "code",
     "valid_from",
     "valid_until",
+    "points",
+    "code",
+    "amount",
+    "title",
+    "message",
+    "eta",
 ]
 
 DESCRIPTIONS = {
@@ -456,4 +620,15 @@ DESCRIPTIONS = {
     "checkout_thanks": "On checkout",
     "review_request": "After checkout (respecting quiet hours)",
     "rebook_offer": "3 weeks after checkout, opted-in direct guests only",
+    "ticket_opened": "Support: a guest's request is logged, with its reference (T12)",
+    "ticket_callback": "Support: a call-back request is logged",
+    "ticket_resolved": "Support: the request is resolved (asks for a 1-5 rating when the guest isn't mid-conversation)",
+    "notice_active": "Service alert: an outage starts (to guests staying, and arrivals before it's fixed)",
+    "notice_heads_up": "Service alert: planned work, a day ahead",
+    "notice_restored": "Service alert: it's over",
+    "notice_known": "Reply when a guest reports a problem a service alert already covers",
+    "rewards_points": "Rewards: points earned after a stay",
+    "rewards_summary": "Rewards: the answer to POINTS",
+    "rewards_referrer_paid": "Rewards: a friend the guest invited finished a first stay",
+    "rewards_gift": "Airtime or data Amina sends herself",
 }

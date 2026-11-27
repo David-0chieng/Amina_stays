@@ -219,21 +219,21 @@ def channels(request):
                 },
                 {
                     "key": "voice",
-                    "name": "Voice - Call Amina",
+                    "name": "Voice - Call Amina & call-backs",
                     "ready": bool(settings.AT_VOICE_NUMBER) and not settings.AT_SANDBOX,
                     "detail": settings.AT_VOICE_NUMBER or "needs a live voice number (no sandbox)",
                     "callbacks": {"Callback URL": f"{prefix}/voice"},
                 },
                 {
                     "key": "airtime",
-                    "name": "Airtime (goodwill)",
+                    "name": "Airtime - rewards & goodwill",
                     "ready": at.configured(),
-                    "detail": "apology credit when Amina cancels",
+                    "detail": "points redeemed, referral rewards, gifts and apologies",
                     "callbacks": {"Status": f"{prefix}/airtime/status"},
                 },
                 {
                     "key": "data",
-                    "name": "Mobile Data (welcome bundle)",
+                    "name": "Mobile Data - stay connected",
                     "ready": bool(settings.AT_DATA_PRODUCT),
                     "detail": settings.AT_DATA_PRODUCT or "no product set",
                     "callbacks": {"Status": f"{prefix}/data/status"},
@@ -494,6 +494,47 @@ def demo_reset(request):
 
     call_command("seed_demo", "--reset")
     return Response({"reset": True, "at": timezone.now()})
+
+
+DEMO_OUTAGE_TEXT = {
+    "wifi": "Our internet provider is fixing a fault on the street. Mobile data works fine.",
+    "power": "Kenya Power is working on the line. The backup generator runs the lights, fans and fridge.",
+    "water": "The county supply is off. The tank has a few hours' reserve - please go easy on it.",
+}
+
+
+@api_view(["POST"])
+def demo_outage(request, ref):
+    """An outage at this stay's home as Amina would post it ({"service": "wifi"|"power"|"water"}), or
+    {"restore": true} to end the one that's on."""
+    if (blocked := _demo_guard()) is not None:
+        return blocked
+    from datetime import timedelta
+
+    from apps.bookings.models import Booking
+    from apps.notices import services as notices
+
+    b = get_object_or_404(Booking.objects.select_related("unit"), ref=ref.upper())
+    if request.data.get("restore"):
+        n = notices.for_unit(b.unit).first()
+        if n is None:
+            return Response({"error": "There's no service alert on at this home."}, status=400)
+        told = notices.resolve(n, note="The provider fixed it.")
+        return Response({"notice": n.pk, "status": "resolved", "told": told})
+    service = request.data.get("service") or "wifi"
+    if service not in DEMO_OUTAGE_TEXT:
+        return Response({"error": "Pick wifi, power or water."}, status=400)
+    if any(n.service == service for n in notices.for_unit(b.unit)):
+        return Response({"error": "That outage is already on at this home - press Fix it first."}, status=400)
+    n = notices.create(
+        kind="outage",
+        service=service,
+        message=DEMO_OUTAGE_TEXT[service],
+        units=[b.unit],
+        expected_end=timezone.now() + timedelta(hours=2),
+        source="demo",
+    )
+    return Response({"notice": n.pk, "status": n.status, "told": n.notified, "data_mb": n.data_mb})
 
 
 def demo_ical(request, slug):

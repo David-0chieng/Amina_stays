@@ -9,13 +9,17 @@ from apps.accounts import views as accounts
 from apps.bookings import views as bookings
 from apps.comms import views as comms
 from apps.core import views as core
+from apps.guide import views as guide
 from apps.insights import views as insights
 from apps.messaging import views as messaging
+from apps.notices import views as notices
 from apps.operations import views as operations
 from apps.payments import views as payments
 from apps.properties import views as properties
 from apps.reviews import views as reviews
+from apps.rewards import views as rewards
 from apps.safety import views as safety
+from apps.support import views as support
 
 router = DefaultRouter(trailing_slash=False)
 router.register("host/listings", properties.HostUnitViewSet, basename="host-listings")
@@ -28,6 +32,8 @@ router.register("host/tasks", operations.TaskViewSet, basename="host-tasks")
 router.register("host/staff", operations.StaffViewSet, basename="host-staff")
 router.register("host/automations", messaging.AutomationViewSet, basename="host-automations")
 router.register("host/faqs", messaging.FAQViewSet, basename="host-faqs")
+router.register("host/guide/places", guide.HostPlaceViewSet, basename="host-guide-places")
+router.register("host/guide/events", guide.HostEventViewSet, basename="host-guide-events")
 
 api = [
     # public
@@ -42,6 +48,9 @@ api = [
     path("listings/<slug:slug>/quote", properties.quote),
     path("listings/<slug:slug>/reviews", properties.listing_reviews),
     path("ical/<str:token>.ics", properties.ical_export),
+    path("guide", guide.guide),
+    path("guide/nearby/<slug:slug>", guide.nearby),
+    path("notices", notices.unit_notices),
     # auth & account
     path("auth/csrf", accounts.csrf),
     path("auth/otp/request", accounts.otp_request),
@@ -58,6 +67,11 @@ api = [
     path("me/waitlist/<int:pk>", bookings.my_waitlist_remove),
     path("waitlist", bookings.waitlist_join),
     path("messages", messaging.my_messages),
+    path("me/rewards", rewards.my_rewards),
+    path("me/rewards/redeem", rewards.my_redeem),
+    path("me/rewards/referral", rewards.my_referral),
+    path("support/tickets", support.my_tickets),
+    path("support/tickets/<int:pk>/rate", support.rate_ticket),
     # trips
     path("bookings", bookings.bookings),
     path("bookings/<str:ref>", bookings.booking_detail),
@@ -121,6 +135,16 @@ api = [
     path("host/channels", core.channels),
     path("host/activity", core.activity),
     path("host/locks", core.locks),
+    path("host/support/tickets", support.host_tickets),
+    path("host/support/tickets/<int:pk>", support.host_ticket),
+    path("host/support/tickets/<int:pk>/<str:action>", support.host_ticket_action),
+    path("host/notices", notices.notices),
+    path("host/notices/preview", notices.preview),
+    path("host/notices/<int:pk>/<str:action>", notices.notice_action),
+    path("host/rewards", rewards.host_rewards),
+    path("host/rewards/program", rewards.host_program),
+    path("host/rewards/payouts/<int:pk>/<str:action>", rewards.host_payout_action),
+    path("host/rewards/send", rewards.host_send),
     path("", include(router.urls)),
     # demo lab (DEMO=1 only)
     path("demo/sms", comms.demo_sms),
@@ -132,6 +156,7 @@ api = [
     path("demo/tick", core.demo_tick),
     path("demo/advance/<str:ref>", core.demo_advance),
     path("demo/reset", core.demo_reset),
+    path("demo/outage/<str:ref>", core.demo_outage),
     path("demo/ical/<slug:slug>.ics", core.demo_ical),
     # API docs
     path("schema", SpectacularAPIView.as_view(), name="schema"),

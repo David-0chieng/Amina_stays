@@ -18,6 +18,7 @@ from apps.payments.models import Payment
 from apps.properties.services import quote as price_quote
 from apps.safety.models import Alert
 from apps.safety.services import followups
+from apps.support.models import Ticket
 
 from .conftest import days
 from .flowkit import (
@@ -331,7 +332,11 @@ def test_talk_to_amina_bridges_the_call_to_her_and_her_backup(homes, site):
 def test_a_missed_bridge_tells_both_sides(homes):
     call("1", "4", "1", phone=NEW)
     hang_up(phone=NEW, dial="0")
-    assert bodies(HOST) == [f"Missed call from guest {NEW} who wanted to talk. Please call back."]
+    ticket = Ticket.objects.get(phone=NEW)  # a call-back on the support desk, with a Call button
+    assert (ticket.category, ticket.channel) == ("callback", "voice")
+    assert bodies(HOST) == [
+        f"Missed call from guest {NEW} who wanted to talk ({ticket.ref}). Please call back - reply CALL {ticket.ref} to be connected."
+    ]
     assert bodies(NEW) == ["Amina couldn't pick up just now. Text your question to this number and she'll reply here."]
 
 

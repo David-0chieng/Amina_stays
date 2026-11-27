@@ -2,7 +2,8 @@
 
 Builds a realistic Amina Stays: 6 homes, staff, 150 days of history across every channel, guests
 in-house right now, arrivals, requests waiting for Amina, inbox threads, tasks and an Airbnb iCal
-feed. Seeded people are tagged 'seed' and never receive real SMS (see messaging.dispatch)."""
+feed, plus the local guide, support tickets, service alerts and rewards. Seeded people are tagged
+'seed' and never receive real SMS, airtime or data (see messaging.dispatch, rewards.dispatch)."""
 
 import random
 from datetime import datetime, time, timedelta
@@ -67,11 +68,25 @@ class Command(BaseCommand):
             self.history()
             self.current()
             self.extras()
+            self.addons()
         n = {m.__name__: m.objects.count() for m in (Unit, Booking, Review, Message, Task)}
         self.stdout.write(self.style.SUCCESS(f"Seeded: {n}"))
         self.stdout.write(
             f"Host console login: {settings.AMINA_PHONE} (OTP code is printed in the server log / shown in DEMO mode)"
         )
+
+    def addons(self):
+        """The local guide, support desk, service alerts and rewards (rewards first: they mark past stays as
+        already rewarded, so the scheduler never texts seeded guests about old stays)."""
+        from apps.guide.seed import seed as guide
+        from apps.notices.seed import seed as notices
+        from apps.rewards.seed import seed as rewards
+        from apps.support.seed import seed as support
+
+        guide()
+        rewards()
+        support()
+        notices()
 
     # ---------- setup ----------
     def settings(self):

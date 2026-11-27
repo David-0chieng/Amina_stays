@@ -41,7 +41,7 @@ S = {
             "Report problem",
             "Talk to Amina",
             "Check out",
-            "Language",
+            "More",
             "EMERGENCY",
         ],
         "where": "Where?",
@@ -87,7 +87,27 @@ S = {
             "Other",
         ],
         "issue_ok": "Logged #{task}. {who} has been told and will sort it. Reply HELP by SMS if urgent.",
-        "talk_opts": ["Call me back", "I'll text a question"],
+        "talk_opts": ["Call me back", "I'll text a question", "Make a complaint", "My requests"],
+        "complaint_q": "What's it about?",
+        "complaint_opts": [
+            "Noise/neighbours",
+            "Cleanliness",
+            "Staff/service",
+            "Billing/payment",
+            "My booking",
+            "Something else",
+        ],
+        "complaint_detail": "Tell us briefly what happened:",
+        "complaint_ok": "Logged {ref}. {host} will reply by SMS within {sla}. Text {ref} any time for updates.",
+        "mine_none": "No requests yet. Choose 3 to make a complaint, or 1 for a call back.",
+        "more_title": "More",
+        "more_opts": ["Explore the area", "Service status", "Rewards", "Language"],
+        "explore": "Explore the coast",
+        "guide_none": "Our local guide is being updated. Text EXPLORE for Amina's tips.",
+        "guide_sent": "{name}: {summary} Hours, prices and a map sent by SMS.",
+        "rewards_head": "{points} points. Your code {code}",
+        "rewards_opts": ["KES {airtime} airtime", "{data}MB data", "Enter a friend's code", "How it works (SMS)"],
+        "enter_code": "Enter your friend's code:",
         "callback": "Amina will call you back shortly.",
         "text_us": "Text your question to {number} and Amina will reply.",
         "co_q": "Check out of {unit} now? Your door code will stop working.",
@@ -113,7 +133,7 @@ S = {
             "Ripoti tatizo",
             "Ongea na Amina",
             "Toka",
-            "Lugha",
+            "Zaidi",
             "DHARURA",
         ],
         "where": "Wapi?",
@@ -159,7 +179,20 @@ S = {
             "Nyingine",
         ],
         "issue_ok": "Tumeandika #{task}. {who} ameambiwa. Tuma MSAADA kwa SMS kama ni dharura.",
-        "talk_opts": ["Nipigie", "Nitatuma swali"],
+        "talk_opts": ["Nipigie", "Nitatuma swali", "Toa malalamiko", "Maombi yangu"],
+        "complaint_q": "Ni kuhusu nini?",
+        "complaint_opts": ["Kelele/majirani", "Usafi", "Wafanyakazi", "Malipo", "Nafasi yangu", "Kitu kingine"],
+        "complaint_detail": "Tueleze kwa ufupi kilichotokea:",
+        "complaint_ok": "Tumeandika {ref}. {host} atajibu kwa SMS ndani ya {sla}. Tuma {ref} kwa SMS kupata taarifa.",
+        "mine_none": "Huna maombi bado. Chagua 3 kutoa malalamiko, au 1 tukupigie.",
+        "more_title": "Zaidi",
+        "more_opts": ["Gundua eneo", "Hali ya huduma", "Zawadi", "Lugha"],
+        "explore": "Gundua pwani",
+        "guide_none": "Mwongozo unasasishwa. Tuma EXPLORE kupata ushauri wa Amina.",
+        "guide_sent": "{name}: {summary} Saa, bei na ramani kwa SMS.",
+        "rewards_head": "Pointi {points}. Nambari yako {code}",
+        "rewards_opts": ["Salio KES {airtime}", "Data MB {data}", "Weka nambari ya rafiki", "Inavyofanya kazi (SMS)"],
+        "enter_code": "Andika nambari ya rafiki yako:",
         "callback": "Amina atakupigia hivi karibuni.",
         "text_us": "Tuma swali lako kwa {number} na Amina atakujibu.",
         "co_q": "Toka {unit} sasa? Nambari ya mlango itazimwa.",
@@ -176,6 +209,7 @@ S = {
     },
 }
 ISSUE_CATEGORIES = ["water", "power", "wifi", "ac", "cleanliness", "lock", "security", "other"]
+COMPLAINT_CATEGORIES = ["complaint", "complaint", "complaint", "billing", "booking", "other"]
 BF_STYLES = ["swahili", "continental", "english", "vegetarian"]
 
 
@@ -304,7 +338,7 @@ class Ussd:
             self.problem,
             self.talk,
             self.checkout,
-            self.language,
+            self.more,
             self.sos,
         ][choice]()
 
@@ -505,6 +539,11 @@ class Ussd:
         if not b:
             self.end(self.t["no_booking"])
         idx = self.choose(self.t["issue_q"], self.t["issue_opts"])
+        from apps.notices.services import known_issue_text
+
+        known = known_issue_text(b, ISSUE_CATEGORIES[idx], self.lang)
+        if known:  # an outage we've already announced: no second work order
+            self.end(known)
         task = report_issue(
             b, f"{self.t['issue_opts'][idx]} (reported by USSD)", category=ISSUE_CATEGORIES[idx], channel="ussd"
         )
@@ -519,20 +558,116 @@ class Ussd:
         from django.conf import settings
 
         from apps.messaging.models import Thread
+        from apps.support import services as support
 
-        if self.choose(self.t["main"][5], self.t["talk_opts"]) == 0:
+        choice = self.choose(self.t["main"][5], self.t["talk_opts"])
+        if choice == 0:
             b = bookings.current_booking(self.phone)
             thread = messaging.get_thread(self.phone, self.user)
             messaging.record_inbound(
                 self.phone, "[USSD] Please call me back", channel="ussd", booking=b, handled="relayed"
             )
             Thread.objects.filter(pk=thread.pk).update(needs_reply=True, waiting_since=timezone.now())
+            ticket = support.open_ticket(  # on the support desk too, with a reply-by time and a Call button
+                self.phone,
+                category="callback",
+                subject="Please call me back",
+                channel="ussd",
+                booking=b,
+                tell_host=False,
+            )
             bookings.notify_host(
-                f"CALL BACK: {self.user.display_name} {self.phone}{' (' + b.ref + ' ' + b.unit.name + ')' if b else ''} asked by USSD.",
+                f"CALL BACK {ticket.ref}: {self.user.display_name} {self.phone}"
+                f"{' (' + b.ref + ' ' + b.unit.name + ')' if b else ''} asked by USSD. Reply CALL {ticket.ref} to be connected.",
                 booking=b,
             )
             self.end(self.t["callback"])
-        self.end(self.t["text_us"].format(number=settings.AT_SMS_NUMBER or "this number"))
+        if choice == 1:
+            self.end(self.t["text_us"].format(number=settings.AT_SMS_NUMBER or "this number"))
+        if choice == 2:
+            self.complaint()
+        self.my_requests()
+
+    def complaint(self):
+        from apps.support import services as support
+
+        idx = self.choose(self.t["complaint_q"], self.t["complaint_opts"])
+        detail = self.text(self.t["complaint_detail"]).strip()
+        label = S["en"]["complaint_opts"][idx]  # Amina reads them in English
+        t = support.open_ticket(
+            self.phone,
+            category=COMPLAINT_CATEGORIES[idx],
+            subject=f"{label}: {detail}"[:140],
+            description=f"{label}: {detail} (by USSD)",
+            channel="ussd",
+            booking=bookings.current_booking(self.phone),
+        )
+        self.end(
+            self.t["complaint_ok"].format(
+                ref=t.ref, host=SiteSettings.load().host_name, sla=support.sla_text(t.priority, self.lang)
+            )
+        )
+
+    def my_requests(self):
+        from apps.support import services as support
+
+        tickets = list(support.guest_tickets(self.phone).exclude(status="closed")[:4])
+        if not tickets:
+            self.end(self.t["mine_none"])
+        self.end(
+            "\n".join(
+                f"{t.ref} {support.category_in(t, self.lang)}: {support.status_in(t, self.lang)}" for t in tickets
+            )
+        )
+
+    # ---------- 8. More: local guide, service status, rewards, language ----------
+    def more(self):
+        choice = self.choose(self.t["more_title"], self.t["more_opts"])
+        [self.explore, self.service_status, self.rewards, self.language][choice]()
+
+    def explore(self):
+        from apps.guide import services as guide
+
+        entries = guide.menu(self.lang)
+        if not entries:
+            self.end(self.t["guide_none"])
+        key = entries[self.choose(self.t["explore"], [label for _, label in entries], per_page=6)][0]
+        if key == "events":
+            messaging.send(self.phone, guide.events_sms(self.lang), kind="guide_events")
+            self.end(f"{guide.events_ussd(self.lang)}\n{self.t['sent']}")
+        b = bookings.current_booking(self.phone)
+        places = guide.places_for(key, guide.origin_of(b.unit) if b else None)
+        if not places:
+            self.end(self.t["guide_none"])
+        names = [guide.plain(x.name)[:24] for x in places]
+        p = places[self.choose(guide.short(key, self.lang), names, per_page=5)]
+        guide.record_hit(p)
+        messaging.send(self.phone, guide.details_sms(p, self.lang), kind="guide_place")
+        self.end(guide.plain(self.t["guide_sent"].format(name=p.name, summary=p.summary_in(self.lang))))
+
+    def service_status(self):
+        from apps.notices.services import status_text
+
+        self.end(status_text(self.phone, self.lang))
+
+    def rewards(self):
+        from apps.rewards import services as rewards
+
+        prog = rewards.program()
+        if not prog.enabled:
+            self.end(messaging.render("rewards_off", self.lang))
+        m = rewards.member(self.user)
+        head = self.t["rewards_head"].format(points=rewards.balance(self.user), code=m.code)
+        opts = [o.format(airtime=prog.redeem_airtime, data=prog.redeem_data_mb) for o in self.t["rewards_opts"]]
+        choice = self.choose(head, opts)
+        if choice in (0, 1):
+            _, text = rewards.redeem(self.user, "airtime" if choice == 0 else "data", defer=True)
+            self.end(text)
+        if choice == 2:
+            _, text = rewards.apply_referral(self.user, self.text(self.t["enter_code"]))
+            self.end(text)
+        messaging.send(self.phone, rewards.summary_text(self.user), kind="rewards_summary")
+        self.end(self.t["sent"])
 
     def checkout(self):
         b = bookings.active_stay(self.phone)

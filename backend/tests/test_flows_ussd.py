@@ -18,6 +18,7 @@ from apps.properties.models import PriceOverride, Unit
 from apps.properties.services import from_price
 from apps.properties.services import quote as price_quote
 from apps.safety.models import Alert
+from apps.support.models import Ticket
 
 from .conftest import days
 from .flowkit import (
@@ -427,16 +428,22 @@ def test_report_a_problem_opens_a_task_for_the_caretaker_and_tells_everyone(home
 
 @pytest.mark.django_db
 def test_talk_to_amina_call_back_request_and_text_option(homes, in_house, settings):
-    assert ussd("6") == "CON Talk to Amina\n1. Call me back\n2. I'll text a question"
+    assert ussd("6") == (
+        "CON Talk to Amina\n1. Call me back\n2. I'll text a question\n3. Make a complaint\n4. My requests"
+    )
     before = last_id()
     assert ussd("6*1") == "END Amina will call you back shortly."
     thread = Thread.objects.get(phone=KE_GUEST)
     assert thread.needs_reply and thread.waiting_since
     asked = Message.objects.get(thread=thread, direction="in", channel="ussd")
     assert asked.body == "[USSD] Please call me back" and asked.handled == "relayed"
+    ticket = Ticket.objects.get(category="callback")  # on the support desk, with a reply-by time
+    assert ticket.channel == "ussd" and ticket.booking == in_house
     assert bodies(HOST, before) == [
-        f"CALL BACK: Wanjiru Kamau {KE_GUEST} ({in_house.ref} Blue Reef Apartment) asked by USSD."
+        f"CALL BACK {ticket.ref}: Wanjiru Kamau {KE_GUEST} ({in_house.ref} Blue Reef Apartment) asked by USSD. "
+        f"Reply CALL {ticket.ref} to be connected."
     ]
+    assert bodies(KE_GUEST, before, kind="ticket_callback")  # the guest gets the reference by SMS
     settings.AT_SMS_NUMBER = "22384"
     assert ussd("6*2") == "END Text your question to 22384 and Amina will reply."
 
@@ -467,10 +474,11 @@ def test_check_out_by_ussd_revokes_the_code_and_books_the_cleaner(homes, team, i
 
 @pytest.mark.django_db
 def test_switching_to_kiswahili_changes_every_menu_and_the_texts(homes):
-    assert ussd("8", phone=NEW) == (
+    assert ussd("8", phone=NEW) == "CON More\n1. Explore the area\n2. Service status\n3. Rewards\n4. Language"
+    assert ussd("8*4", phone=NEW) == (
         "CON Language / Lugha\n1. English\n2. Kiswahili\n3. Italiano\n4. Deutsch\n5. Francais"
     )
-    assert ussd("8*2", phone=NEW) == "END Lugha imehifadhiwa."
+    assert ussd("8*4*2", phone=NEW) == "END Lugha imehifadhiwa."
     assert User.objects.get(phone=NEW).lang == "sw"
     home = ussd("", phone=NEW)
     assert home.startswith("CON Karibu Amina Stays\n1. Weka nafasi\n2. Bei na nyumba") and "9. DHARURA" in home
@@ -486,7 +494,7 @@ def test_switching_to_kiswahili_changes_every_menu_and_the_texts(homes):
 
 @pytest.mark.django_db
 def test_other_languages_keep_english_menus_but_change_the_texts(homes):
-    assert ussd("8*4", phone=NEW) == "END Language saved."
+    assert ussd("8*4*4", phone=NEW) == "END Language saved."
     assert User.objects.get(phone=NEW).lang == "de"
     assert ussd("", phone=NEW).startswith("CON Karibu Amina Stays\n1. Book a stay")
 

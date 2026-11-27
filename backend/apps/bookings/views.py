@@ -279,16 +279,29 @@ def checkout(request, ref):
 @api_view(["POST"])
 @permission_classes([IsGuest])
 def report_issue(request, ref):
+    from apps.notices.services import known_issue_text
+    from apps.operations.services import classify_issue
     from apps.operations.services import report_issue as report
 
     b = _mine(request, ref)
     text = (request.data.get("description") or "").strip()
     if not text:
         return _err("Tell us what's wrong.")
-    task = report(b, text, category=request.data.get("category") or None, channel="web")
+    category = request.data.get("category") or None
+    known = known_issue_text(b, category or classify_issue(text), "en")  # shown on the (English) website
+    if known:  # an outage already announced for this home: no second work order
+        return Response({"task": None, "assignee": None, "priority": None, "ticket": None, "known": known})
+    task = report(b, text, category=category, channel="web")
     services.notify_host(f"Issue #{task.pk} at {b.unit.name} ({b.guest.display_name}, web): {text[:120]}", booking=b)
+    ticket = task.tickets.first()
     return Response(
-        {"task": task.pk, "assignee": task.assignee.name if task.assignee else None, "priority": task.priority}
+        {
+            "task": task.pk,
+            "assignee": task.assignee.name if task.assignee else None,
+            "priority": task.priority,
+            "ticket": ticket.ref if ticket else None,
+            "known": None,
+        }
     )
 
 

@@ -195,6 +195,10 @@ def report_issue(booking, text, *, category=None, channel="sms", unit=None):
         source="guest",
         due_at=timezone.now() + timedelta(hours=1 if priority != "normal" else 6),
     )
+    if booking:
+        from apps.support.services import open_for_issue
+
+        open_for_issue(task, booking, text, channel)  # on the support desk too, closed with the work order
     if category in URGENT and booking:
         from apps.safety.services import raise_alert
 
@@ -222,6 +226,9 @@ def start_task(task, by=None):
         if task.type == "turnover" and task.unit:
             task.unit.housekeeping = "cleaning"
             task.unit.save(update_fields=["housekeeping"])
+        from apps.support.services import task_started
+
+        task_started(task)
     return task
 
 
@@ -236,6 +243,9 @@ def complete_task(task, by=None, note=""):
     if task.type == "turnover" and task.unit:
         task.unit.housekeeping = "clean"
         task.unit.save(update_fields=["housekeeping"])
+    from apps.support.services import task_done
+
+    task_done(task)
     if task.source == "guest" and task.booking and task.booking.status == "checked_in":
         send_guest(task.booking, "issue_fixed", task=task.pk, title=task.title.split(":")[0])
     record(

@@ -195,6 +195,46 @@ class GuestBot:
         return self.say("help_ack", handled="escalated", call_line=call_line)
 
     # -- conversation states
+    def state_ticket_rating(self, convo):
+        from apps.support import services as support
+        from apps.support.models import Ticket
+
+        set_convo(self.phone, "idle")
+        if not re.fullmatch(r"[1-5](\s*(/5|stars?|\*))?", self.low):
+            return None
+        t = Ticket.objects.filter(pk=convo.data.get("ticket"), phone=self.phone).first()
+        if t is None:
+            return None
+        rating = int(self.low[0])
+        support.rate(t, rating, channel="sms")
+        return self.say("ticket_sorry" if rating <= 2 else "ticket_thanks", rating=rating)
+
+    def state_complaint(self, convo):
+        set_convo(self.phone, "idle")
+        if len(self.text.strip()) < 3:
+            return None
+        return self._complain(self.text)
+
+    def state_guide_menu(self, convo):
+        keys = convo.data.get("keys") or []
+        if self.low.isdigit() and 1 <= int(self.low) <= len(keys):
+            return self._guide(keys[int(self.low) - 1])
+        set_convo(self.phone, "idle")
+        return None
+
+    def state_guide_list(self, convo):
+        from apps.guide import services as guide
+        from apps.guide.models import Place
+
+        ids = convo.data.get("places") or []
+        if self.low.isdigit() and 1 <= int(self.low) <= len(ids):
+            p = Place.objects.filter(pk=ids[int(self.low) - 1], active=True).select_related("area").first()
+            if p is not None:  # the list stays open: another number gets another place
+                guide.record_hit(p)
+                return self.reply(guide.details_sms(p, self.lang), kind="guide_place")
+        set_convo(self.phone, "idle")
+        return None
+
     def state_review(self, convo):
         from apps.reviews.services import record_rating
 
@@ -499,6 +539,12 @@ class GuestBot:
         b = self.booking()
         if not b:
             return self.relay()
+        from apps.notices.services import known_issue_text
+        from apps.operations.services import classify_issue
+
+        known = known_issue_text(b, classify_issue(text), self.lang)
+        if known:
+            return self.reply(known, kind="notice_known", booking=b)
         messaging.mark(self.inbound, "auto", "issue")
         task = report_issue(b, text, channel="sms")
         bookings.notify_host(f"Issue #{task.pk} at {b.unit.name} ({self.g.display_name}): {text[:120]}", booking=b)
@@ -607,6 +653,130 @@ class GuestBot:
             return "card_link_sent"
         return self.say("hold_mpesa", booking=b, amount=kes(pay["amount"]), **bookings.guest_context(b))
 
+    # -- support desk (Voice + SMS)
+    def complain(self):
+        if len(self.rest) < 3:
+            from apps.support.services import t_
+
+            set_convo(self.phone, "complaint", {})
+            return self.reply(t_("complaint_ask", self.lang, host=SiteSettings.load().host_name), kind="complaint_ask")
+        return self._complain(self.rest)
+
+    def _complain(self, text):
+        from apps.support.services import open_ticket
+
+        messaging.mark(self.inbound, "auto", "complaint")
+        open_ticket(
+            self.phone,
+            category="complaint",
+            subject=text.strip().split("\n", 1)[0][:140],
+            description=text.strip(),
+            channel=self.channel() or "sms",
+            booking=self.booking(),
+            reply_channel=self.channel(),
+        )
+        return "complaint"
+
+    def callback(self):
+        from apps.support.services import open_ticket
+
+        messaging.mark(self.inbound, "auto", "callback")
+        open_ticket(
+            self.phone,
+            category="callback",
+            subject="Please call me back",
+            description=self.rest,
+            channel=self.channel() or "sms",
+            booking=self.booking(),
+            reply_channel=self.channel(),
+        )
+        return "callback"
+
+    def tickets(self):
+        from apps.support.services import list_text
+
+        return self.reply(list_text(self.phone, self.lang), kind="tickets")
+
+    def ticket_status(self):
+        from apps.support.services import detail_text
+
+        return self.reply(detail_text(self.phone, int(re.sub(r"\D", "", self.low)), self.lang), kind="ticket_status")
+
+    # -- local guide (USSD + SMS)
+    def explore(self):
+        from apps.guide import services as guide
+
+        key = guide.key_for(self.rest)
+        if key:
+            return self._guide(key)
+        body, keys = guide.menu_message(self.lang)
+        if not body:
+            return self.reply(guide.word("none", self.lang), kind="guide_none")
+        guide.remember(self.phone, "guide_menu", {"keys": keys})
+        return self.reply(body, kind="guide_menu")
+
+    def events(self):
+        return self._guide("events")
+
+    def food(self):
+        return self._guide("food")
+
+    def _guide(self, key):
+        from apps.guide import services as guide
+
+        if key == "events":
+            set_convo(self.phone, "idle")
+            return self.reply(guide.events_sms(self.lang), kind="guide_events")
+        b = self.booking()
+        places = guide.places_for(key, guide.origin_of(b.unit) if b else None)[:5]
+        if not places:
+            set_convo(self.phone, "idle")
+            return self.reply(guide.word("none", self.lang), kind="guide_none")
+        guide.remember(self.phone, "guide_list", {"places": [p.pk for p in places]})
+        return self.reply(guide.list_message(key, places, self.lang), kind="guide_list")
+
+    # -- service alerts (SMS) and the outage data bundle (Mobile Data)
+    def alerts(self):
+        from apps.notices.services import status_text
+
+        return self.reply(status_text(self.phone, self.lang), kind="notice_status")
+
+    def data(self):
+        from apps.notices.services import data_request
+
+        b = bookings.active_stay(self.phone)
+        text = data_request(b, self.lang) if b else None
+        return self.reply(text or messaging.render("data_none", self.lang), kind="notice_data")
+
+    # -- rewards (Airtime + Mobile Data)
+    def points(self):
+        from apps.rewards.services import summary_text
+
+        return self.reply(summary_text(self.g), kind="rewards_summary")
+
+    def redeem(self):
+        from apps.rewards.services import redeem, summary_text
+
+        if re.search(r"\b(data|bundle|mb|internet)\b", self.low):
+            kind = "data"
+        elif re.search(r"\b(airtime|salio|credit|kes)\b", self.low):
+            kind = "airtime"
+        else:
+            return self.reply(summary_text(self.g), kind="rewards_summary")
+        _, text = redeem(self.g, kind)
+        return self.reply(text, kind="rewards_redeem")
+
+    def refer(self):
+        from apps.rewards.services import refer_text
+
+        return self.reply(refer_text(self.g), kind="rewards_refer")
+
+    def referral_code(self):
+        from apps.rewards.services import apply_referral
+
+        _, text = apply_referral(self.g, self.low.split()[-1])
+        return self.reply(text, kind="rewards_referral")
+
     def relay(self):
         s = SiteSettings.load()
         thread = messaging.get_thread(self.phone, self.g)
@@ -655,6 +825,19 @@ KEYWORDS = [
     (r"^(status|my booking|booking|ref)$", "status"),
     (r"^(cancel|ghairi)\b", "cancel"),
     (r"^(book|booking please|nataka kubook)$", "book_keyword"),
+    (r"^(complain|complaint|malalamiko|lalamiko|nalalamika)\b", "complain"),
+    (r"^(call me|call me back|callback|call back|nipigie|nipigieni)\b", "callback"),
+    (r"^(tickets?|my tickets|requests|my requests|maombi|maombi yangu)$", "tickets"),
+    (r"^(t-?|ticket\s*#?\s*)\d{1,7}$", "ticket_status"),
+    (r"^(explore|guide|tours?|things to do|sightseeing|vivutio|gundua)\b", "explore"),
+    (r"^(events?|what'?s on|matukio)$", "events"),
+    (r"^(food|eat|restaurants?|chakula)$", "food"),
+    (r"^(alerts?|outages?|notices?|service status|huduma)$", "alerts"),
+    (r"^(data|bundle|data bundle|internet)$", "data"),
+    (r"^(points|rewards?|zawadi|pointi|loyalty)$", "points"),
+    (r"^(redeem|tumia pointi)\b", "redeem"),
+    (r"^(refer|invite|share|alika)$", "refer"),
+    (r"^(ref|referral|invite code|promo)\s+[a-z]{3,}\d{2,6}$", "referral_code"),
     (r"^(issue|problem|report|tatizo|shida)\b", "report"),
     (r"^(1|ok|all good|good|sawa)$", "checkin_ack"),
 ]
@@ -712,7 +895,25 @@ class HostCommands:
         if self.low in ("menu", "help", "commands"):
             return self.say(
                 "Commands: #12 <text> reply to guest 12 | <text> reply to last guest | YES/NO <id> requests | OK ack alert | STATUS"
+                " | T12 <text> answer ticket 12 | CALL T12 | RESOLVE T12 | TICKETS"
+                " | OUTAGE <power|water|wifi> <home|ALL> <message> | RESTORED <id> | ALERTS"
             )
+        support_reply = self._support(host)
+        if support_reply is not None:
+            return support_reply
+        if re.match(r"^(outage|maintenance|advisory)\s", self.low):
+            from apps.notices.services import report_by_text
+
+            return self.say(report_by_text(host, self.text))
+        m = re.match(r"^(?:restored|back)\s+#?(\d+)\s*([\s\S]*)$", self.text, re.IGNORECASE)
+        if m:
+            from apps.notices.services import restore_by_text
+
+            return self.say(restore_by_text(host, int(m[1]), m[2].strip()))
+        if self.low in ("alerts", "notices", "outages"):
+            from apps.notices.services import open_list_text
+
+            return self.say(open_list_text())
         waiting = Thread.objects.filter(needs_reply=True).order_by("-last_message_at").first()
         if not waiting:
             return self.say("No guest is waiting for a reply. Start with #<thread> to pick a guest.")
@@ -722,6 +923,33 @@ class HostCommands:
         messaging.mark(self.inbound, "na", "host_reply")
         reply_as_host(thread.phone, text, user=host)
         return "replied"
+
+    def _support(self, host):
+        """T12 <text> answers a ticket, CALL T12 connects Amina to the guest, RESOLVE T12 [note] closes it."""
+        from apps.support import services as support
+        from apps.support.models import Ticket
+
+        if self.low in ("tickets", "support", "complaints"):
+            return self.say(support.host_list_text())
+        bare = re.fullmatch(r"t-?(\d+)", self.low)
+        if bare:  # just "T12": what is it and where is it at (never relayed to a guest as a reply)
+            return self.say(support.host_detail_text(int(bare[1])))
+        m = re.match(
+            r"^(resolve|close|done|solved|call)\s+t-?(\d+)\s*([\s\S]*)$", self.text, re.IGNORECASE
+        ) or re.match(r"^()t-?(\d+)\s+([\s\S]+)$", self.text, re.IGNORECASE)
+        if not m:
+            return None
+        t = Ticket.objects.filter(pk=int(m[2])).select_related("guest", "booking").first()
+        if t is None:
+            return self.say(f"No ticket T{m[2]}.")
+        verb, rest = m[1].lower(), m[3].strip()
+        if verb == "call":
+            return self.say(support.call_guest(t, user=host)["detail"])
+        if verb:
+            support.resolve(t, note=rest, user=host, channel="sms")
+            return self.say(f"{t.ref} resolved - the guest has been told.")
+        support.reply(t, rest, user=host)
+        return self.say(f"Sent to {t.guest.display_name if t.guest_id else t.phone} ({t.ref}).")
 
 
 def reply_as_host(phone, text, user=None, channel="sms"):
@@ -796,6 +1024,15 @@ class StaffCommands:
                 )
                 or "No arrivals today."
             )
+        if re.match(r"^(outage|maintenance)\s", self.low):
+            from apps.notices.services import report_by_text
+
+            return self.say(report_by_text(self.staff, self.text))
+        m = re.match(r"^restored\s+#?(\d+)\s*([\s\S]*)$", self.text, re.IGNORECASE)
+        if m:
+            from apps.notices.services import restore_by_text
+
+            return self.say(restore_by_text(self.staff, int(m[1]), m[2].strip()))
         bookings.notify_host(f"Staff {self.staff.display_name} ({self.staff.get_role_display()}): {self.text[:300]}")
         return self.say(
             "Sent to Amina. Commands: TASKS, DONE <id>, START <id>"
