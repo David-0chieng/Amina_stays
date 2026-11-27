@@ -11,7 +11,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Icon } from "@/components/icon";
-import { useConfig, useMe } from "@/components/providers";
+import { useConfig, useMe, usePayOptions } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
@@ -172,6 +172,7 @@ function Hero({ trip: t }: { trip: Trip }) {
 
 function StatusPanel({ trip: t }: { trip: Trip }) {
   const { data: config } = useConfig();
+  const { mpesa } = usePayOptions();
   const now = useNow();
   const { busy, run } = useTripAction(t.ref);
   const pay = (method?: "mpesa" | "card", plan?: "deposit") =>
@@ -187,15 +188,27 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
     const pending = t.payments.find((p) => p.status === "pending");
     return (
       <Panel tone="warning" icon={<Clock className="size-6" />} title={left ? `We're holding these dates for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Your hold has run out"}>
-        <p>{pending ? `Waiting for your ${pending.method_label} payment of ${kes(pending.amount)}. Enter your PIN on your phone — this page updates by itself.` : `Pay ${kes(t.price.amount_due_now)} to confirm.`}</p>
+        <p>
+          {!pending
+            ? `Pay ${kes(t.price.amount_due_now)} to confirm.`
+            : pending.method === "card"
+              ? `Waiting for your card payment of ${kes(pending.amount)} — finish it on the secure checkout. This page updates by itself.`
+              : `Waiting for your ${pending.method_label} payment of ${kes(pending.amount)}. Enter your PIN on your phone — this page updates by itself.`}
+        </p>
         {failed && !pending && (
           <div className="mt-4">
-            <FailureNotice payment={failed} busy={busy} onRetry={() => pay("mpesa")} onCard={() => pay("card")} onDeposit={t.price.payment_plan === "full" ? () => pay("mpesa", "deposit") : undefined} />
+            <FailureNotice payment={failed} busy={busy} onRetry={mpesa ? () => pay("mpesa") : undefined} onCard={() => pay("card")} onDeposit={t.price.payment_plan === "full" ? () => pay(mpesa ? "mpesa" : "card", "deposit") : undefined} />
           </div>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="brand" onClick={() => pay("mpesa")} loading={busy === "pay"}>{pending ? "Resend M-Pesa prompt" : `Pay ${kes(t.price.amount_due_now)} with M-Pesa`}</Button>
-          <Button variant="soft" onClick={() => pay("card")} disabled={!!busy}>Pay by card</Button>
+          {mpesa ? (
+            <>
+              <Button variant="brand" onClick={() => pay("mpesa")} loading={busy === "pay"}>{pending?.method === "mpesa" ? "Resend M-Pesa prompt" : `Pay ${kes(t.price.amount_due_now)} with M-Pesa`}</Button>
+              <Button variant="soft" onClick={() => pay("card")} disabled={!!busy}>Pay by card</Button>
+            </>
+          ) : (
+            <Button variant="brand" onClick={() => pay("card")} loading={busy === "card"} disabled={!!busy}>{`Pay ${kes(t.price.amount_due_now)} by card`}</Button>
+          )}
           {config?.demo && <Button variant="ocean" onClick={() => run("sim", () => post(`/api/demo/pay/${t.ref}`), "Payment simulated")} loading={busy === "sim"}>Simulate payment (demo)</Button>}
         </div>
         <div className="mt-4"><PaybillBox bookingRef={t.ref} amount={t.price.amount_due_now} defaultOpen={failed?.suggest === "paybill"} /></div>
@@ -215,11 +228,17 @@ function StatusPanel({ trip: t }: { trip: Trip }) {
                   ? <>Balance <b>{kes(t.price.balance_due)}</b> is overdue — your door code is sent once it&apos;s paid.</>
                   : <>Balance <b>{kes(t.price.balance_due)}</b> due {due(t.price.balance_due_date)}.</>}
               </p>
-              <Button size="sm" variant="dark" onClick={() => pay("mpesa")} loading={busy === "pay"}>Pay balance with M-Pesa</Button>
-              <Button size="sm" variant="soft" onClick={() => pay("card")} disabled={!!busy}>Card</Button>
+              {mpesa ? (
+                <>
+                  <Button size="sm" variant="dark" onClick={() => pay("mpesa")} loading={busy === "pay"}>Pay balance with M-Pesa</Button>
+                  <Button size="sm" variant="soft" onClick={() => pay("card")} disabled={!!busy}>Card</Button>
+                </>
+              ) : (
+                <Button size="sm" variant="dark" onClick={() => pay("card")} loading={busy === "card"} disabled={!!busy}>Pay balance by card</Button>
+              )}
               {config?.demo && <Button size="sm" variant="ocean" onClick={() => run("sim", () => post(`/api/demo/pay/${t.ref}`), "Payment simulated")}>Simulate (demo)</Button>}
             </div>
-            {failed && failed.purpose !== "change" && <FailureNotice payment={failed} busy={busy} onRetry={() => pay("mpesa")} onCard={() => pay("card")} />}
+            {failed && failed.purpose !== "change" && <FailureNotice payment={failed} busy={busy} onRetry={mpesa ? () => pay("mpesa") : undefined} onCard={() => pay("card")} />}
             <PaybillBox bookingRef={t.ref} amount={t.price.balance_due} defaultOpen={failed?.suggest === "paybill"} />
           </div>
         )}

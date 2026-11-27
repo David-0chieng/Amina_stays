@@ -5,7 +5,7 @@ import { ChevronDown, FlaskConical, Globe, MessageSquareText, Phone, Search, Shi
 import Link from "next/link";
 import * as React from "react";
 
-import { useConfig } from "@/components/providers";
+import { useConfig, usePayOptions } from "@/components/providers";
 import { SiteHeader } from "@/components/site/header";
 import { Button } from "@/components/ui/button";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon3d";
@@ -20,15 +20,16 @@ const CATEGORY: Record<string, string> = {
 };
 const ORDER = ["booking", "payment", "pricing", "policies", "check_in", "breakfast", "wifi", "amenities", "transport", "area", "safety"];
 
-const PRICE_PARTS: { icon: Icon3DName; title: string; text: string }[] = [
+const priceParts = (methods: string): { icon: Icon3DName; title: string; text: string }[] => [
   { icon: "homes", title: "Nightly rate", text: "Set per home and season — weekends and the festive season cost a little more, weekly stays a little less." },
   { icon: "broom", title: "Cleaning fee", text: "One fixed amount per stay, shown before you book. Fresh linen and towels included." },
   { icon: "classical-building", title: "2% tourism levy", text: "Collected for the Tourism Fund as Kenyan law requires, and listed on every receipt." },
-  { icon: "money-bag", title: "No booking fee", text: "Book direct and pay by M-Pesa or card — or 30% now and the balance before arrival." },
+  { icon: "money-bag", title: "No booking fee", text: `Book direct and pay by ${methods} — or 30% now and the balance before arrival.` },
 ];
 
 export function HelpView() {
   const { data: config } = useConfig();
+  const { mpesa, methods } = usePayOptions();
   const { data: faqs, isLoading } = useQuery({ queryKey: ["faqs"], queryFn: () => get<FaqItem[]>("/api/faqs") });
   const [q, setQ] = React.useState("");
   const c = config?.channels;
@@ -56,7 +57,7 @@ export function HelpView() {
             <p className="mt-1 text-ink-2">One phone number, one account — whichever way suits you. Everything stays in sync.</p>
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <Channel icon={<Globe className="size-6" />} title="Website" tag="You're here">
-                Photos, live availability and instant booking with M-Pesa or card. Manage trips, breakfast and check-in from <Link className="underline" href="/trips">Trips</Link>.
+                Photos, live availability and instant booking {mpesa ? "with M-Pesa or card" : "by card"}. Manage trips, breakfast and check-in from <Link className="underline" href="/trips">Trips</Link>.
               </Channel>
               <Channel icon={<Smartphone className="size-6" />} title="USSD — no data, no smartphone" tag={c?.ussd_code || "Dial our code"}>
                 Dial {c?.ussd_code ? <b className="text-ink">{c.ussd_code}</b> : "our USSD code"} from any Kenyan line:
@@ -86,7 +87,7 @@ export function HelpView() {
             <h2 className="text-[26px] font-bold tracking-tight">Prices include all fees</h2>
             <p className="mt-1 text-ink-2">The total you see on a home is the total you pay — no booking fee is added at checkout.</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {PRICE_PARTS.map((p) => (
+              {priceParts(methods).map((p) => (
                 <div key={p.title} className="rounded-2xl border border-line p-5">
                   <Icon3D name={p.icon} size={36} />
                   <p className="mt-4 font-semibold">{p.title}</p>
@@ -138,7 +139,7 @@ export function HelpView() {
             <div className="rounded-3xl bg-ocean-50 p-7">
               <h2 className="flex items-center gap-3 text-[22px] font-bold text-ocean-700"><ShieldCheck className="size-6" /> Booking safely</h2>
               <ul className="mt-5 list-disc space-y-2.5 pl-5 text-[15px] text-ink-2">
-                <li>We only take payment through the official M-Pesa prompt or our secure card page — <b className="text-ink">never</b> to a personal number.</li>
+                <li>We only take payment through {mpesa ? "the official M-Pesa prompt or our secure card page" : "our secure card page"} — <b className="text-ink">never</b> to a personal number.</li>
                 <li>Your door code is unique to your stay and stops working at checkout.</li>
                 <li>Licensed by the Tourism Regulatory Authority{config?.business.tra_licence ? <> — <b className="text-ink">{config.business.tra_licence}</b></> : null}.</li>
                 <li>Prices always include cleaning, the 2% tourism levy and taxes. No surprises.</li>

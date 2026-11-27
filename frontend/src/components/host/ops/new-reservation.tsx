@@ -7,7 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { SwitchRow, useDebounced } from "@/components/host/biz/ui";
-import { useConfig } from "@/components/providers";
+import { useConfig, usePayOptions } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -24,7 +24,7 @@ type PayMode = "mpesa" | "card" | "cash" | "none";
 
 const PAY_MODES: { value: PayMode; title: string; text: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { value: "mpesa", title: "Request M-Pesa", text: "STK push to the guest's phone", icon: Smartphone },
-  { value: "card", title: "Card link by SMS", text: "Best for international guests", icon: CreditCard },
+  { value: "card", title: "Card link by SMS", text: "A secure checkout link to the guest's phone", icon: CreditCard },
   { value: "cash", title: "Cash received", text: "Record the amount taken now", icon: Banknote },
   { value: "none", title: "Pay on arrival", text: "Confirm now, collect later", icon: Clock },
 ];
@@ -60,7 +60,10 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
   const [adults, setAdults] = React.useState(1);
   const [children, setChildren] = React.useState(0);
   const { data: config } = useConfig();
-  const [mode, setMode] = React.useState<PayMode>("mpesa");
+  const { mpesa } = usePayOptions();
+  const [picked, setMode] = React.useState<PayMode>("mpesa");
+  const mode: PayMode = !mpesa && picked === "mpesa" ? "card" : picked; // no M-Pesa here: the card link instead
+  const payModes = PAY_MODES.filter((m) => mpesa || m.value !== "mpesa");
   const [amount, setAmount] = React.useState("");
   const [plan, setPlan] = React.useState<"full" | "deposit">("full");
   const [custom, setCustom] = React.useState(false);
@@ -225,7 +228,7 @@ function NewReservationForm({ onDone }: { onDone: () => void }) {
           <fieldset>
             <legend className="mb-2 text-[13px] font-semibold">Payment</legend>
             <div className="grid grid-cols-2 gap-2">
-              {PAY_MODES.map((m) => (
+              {payModes.map((m) => (
                 <label
                   key={m.value}
                   className={cn(

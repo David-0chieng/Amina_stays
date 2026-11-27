@@ -32,7 +32,7 @@ export function LedgerExport() {
   );
 }
 
-/** Confirmed stays with money still owed — overdue first — with a one-tap M-Pesa request. */
+/** Confirmed stays with money still owed — overdue first — with a one-tap request (an M-Pesa prompt, or a card link by SMS). */
 export function OutstandingCard({ rows }: { rows: OutstandingRow[] }) {
   const invalidate = useInvalidateHost();
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -41,7 +41,7 @@ export function OutstandingCard({ rows }: { rows: OutstandingRow[] }) {
     setBusy(r.ref);
     try {
       await post(`/api/host/reservations/${r.ref}/request-payment`, { amount: r.balance_due });
-      toast.success(`M-Pesa request for ${kes(r.balance_due)} sent to ${r.guest}`);
+      toast.success(`Payment request for ${kes(r.balance_due)} sent to ${r.guest}`);
       invalidate();
     } catch (e) {
       toast.error(errorMessage(e));

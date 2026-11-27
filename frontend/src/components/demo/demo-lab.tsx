@@ -10,7 +10,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/host/shell";
-import { useConfig } from "@/components/providers";
+import { useConfig, usePayOptions } from "@/components/providers";
 import { SiteHeader } from "@/components/site/header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -194,6 +194,24 @@ function useInbox(phone: string) {
   return { msgs, merge };
 }
 
+// http(s) links in a text, as a phone shows them (a trailing full stop or bracket stays outside the link)
+const LINK_RE = /(https?:\/\/[^\s]*[^\s.,;:!?)])/g;
+
+/** SMS text with tappable links, like a real phone: the card payment link opens in a new tab. */
+function Linkified({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(LINK_RE).map((part, i) =>
+        i % 2 ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">{part}</a>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 function SmsPhone({ phone, contact, suggestions }: { phone: string; contact: string; suggestions: string[] }) {
   const { msgs, merge } = useInbox(phone);
   const [text, setText] = React.useState("");
@@ -231,7 +249,7 @@ function SmsPhone({ phone, contact, suggestions }: { phone: string; contact: str
           return (
             <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
               <div className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-snug whitespace-pre-line [overflow-wrap:anywhere]", mine ? "rounded-br-md bg-[#0b84ff] text-white" : "rounded-bl-md bg-[#e9e9eb] text-ink")}>
-                {m.body}
+                <Linkified text={m.body} />
                 <span className={cn("mt-0.5 block text-right text-[9px]", mine ? "text-white/70" : "text-ink-2")}>
                   {clock(m.created_at)}{m.channel !== "sms" ? ` · ${m.channel}` : ""}{!mine && m.status === "failed" ? " · failed" : ""}
                 </span>
@@ -576,6 +594,7 @@ const CODE_RESULT: Record<string, string> = {
 
 function TimeMachine({ guests }: { guests: DemoPersona[] }) {
   const qc = useQueryClient();
+  const { mpesa } = usePayOptions();
   const withRef = guests.filter((g) => g.ref);
   const [ref, setRef] = React.useState(withRef[0]?.ref ?? "");
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -631,14 +650,18 @@ function TimeMachine({ guests }: { guests: DemoPersona[] }) {
         </ol>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="soft" size="sm" onClick={() => advance("code", true)} disabled={!!busy || !ref}>Force-release code (host override)</Button>
-          <Button variant="soft" size="sm" loading={busy === "c2b"} disabled={!!busy || !ref} onClick={() => act("c2b", async () => {
-            const r = await post<{ trans_id: string; matched: boolean }>("/api/demo/c2b", { ref });
-            return `${ref}: Paybill payment ${r.trans_id} ${r.matched ? "received and matched to the booking" : "received — unmatched, see Host › Payments"}`;
-          })}><Landmark className="size-4" /> Simulate Paybill payment</Button>
-          <Button variant="soft" size="sm" loading={busy === "fail"} disabled={!!busy || !ref} onClick={() => act("fail", async () => {
-            const r = await post<{ ok: boolean; status: string; failure_code?: string }>(`/api/demo/pay/${ref}`, { result: 1032 });
-            return `${ref}: M-Pesa prompt cancelled on the phone (code ${r.failure_code ?? 1032}) · ${r.status.replace("_", " ")}`;
-          })}>Simulate “cancelled on phone”</Button>
+          {mpesa && (
+            <>
+              <Button variant="soft" size="sm" loading={busy === "c2b"} disabled={!!busy || !ref} onClick={() => act("c2b", async () => {
+                const r = await post<{ trans_id: string; matched: boolean }>("/api/demo/c2b", { ref });
+                return `${ref}: Paybill payment ${r.trans_id} ${r.matched ? "received and matched to the booking" : "received — unmatched, see Host › Payments"}`;
+              })}><Landmark className="size-4" /> Simulate Paybill payment</Button>
+              <Button variant="soft" size="sm" loading={busy === "fail"} disabled={!!busy || !ref} onClick={() => act("fail", async () => {
+                const r = await post<{ ok: boolean; status: string; failure_code?: string }>(`/api/demo/pay/${ref}`, { result: 1032 });
+                return `${ref}: M-Pesa prompt cancelled on the phone (code ${r.failure_code ?? 1032}) · ${r.status.replace("_", " ")}`;
+              })}>Simulate “cancelled on phone”</Button>
+            </>
+          )}
           <Button variant="soft" size="sm" loading={busy === "tick"} onClick={() => act("tick", async () => {
             const r = await post<Record<string, unknown>>("/api/demo/tick", {});
             const keys = Object.keys(r);

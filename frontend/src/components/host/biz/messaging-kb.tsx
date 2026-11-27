@@ -6,6 +6,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ErrorBlock, LoadingBlock } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
@@ -34,7 +35,7 @@ type AnswerKey = (typeof ANSWER_LANGS)[number]["key"];
 const PUBLIC_FACTS = ["checkin_time", "checkout_time", "prices", "deposit_percent", "ussd_code", "sms_number", "website", "business", "host"];
 const BOOKED_FACTS = ["wifi", "directions", "landmark", "map_link", "address", "parking", "unit", "ref", "check_in", "check_out", "code"];
 
-const EXAMPLES = ["What time is check-in?", "Is breakfast included?", "How do I get from the airport?", "Can I pay with M-Pesa?", "Kuna maegesho?", "What's the Wi-Fi password?"];
+const examples = (mpesa: boolean) => ["What time is check-in?", "Is breakfast included?", "How do I get from the airport?", mpesa ? "Can I pay with M-Pesa?" : "Can I pay by card?", "Kuna maegesho?", "What's the Wi-Fi password?"];
 
 function Highlighted({ text }: { text: string }) {
   const parts = text.split(/(\{\w+\})/g);
@@ -235,6 +236,7 @@ export function KnowledgeTab() {
 }
 
 function TryIt() {
+  const { mpesa } = usePayOptions();
   const [text, setText] = React.useState("");
   const [lang, setLang] = React.useState("en");
   const [asked, setAsked] = React.useState<string | null>(null);
@@ -274,7 +276,7 @@ function TryIt() {
             </Button>
           </form>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {EXAMPLES.map((ex) => (
+            {examples(mpesa).map((ex) => (
               <button key={ex} type="button" onClick={() => ask(ex)} className="rounded-full border border-line bg-white px-3 py-1 text-[12.5px] font-medium text-ink-2 transition hover:border-ink-3 hover:text-ink">
                 {ex}
               </button>

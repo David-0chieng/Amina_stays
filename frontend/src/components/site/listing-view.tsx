@@ -11,7 +11,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Icon } from "@/components/icon";
-import { useAuthDialog, useConfig, useMe } from "@/components/providers";
+import { useAuthDialog, useConfig, useMe, usePayOptions } from "@/components/providers";
 import { GuestPicker, guestsLabel, type Guests } from "@/components/site/guest-picker";
 import { SiteHeader } from "@/components/site/header";
 import { Photo, PhotoCarousel, StarIcon, WishlistHeart, typeLabel } from "@/components/site/listing-card";
@@ -669,6 +669,7 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
   const { listing: l, range, setRange, guests, setGuests, unavailable, prices, flat } = props;
   const { data: q } = useQuote(l.slug, range, guests);
   const money = useMoney();
+  const { mpesa } = usePayOptions();
   const [datesOpen, setDatesOpen] = React.useState(false);
   const ready = !!(range.from && range.to);
   const freeUntil = freeCancelUntil(l.cancellation.policy, range.from);
@@ -734,7 +735,7 @@ function BookingCard(props: CardProps & { flat?: boolean }) {
       {q?.problems?.length ? (
         <p className="mt-3 text-center text-sm text-danger">{q.problems[0]}</p>
       ) : (
-        <p className="mt-3 text-center text-sm text-ink-2">{ready ? "You won't be charged yet" : `M-Pesa or card · ${l.deposit_percent}% deposit option`}</p>
+        <p className="mt-3 text-center text-sm text-ink-2">{ready ? "You won't be charged yet" : `${mpesa ? "M-Pesa or card" : "Pay by card"} · ${l.deposit_percent}% deposit option`}</p>
       )}
     </div>
   );
@@ -909,6 +910,7 @@ function ReviewCard({ review: r, full }: { review: Review; full?: boolean }) {
 }
 
 function MeetHost({ listing: l }: { listing: ListingDetail }) {
+  const { mpesa } = usePayOptions();
   const years = 2026 - l.host.since;
   return (
     <section className="py-12">
@@ -949,7 +951,7 @@ function MeetHost({ listing: l }: { listing: ListingDetail }) {
           </Button>
           <p className="mt-8 flex max-w-md items-start gap-3 border-t border-line pt-6 text-xs text-ink-2">
             <Icon3D name="shield" size={24} />
-            To protect your payment, always pay through Amina Stays — by M-Pesa or card on this site, USSD or SMS. Amina will never ask you to send money another way.
+            To protect your payment, always pay through Amina Stays — {mpesa ? "by M-Pesa or card on this site, USSD or SMS" : "by card on this site or through the link we text you"}. Amina will never ask you to send money another way.
           </p>
         </div>
       </div>

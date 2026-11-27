@@ -9,6 +9,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ErrorBlock, LoadingBlock } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -87,7 +88,7 @@ function delayText(minutes: number) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-function buildNodes(autos: Automation[], s: HostSettings): TimelineNode[] {
+function buildNodes(autos: Automation[], s: HostSettings, methods: string): TimelineNode[] {
   const rank: Record<Anchor, number> = { confirmed: 0, check_in: 1, check_out: 2 };
   const node = (n: Omit<TimelineNode, "sort">): TimelineNode => ({ ...n, sort: rank[n.anchor] * 1_000_000 + n.offset * 1440 + toMinutes(n.time) });
   const checkout = s.default_checkout_time || "11:00";
@@ -95,7 +96,7 @@ function buildNodes(autos: Automation[], s: HostSettings): TimelineNode[] {
   const system: TimelineNode[] = [
     node({
       id: "booking_confirmed", name: "Booking confirmed", template: "booking_confirmed", anchor: "confirmed", offset: 0, time: "",
-      when: "The moment the M-Pesa or card payment succeeds", description: "Dates, reference, amount paid, any balance due and the trip link.",
+      when: `The moment the ${methods} payment succeeds`, description: "Dates, reference, amount paid, any balance due and the trip link.",
     }),
     node({
       id: "checkin_code", name: "Door code", template: "checkin_code", anchor: "check_in", offset: 0, time: s.code_release_time || "08:00",
@@ -121,6 +122,7 @@ export function TimelineTab() {
   const qc = useQueryClient();
   const autosQ = useQuery({ queryKey: KEY, queryFn: () => get<Automation[]>("/api/host/automations") });
   const settingsQ = useHostSettings();
+  const { methods } = usePayOptions();
   const [preview, setPreview] = React.useState<Automation | null>(null);
 
   const update = useMutation({
@@ -156,7 +158,7 @@ export function TimelineTab() {
   if (!autosQ.data || !settingsQ.data) return <LoadingBlock rows={6} />;
 
   const s = settingsQ.data;
-  const nodes = buildNodes(autosQ.data, s);
+  const nodes = buildNodes(autosQ.data, s, methods);
   const on = autosQ.data.filter((a) => a.enabled).length;
   const openTemplate = (key: string) => replaceSearchParams({ tab: "templates", key });
 
@@ -310,8 +312,9 @@ function NodeCard({
 }
 
 function CodeRules({ s }: { s: HostSettings }) {
+  const { mpesa } = usePayOptions();
   const rules: [boolean, string, string][] = [
-    [true, "Balance paid in full", "If not, an M-Pesa prompt for the balance goes out instead."],
+    [true, "Balance paid in full", mpesa ? "If not, an M-Pesa prompt for the balance goes out instead." : "If not, a payment link for the balance goes out by SMS instead."],
     [s.require_id_before_code, "Guest-register ID or passport received", "Required by the Tourism Act guest register."],
     [s.sim_swap_check, "No recent SIM swap on the guest's number", "Checked with Africa's Talking Insights to stop SIM-swap fraud."],
   ];

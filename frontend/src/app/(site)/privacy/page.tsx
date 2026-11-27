@@ -22,7 +22,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
       <ul>
         <li><b>Your phone number</b> — it is your account on the web, USSD, SMS and voice, and how we send confirmations, directions and your door code (contract).</li>
         <li><b>Name, nationality and ID or passport number</b> — Kenyan tourism law requires every host to keep a guest register (Tourism Enterprises Regulations, 2025). ID numbers are encrypted; staff only ever see the last four digits (legal obligation).</li>
-        <li><b>Booking and payment records</b> — dates, amounts and M-Pesa or card references, kept for tax and accounting (legal obligation). We never see or store your card number or M-Pesa PIN.</li>
+        <li><b>Booking and payment records</b> — dates, amounts and payment references, kept for tax and accounting (legal obligation). We never see or store your card number or PIN.</li>
         <li><b>Messages</b> — your SMS, chat and USSD requests so Amina can help you and keep a record of what was agreed (contract / legitimate interest).</li>
         <li><b>Arrival details and car plate</b> — shared with the gate guard on your arrival day only, as residential estates in Mombasa require a visitor log (legitimate interest).</li>
         <li><b>A SIM-swap check</b> — on arrival morning we check, through our telecoms provider, whether your SIM was recently swapped before sending a door code, to stop fraudsters taking over a booking (legitimate interest).</li>
@@ -34,7 +34,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     title: "Who we share it with",
     body: (
       <ul>
-        <li>Africa&apos;s Talking (SMS, USSD, voice and airtime), Safaricom M-Pesa and our card processor — to deliver messages and take payments.</li>
+        <li>Africa&apos;s Talking (SMS, USSD, voice and airtime) and our payment processors — to deliver messages and take payments.</li>
         <li>Amina&apos;s on-site team (cleaner, caretaker, cook, security) — only what they need: e.g. the cook sees breakfast orders, the guard sees the day&apos;s arrivals and plates.</li>
         <li>The authorities, when the law requires it (e.g. the guest register on lawful request).</li>
       </ul>

@@ -2,13 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  Activity, CardSim, CircleCheck, CircleDashed, CircleX, Gift, Globe, KeyRound, MessageSquare, MessageSquareText, Phone, RefreshCw, Server, Smartphone,
-  Wallet, Wifi, type LucideIcon,
+  Activity, CardSim, CircleCheck, CircleDashed, CircleX, CreditCard, Gift, Globe, KeyRound, MessageSquare, MessageSquareText, Phone, RefreshCw, Server,
+  Smartphone, Wallet, Wifi, type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useConfig } from "@/components/providers";
+import { useConfig, usePayOptions } from "@/components/providers";
 import { ErrorBlock, LoadingBlock, PageHeader, Table, Td, Tr } from "@/components/host/common";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
@@ -29,6 +29,7 @@ const PRODUCT_META: Record<string, { icon: LucideIcon; where: string; seen?: str
   insights: { icon: CardSim, where: "Insights → SIM swap → Callback URL", blurb: "Checks for a recent SIM swap before a door code goes out." },
   whatsapp: { icon: MessageSquare, where: "AT Chat (preview)", blurb: "Optional WhatsApp channel for international guests." },
   payments: { icon: Wallet, where: "Payments → Callback URL, or Daraja STK callback", seen: "payment", blurb: "M-Pesa STK push — the callback is the only proof of payment." },
+  card: { icon: CreditCard, where: "Stripe Dashboard → Developers → Webhooks", seen: "payment", blurb: "Card payments on Stripe's hosted checkout — the webhook confirms each one at once." },
 };
 
 const JOBS: Record<string, { label: string; every: string; minutes?: number }> = {
@@ -39,7 +40,7 @@ const JOBS: Record<string, { label: string; every: string; minutes?: number }> =
   auto_checkout: { label: "Automatic checkout", every: "Every pass", minutes: 5 },
   reviews: { label: "Review requests", every: "Every pass", minutes: 5 },
   alert_followups: { label: "SOS follow-up calls", every: "Every pass", minutes: 5 },
-  payments_reconcile: { label: "Reconcile M-Pesa payments", every: "Every 2 min", minutes: 10 },
+  payments_reconcile: { label: "Reconcile payments", every: "Every 2 min", minutes: 10 },
   ical_sync: { label: "Airbnb / Booking.com iCal sync", every: "Every 15 min", minutes: 45 },
   host_digest: { label: "Morning digest to Amina", every: "Daily 07:00" },
   gate_list: { label: "Gate list to security", every: "Daily 07:30" },
@@ -50,6 +51,7 @@ const JOBS: Record<string, { label: string; every: string; minutes?: number }> =
 
 export function ChannelsPage() {
   const { data: config } = useConfig();
+  const { mpesa, methods } = usePayOptions();
   const [withBalance, setWithBalance] = React.useState(false);
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["host", "channels", withBalance],
@@ -68,8 +70,8 @@ export function ChannelsPage() {
   const local = data?.products.some((p) => Object.values(p.callbacks).some((u) => /\/\/(localhost|127\.0\.0\.1)/.test(u)));
 
   const doors: { key: string; title: string; icon: LucideIcon; value: string; text: string; seen?: string | null }[] = [
-    { key: "web", title: "Website", icon: Globe, value: config?.business.email?.split("@")[1] || "Web", text: "Smartphones & laptops — photos, maps, card or M-Pesa" },
-    { key: "ussd", title: "USSD", icon: Smartphone, value: config?.channels.ussd_code || "Code not set", text: "Any phone, no data — dial, pick dates, pay by M-Pesa", seen: data?.last_seen.ussd },
+    { key: "web", title: "Website", icon: Globe, value: config?.business.email?.split("@")[1] || "Web", text: `Smartphones & laptops — photos, maps, pay by ${methods}` },
+    { key: "ussd", title: "USSD", icon: Smartphone, value: config?.channels.ussd_code || "Code not set", text: mpesa ? "Any phone, no data — dial, pick dates, pay by M-Pesa" : "Any phone, no data — dial, pick dates, get a pay link", seen: data?.last_seen.ussd },
     { key: "sms", title: "SMS · Ask Amina", icon: MessageSquareText, value: config?.channels.sms_number || "Shortcode not set", text: "Text in English or Kiswahili, any hour", seen: data?.last_seen.sms },
     { key: "voice", title: "Voice · Call Amina", icon: Phone, value: config?.channels.voice_number || "Number not set", text: "Press 1 to book, 9 for help — no reading needed", seen: data?.last_seen.voice },
   ];
@@ -78,7 +80,7 @@ export function ChannelsPage() {
     <>
       <PageHeader
         title="Africa's Talking"
-        subtitle="The rails under every channel — SMS, USSD, Voice, Airtime, Mobile Data and SIM-swap checks — plus M-Pesa."
+        subtitle={`The rails under every channel — SMS, USSD, Voice, Airtime, Mobile Data and SIM-swap checks — plus ${mpesa ? "M-Pesa and card" : "card"} payments.`}
         actions={
           <>
             {data && (
@@ -105,7 +107,7 @@ export function ChannelsPage() {
               <p className="text-[12px] font-bold tracking-[0.18em] text-white/60 uppercase">One platform · four doors</p>
               <h2 className="mt-2 text-2xl leading-tight font-bold tracking-tight sm:text-[28px]">Every guest can book — with or without a smartphone.</h2>
               <p className="mt-2 text-[15px] text-white/75">
-                Each door leads to the same calendar, prices, M-Pesa checkout and guest profile. One phone number is one guest, whichever way they arrive.
+                Each door leads to the same calendar, prices, {mpesa ? "M-Pesa checkout" : "secure checkout"} and guest profile. One phone number is one guest, whichever way they arrive.
               </p>
             </div>
             <div className="relative mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

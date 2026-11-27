@@ -6,6 +6,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ErrorBlock, LoadingBlock } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Input, Label, Select } from "@/components/ui/input";
 import { patch } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,7 @@ interface Def {
   mono?: boolean;
 }
 
-const SECTIONS: { id: string; title: string; description: string; icon: React.ComponentType<{ className?: string }>; fields: Def[] }[] = [
+const sectionsFor = (mpesa: boolean): { id: string; title: string; description: string; icon: React.ComponentType<{ className?: string }>; fields: Def[] }[] => [
   {
     id: "business",
     title: "Business profile",
@@ -63,9 +64,9 @@ const SECTIONS: { id: string; title: string; description: string; icon: React.Co
     description: "How holds, deposits and balances work on every channel.",
     icon: Banknote,
     fields: [
-      { key: "hold_minutes", label: "Hold dates while paying", kind: "int", after: "minutes", help: "Long enough to finish the M-Pesa PIN prompt." },
+      { key: "hold_minutes", label: "Hold dates while paying", kind: "int", after: "minutes", help: mpesa ? "Long enough to finish the M-Pesa PIN prompt." : "Long enough to finish paying by card." },
       { key: "deposit_percent", label: "Deposit", kind: "int", after: "%", help: "For “pay part now” bookings." },
-      { key: "balance_due_days", label: "Balance due", kind: "int", after: "days before", help: "An M-Pesa prompt for the balance goes out then." },
+      { key: "balance_due_days", label: "Balance due", kind: "int", after: "days before", help: mpesa ? "An M-Pesa prompt for the balance goes out then." : "A payment link for the balance goes out by SMS then." },
       { key: "instant_changes", label: "Instant date changes", kind: "switch", help: "Guests can move or extend into free nights and pay the difference straight away. Off: you approve every change." },
       { key: "usd_rate", label: "US dollar", kind: "decimal", before: "KES", after: "per $", help: "Display only — guests always pay in KES." },
       { key: "eur_rate", label: "Euro", kind: "decimal", before: "KES", after: "per €" },
@@ -140,6 +141,7 @@ export function BusinessTab() {
 function BusinessForm({ settings }: { settings: HostSettings }) {
   const qc = useQueryClient();
   const invalidate = useInvalidateHost();
+  const sections = sectionsFor(usePayOptions().mpesa);
   const base = React.useMemo(() => toForm(settings), [settings]);
   const [draft, setDraft] = React.useState<Form>(base);
   const [seen, setSeen] = React.useState(base);
@@ -187,7 +189,7 @@ function BusinessForm({ settings }: { settings: HostSettings }) {
     <div className="grid gap-6 lg:grid-cols-[200px_minmax(0,1fr)]">
       <nav aria-label="Settings sections" className="hidden lg:sticky lg:top-6 lg:block lg:self-start">
         <ul className="space-y-1">
-          {SECTIONS.map((s) => {
+          {sections.map((s) => {
             const dirty = s.fields.some((f) => changed.includes(f.key));
             return (
               <li key={s.id}>
@@ -203,7 +205,7 @@ function BusinessForm({ settings }: { settings: HostSettings }) {
       </nav>
 
       <div className="min-w-0 space-y-6">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <FormCard key={s.id} id={s.id} title={s.title} description={s.description}>
             {s.id === "compliance" && (
               <Callout tone="trust">

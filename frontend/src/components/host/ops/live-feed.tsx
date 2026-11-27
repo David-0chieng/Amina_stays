@@ -6,6 +6,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { ErrorBlock } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Skeleton } from "@/components/ui/misc";
 import { get } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,10 +15,11 @@ import { activityMeta, KindBubble, MiniEmpty, OpsKeyframes } from "./bits";
 import { relTime, useNow } from "./lib";
 import type { ActivityItem } from "./types";
 
-const FEED_CHANNELS = ["SMS", "USSD", "Voice", "Web", "M-Pesa"];
+const feedChannels = (mpesa: boolean) => ["SMS", "USSD", "Voice", "Web", ...(mpesa ? ["M-Pesa"] : [])];
 
 /** Everything happening across SMS, USSD, voice, web, payments and door locks — newest first, updating every 5 s. */
 export function LiveFeed({ className, limit = 20 }: { className?: string; limit?: number }) {
+  const { mpesa } = usePayOptions();
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["host", "ops", "activity", limit],
     queryFn: () => get<ActivityItem[]>(`/api/host/activity?limit=${limit}`),
@@ -38,7 +40,7 @@ export function LiveFeed({ className, limit = 20 }: { className?: string; limit?
           <h2 className="flex items-center gap-2 text-[15px] font-bold">
             <Radio className="size-4 text-brand-500" /> Live channel feed
           </h2>
-          <p className="mt-0.5 truncate text-xs text-ink-2">{FEED_CHANNELS.join(" · ")} · door locks</p>
+          <p className="mt-0.5 truncate text-xs text-ink-2">{feedChannels(mpesa).join(" · ")} · door locks</p>
         </div>
         <span className="mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-50 px-2.5 py-1 text-[11px] font-bold tracking-wider text-success uppercase">
           <span className="relative flex size-2">

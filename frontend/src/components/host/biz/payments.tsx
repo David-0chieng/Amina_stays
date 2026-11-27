@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ErrorBlock, KpiCard, PageHeader, StatusBadge, Table, Td, Tr } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
@@ -45,6 +46,7 @@ export function MethodChip({ method, label }: { method: string; label?: string }
 
 export function PaymentsPage() {
   const invalidate = useInvalidateHost();
+  const { mpesa } = usePayOptions();
   const [status, setStatus] = React.useState<StatusFilter>("");
   const [method, setMethod] = React.useState<MethodFilter>("all");
   const [q, setQ] = React.useState("");
@@ -88,7 +90,7 @@ export function PaymentsPage() {
 
   return (
     <>
-      <PageHeader title="Payments" subtitle="Every M-Pesa and card payment, matched to its booking automatically — plus refunds waiting to go out." />
+      <PageHeader title="Payments" subtitle={`Every ${mpesa ? "M-Pesa and card" : "card"} payment, matched to its booking automatically — plus refunds waiting to go out.`} />
 
       {all.error ? (
         <ErrorBlock error={all.error} retry={all.refetch} />
@@ -113,9 +115,9 @@ export function PaymentsPage() {
             )}
           </div>
 
-          <Callout tone="trust" title="Only the M-Pesa callback counts as proof of payment">
-            A booking is confirmed when Safaricom (via Africa&apos;s Talking or Daraja) or the card processor calls back with a receipt — never because of an SMS
-            screenshot, which is easy to fake. Each receipt number below came straight from that callback.
+          <Callout tone="trust" title={`Only the ${mpesa ? "payment provider" : "card processor"}'s confirmation counts as proof of payment`}>
+            A booking is confirmed when {mpesa ? "Safaricom (via Africa's Talking or Daraja) or the card processor" : "the card processor (Stripe)"} confirms the
+            payment — never because of an SMS screenshot, which is easy to fake. Each reference below came straight from that confirmation.
           </Callout>
 
           <UnmatchedCard rows={all.data?.unmatched ?? []} />
@@ -129,7 +131,7 @@ export function PaymentsPage() {
                 <LedgerExport />
                 <div className="relative w-full sm:w-64">
                   <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" />
-                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ref, phone or M-Pesa receipt" aria-label="Search payments" className="h-9 pr-8 pl-9 text-sm" />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={mpesa ? "Ref, phone or M-Pesa receipt" : "Ref, phone or payment reference"} aria-label="Search payments" className="h-9 pr-8 pl-9 text-sm" />
                   {q && (
                     <button type="button" aria-label="Clear search" onClick={() => setQ("")} className="absolute inset-y-0 right-1.5 my-auto grid size-6 place-items-center rounded-full text-ink-2 hover:bg-surface">
                       <X className="size-3.5" />
@@ -281,9 +283,15 @@ export function PaymentsPage() {
               Send <b className="text-ink">{kes(sending.amount)}</b> to {sending.guest} ({sending.phone}) by {sending.method}, then record the transaction reference
               here. The booking&apos;s refunded total is updated and the refund is logged on its timeline.
             </p>
-            <Field label="M-Pesa / bank reference" hint="The M-Pesa B2C receipt (e.g. QK71XYZ9AB) or bank reference. Leave blank for cash.">
-              <Input value={reference} onChange={(e) => setReference(e.target.value.toUpperCase())} placeholder="QK71XYZ9AB" className="font-mono" autoFocus />
-            </Field>
+            {/card/i.test(sending.method) ? (
+              <Field label="Refund reference" hint="The refund ID from your card processor, e.g. Stripe's re_… (Payments › the payment › Refunds).">
+                <Input value={reference} onChange={(e) => setReference(e.target.value.trim())} placeholder="re_3Nx…" className="font-mono" autoFocus />
+              </Field>
+            ) : (
+              <Field label="M-Pesa / bank reference" hint="The M-Pesa B2C receipt (e.g. QK71XYZ9AB) or bank reference. Leave blank for cash.">
+                <Input value={reference} onChange={(e) => setReference(e.target.value.toUpperCase())} placeholder="QK71XYZ9AB" className="font-mono" autoFocus />
+              </Field>
+            )}
           </>
         )}
       </ConfirmDialog>

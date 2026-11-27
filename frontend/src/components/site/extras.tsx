@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import * as React from "react";
 
-import { hydrationSafe, useConfig, useHydrated } from "@/components/providers";
+import { hydrationSafe, useConfig, useHydrated, usePayOptions } from "@/components/providers";
 import { MobileTabs, SiteHeader } from "@/components/site/header";
 import { Photo } from "@/components/site/listing-card";
 import { useMoney } from "@/components/site/locale";
@@ -66,11 +66,12 @@ export function ExtraCard({ addon: a, onOpen, size = "md" }: { addon: Addon; onO
 
 export function ExtraDialog({ addon: a, onClose }: { addon: Addon | null; onClose: () => void }) {
   const { data: config } = useConfig();
+  const { methods } = usePayOptions();
   const money = useMoney();
   const sms = config?.channels.sms_number;
   const keyword = a ? SMS_KEYWORD[a.code] : undefined;
   const steps: { icon: Icon3DName; title: string; text: React.ReactNode }[] = [
-    { icon: "homes", title: "When you book a home", text: "Pick it on the checkout page — it's added to the same M-Pesa or card payment." },
+    { icon: "homes", title: "When you book a home", text: `Pick it on the checkout page — it's added to the same ${methods} payment.` },
     { icon: "key", title: "Already booked?", text: <>Open your trip and add it any time before or during your stay. <Link href="/trips" className="font-medium underline">Your trips</Link></> },
     keyword
       ? { icon: "speech-balloon", title: "By SMS, no data needed", text: <>Text <b className="font-semibold text-ink">{keyword}</b>{sms ? <> to <b className="font-semibold text-ink">{sms}</b></> : ""} and Amina&apos;s concierge does the rest.</> }
@@ -182,10 +183,11 @@ export function Intro({ title, text }: { title: string; text: string }) {
 }
 
 function HowItWorks() {
+  const { methods } = usePayOptions();
   const steps: { icon: Icon3DName; title: string; text: string }[] = [
     { icon: "homes", title: "Book a home", text: "On the web, by USSD, SMS or a phone call — your number is your account." },
     { icon: "sparkles", title: "Add what you like", text: "At checkout, from your trip page, or by replying to our SMS. Some extras need Amina's OK first." },
-    { icon: "money-bag", title: "One simple bill", text: "Extras join your stay total. Pay by M-Pesa or card — no surprises at the door." },
+    { icon: "money-bag", title: "One simple bill", text: `Extras join your stay total. Pay by ${methods} — no surprises at the door.` },
   ];
   return (
     <section className="mt-16 rounded-3xl bg-surface px-6 py-10 md:px-12">

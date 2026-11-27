@@ -12,6 +12,7 @@ import {
 } from "recharts";
 
 import { ErrorBlock, PageHeader } from "@/components/host/common";
+import { usePayOptions } from "@/components/providers";
 import { Skeleton } from "@/components/ui/misc";
 import { get } from "@/lib/api";
 import { CHANNEL_COLOR, CHANNEL_LABEL, fmtDate, kes, plural } from "@/lib/format";
@@ -208,6 +209,7 @@ function Dashboard({ data }: { data: InsightsResponse }) {
   const { kpis: k, previous: p, series, forward, days } = data;
   const m = metrics(k, p);
   const gradient = React.useId().replace(/[^a-zA-Z0-9]/g, "");
+  const { mpesa } = usePayOptions();
   const tick = (d: string) => format(parseISO(d), days > 120 ? "MMM" : "d MMM");
 
   const channels = CHANNEL_ORDER.filter((c) => k.by_channel[c] || series.some((s) => s.bookings[c])).concat(
@@ -220,6 +222,7 @@ function Dashboard({ data }: { data: InsightsResponse }) {
   const donut = channels.filter((c) => k.by_channel[c]?.bookings).map((c) => ({ name: CHANNEL_LABEL[c] ?? c, value: k.by_channel[c].bookings, fill: CHANNEL_COLOR[c] ?? "#929292" }));
   const methods = Object.entries(k.by_method).sort((a, b) => b[1] - a[1]);
   const methodTotal = methods.reduce((s, [, v]) => s + v, 0);
+  const mpesaListed = mpesa || methods.some(([key]) => key === "mpesa"); // with M-Pesa off, older M-Pesa payments may still be listed
   const pace = forward.map((w) => ({ ...w, ok: w.occupancy >= 30 ? w.occupancy : null, low: w.occupancy < 30 ? w.occupancy : null }));
   const lowWeeks = forward.filter((w) => w.occupancy < 30).length;
 
@@ -345,8 +348,8 @@ function Dashboard({ data }: { data: InsightsResponse }) {
         {phone.n > 0 && (
           <div className="px-5 pt-4">
             <Callout tone="info" icon={<Smartphone className="size-[18px]" />} title={`${plural(phone.n, "booking")} · ${kes(phone.kes)} came by USSD, SMS or voice`}>
-              That&apos;s {totalBookings ? Math.round((phone.n / totalBookings) * 100) : 0}% of new bookings — guests the website alone would have missed. No smartphone, data or app
-              needed: a basic phone and M-Pesa are enough.
+              That&apos;s {totalBookings ? Math.round((phone.n / totalBookings) * 100) : 0}% of new bookings — guests the website alone would have missed.{" "}
+              {mpesa ? "No smartphone, data or app needed: a basic phone and M-Pesa are enough." : "No smartphone, data or app needed to book: a basic phone is enough."}
             </Callout>
           </div>
         )}
@@ -464,7 +467,7 @@ function Dashboard({ data }: { data: InsightsResponse }) {
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 text-[12.5px] text-ink-2">Only payments confirmed by an M-Pesa or card callback count — never a screenshot.</p>
+              <p className="mt-4 text-[12.5px] text-ink-2">Only payments confirmed by {mpesaListed ? "an M-Pesa or card" : "a card"} callback count — never a screenshot.</p>
             </>
           )}
         </ChartCard>

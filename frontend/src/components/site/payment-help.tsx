@@ -11,6 +11,16 @@ import { Input } from "@/components/ui/input";
 import { post } from "@/lib/api";
 import { kes } from "@/lib/format";
 import type { TripPayment } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+/** Stripe test mode: the cards that work there (no money moves). */
+export function CardTestHint({ className }: { className?: string }) {
+  return (
+    <p className={cn("rounded-xl bg-surface p-3 text-[13px] text-ink-2", className)}>
+      <b className="text-ink">Test mode</b> — pay with card <span className="font-mono text-ink">4242 4242 4242 4242</span>, any future date and any CVC. No money moves.
+    </p>
+  );
+}
 
 /** The newest payment if it failed (payments[] is newest first) — a pending retry hides an older failure. */
 export function lastFailure(payments: TripPayment[] | undefined) {
@@ -28,13 +38,14 @@ export function FailureNotice({ payment: p, onRetry, onCard, onDeposit, depositA
   busy?: string | null;
 }) {
   const s = p.suggest;
+  const card = p.method === "card"; // a failed card payment is retried by card: there's no prompt to resend
   return (
     <div role="alert" className="rounded-2xl border border-danger/20 bg-danger-50 p-4 text-left">
       <p className="flex items-start gap-2 text-[15px] font-semibold text-danger"><AlertCircle className="mt-0.5 size-4 shrink-0" /> {p.failure_message || "That payment didn't go through."}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {s === "deposit" && onDeposit && <Button size="sm" variant="dark" onClick={onDeposit} loading={busy === "deposit"} disabled={!!busy}>Pay only the deposit{depositAmount ? ` (${kes(depositAmount)})` : ""}</Button>}
-        {p.retryable !== false && onRetry && <Button size="sm" variant={s === "deposit" ? "soft" : "dark"} onClick={onRetry} loading={busy === "mpesa" || busy === "pay"} disabled={!!busy}>{s === "wait" ? "Resend after a minute" : "Resend M-Pesa prompt"}</Button>}
-        {onCard && <Button size="sm" variant="soft" onClick={onCard} loading={busy === "card"} disabled={!!busy}>Pay by card</Button>}
+        {!card && p.retryable !== false && onRetry && <Button size="sm" variant={s === "deposit" ? "soft" : "dark"} onClick={onRetry} loading={busy === "mpesa" || busy === "pay"} disabled={!!busy}>{s === "wait" ? "Resend after a minute" : "Resend M-Pesa prompt"}</Button>}
+        {onCard && (card ? p.retryable !== false : true) && <Button size="sm" variant={card ? "dark" : "soft"} onClick={onCard} loading={busy === "card"} disabled={!!busy}>{card ? "Try the card again" : "Pay by card"}</Button>}
       </div>
     </div>
   );

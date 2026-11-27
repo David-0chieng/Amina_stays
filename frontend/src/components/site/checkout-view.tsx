@@ -7,12 +7,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useConfig, useMe } from "@/components/providers";
+import { useConfig, useMe, usePayOptions } from "@/components/providers";
 import { GuestPicker, guestsLabel, type Guests } from "@/components/site/guest-picker";
 import { SiteHeader } from "@/components/site/header";
 import { PhoneLogin } from "@/components/site/phone-login";
 import { Photo, StarIcon, typeLabel } from "@/components/site/listing-card";
-import { FailureNotice, lastFailure, PaybillBox } from "@/components/site/payment-help";
+import { CardTestHint, FailureNotice, lastFailure, PaybillBox } from "@/components/site/payment-help";
 import { RangeCalendar, type Range } from "@/components/site/range-calendar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -33,6 +33,7 @@ export function CheckoutView({ slug }: { slug: string }) {
   const router = useRouter();
   const { data: me } = useMe();
   const { data: config } = useConfig();
+  const pay = usePayOptions();
   const { data: l } = useQuery({ queryKey: ["listing", slug], queryFn: () => get<ListingDetail>(`/api/listings/${slug}`) });
   const { data: cal } = useQuery({ queryKey: ["calendar", slug], queryFn: () => get<CalendarData>(`/api/listings/${slug}/calendar`) });
   const [range, setRange] = React.useState<Range>({ from: params.get("check_in") || undefined, to: params.get("check_out") || undefined });
@@ -69,6 +70,7 @@ export function CheckoutView({ slug }: { slug: string }) {
   if (!l) return <CheckoutSkeleton />;
 
   const kenyan = !!me?.phone?.startsWith("+254");
+  const payMethod = pay.mpesa ? method : "card";
   const freeUntil = freeCancelUntil(l.cancellation.policy, range.from);
   const dueNow = q ? (plan === "deposit" && q.deposit_available ? q.deposit : q.total) : 0;
 
@@ -80,7 +82,7 @@ export function CheckoutView({ slug }: { slug: string }) {
     try {
       const r = await post<{ booking: Trip; payment: PaymentResult }>("/api/bookings", {
         listing: slug, check_in: range.from, check_out: range.to, adults: guests.adults, children: guests.children, infants: guests.infants,
-        addons: addonList, payment_plan: plan, payment_method: method, arrival_eta: form.eta, arrival_mode: form.mode, vehicle_plate: form.plate,
+        addons: addonList, payment_plan: plan, payment_method: payMethod, arrival_eta: form.eta, arrival_mode: form.mode, vehicle_plate: form.plate,
         special_requests: form.requests, name: form.name, email: form.email, lang: form.lang, marketing_opt_in: form.marketing,
         identity: form.id_number ? { id_type: form.id_type, id_number: form.id_number, nationality: form.nationality, consent: form.consent } : undefined,
       });
@@ -136,7 +138,7 @@ export function CheckoutView({ slug }: { slug: string }) {
                   disabled={!!q && !q.deposit_available}
                   onSelect={() => setPlan("deposit")}
                   title={`Pay part now, part later${q ? ` — ${kes(q.deposit)} today` : ""}`}
-                  text={q?.deposit_available ? `${l.deposit_percent}% today and the rest (${kes(q.total - q.deposit)}) on ${fmtDate(q.balance_due_date)} — we'll send an M-Pesa prompt or a pay link. No extra fees.` : "Available for stays booked more than a day ahead."}
+                  text={q?.deposit_available ? `${l.deposit_percent}% today and the rest (${kes(q.total - q.deposit)}) on ${fmtDate(q.balance_due_date)} — we'll send ${pay.mpesa ? "an M-Pesa prompt or a pay link" : "you a pay link by SMS"}. No extra fees.` : "Available for stays booked more than a day ahead."}
                 />
               </div>
               <NextButton onClick={() => setStep("extras")} />
@@ -225,14 +227,17 @@ export function CheckoutView({ slug }: { slug: string }) {
             </StepCard>
 
             <StepCard n={num("pay")} title="Pay and confirm" state={state("pay")}>
-              <div role="radiogroup" aria-label="Payment method" className="grid gap-3 sm:grid-cols-2">
-                <MethodOption
-                  checked={method === "mpesa"} disabled={!!me?.authenticated && !kenyan} onSelect={() => setMethod("mpesa")}
-                  icon={<Icon3D name="mobile-phone" size={30} />} title="M-Pesa" text={kenyan ? `A prompt will appear on ${me?.phone}` : "Needs a Kenyan (+254) number"}
-                />
-                <MethodOption checked={method === "card"} onSelect={() => setMethod("card")} icon={<Icon3D name="credit-card" size={30} />} title="Card" text="Visa or Mastercard — secure hosted checkout" />
+              <div role="radiogroup" aria-label="Payment method" className={cn("grid gap-3", pay.mpesa && "sm:grid-cols-2")}>
+                {pay.mpesa && (
+                  <MethodOption
+                    checked={payMethod === "mpesa"} disabled={!!me?.authenticated && !kenyan} onSelect={() => setMethod("mpesa")}
+                    icon={<Icon3D name="mobile-phone" size={30} />} title="M-Pesa" text={kenyan ? `A prompt will appear on ${me?.phone}` : "Needs a Kenyan (+254) number"}
+                  />
+                )}
+                <MethodOption checked={payMethod === "card"} onSelect={() => setMethod("card")} icon={<Icon3D name="credit-card" size={30} />} title="Card" text="Visa, Mastercard and more — on a secure hosted checkout" />
               </div>
               {config?.payments.simulated && <p className="mt-3 text-[13px] text-ink-2">Demo mode: payments are simulated — no money moves.</p>}
+              {pay.cardTest && payMethod === "card" && <CardTestHint className="mt-3" />}
               <div className="mt-8 space-y-5 border-t border-line pt-6 text-sm">
                 <div>
                   <h3 className="text-base font-semibold">Cancellation policy</h3>
@@ -243,7 +248,7 @@ export function CheckoutView({ slug }: { slug: string }) {
                   <p className="mt-1 text-ink-2">Follow the house rules, no parties, register every adult guest, and treat Amina&apos;s home like your own.</p>
                 </div>
                 <p className="flex gap-3 rounded-xl bg-surface p-4 text-ink-2">
-                  <Lock className="mt-0.5 size-4 shrink-0 text-ink" /> We only ever take payment through the official M-Pesa prompt or our secure card page. We will never ask you to send money to a personal number.
+                  <Lock className="mt-0.5 size-4 shrink-0 text-ink" /> We only ever take payment through {pay.mpesa ? "the official M-Pesa prompt or our secure card page" : "our secure card checkout"}. We will never ask you to send money to a personal number.
                 </p>
                 <label className="flex items-start gap-3">
                   <input type="checkbox" className="mt-0.5 size-4 accent-ink" checked={form.marketing} onChange={(e) => setForm({ ...form, marketing: e.target.checked })} />
@@ -251,7 +256,7 @@ export function CheckoutView({ slug }: { slug: string }) {
                 </label>
               </div>
               <Button variant="brand" size="lg" className="mt-8 h-14 w-full text-base sm:w-auto sm:min-w-72" onClick={submit} loading={submitting} disabled={!me?.authenticated || !ready || !q || q.available === false}>
-                {method === "mpesa" ? `Pay ${kes(dueNow)} with M-Pesa` : `Pay ${kes(dueNow)} by card`}
+                {payMethod === "mpesa" ? `Pay ${kes(dueNow)} with M-Pesa` : `Pay ${kes(dueNow)} by card`}
               </Button>
             </StepCard>
           </div>
@@ -453,6 +458,7 @@ function Extras({ listing: l, extras, setExtras, guests }: { listing: ListingDet
 
 function PaymentFlow({ result, listing }: { result: { booking: Trip; payment: PaymentResult }; listing?: ListingDetail }) {
   const { data: config } = useConfig();
+  const payOpts = usePayOptions();
   const ref = result.booking.ref;
   const { data: trip } = useQuery({
     queryKey: ["trip", ref, "pay"],
@@ -523,8 +529,14 @@ function PaymentFlow({ result, listing }: { result: { booking: Trip; payment: Pa
             <CreditCard className="mx-auto size-14 text-ink-2" strokeWidth={1.4} />
             <h1 className="mt-6 text-[28px] font-bold">Finish paying by card</h1>
             <p className="mt-2 text-ink-2">We&apos;re holding {listing?.name} for you for {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}.</p>
-            {p.checkout_url && <Button asChild variant="brand" size="xl" className="mt-8"><a href={p.checkout_url}>Open secure checkout</a></Button>}
-            {p.error && <p className="mt-4 text-danger">{p.error}</p>}
+            {p.checkout_url && !p.error && <Button asChild variant="brand" size="xl" className="mt-8"><a href={p.checkout_url}>Open secure checkout</a></Button>}
+            {p.error && (
+              <>
+                <p className="mt-4 text-danger">{p.error}</p>
+                <Button variant="brand" size="xl" className="mt-6" onClick={() => retry("card")} loading={busy === "card"} disabled={!!busy}>Try again</Button>
+              </>
+            )}
+            {payOpts.cardTest && <CardTestHint className="mx-auto mt-6 max-w-md" />}
           </div>
         ) : (
           <div className="text-center">

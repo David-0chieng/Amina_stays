@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 import * as React from "react";
 
+import { usePayOptions } from "@/components/providers";
 import { ChannelBadge, ErrorBlock, KeyValue, Section, StatusBadge } from "@/components/host/common";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
@@ -844,6 +845,7 @@ function ActionsCard({ t }: { t: Trip }) {
   const name = displayName(g?.name, g?.phone);
   const active = ["held", "confirmed", "checked_in"].includes(t.status);
   const canRecord = !["cancelled", "expired", "refund_due"].includes(t.status);
+  const requestBy = useRequestMethod(t);
   const now = useNow(60_000);
   const arrivalDay = now > 0 && kenyaDate(now) >= t.check_in;
   return (
@@ -855,9 +857,9 @@ function ActionsCard({ t }: { t: Trip }) {
           t={t}
           trigger={
             <ActionRow
-              icon={Smartphone}
-              label={t.price.balance_due > 0 ? `Request ${kes(t.price.balance_due)} by M-Pesa` : "Request payment · nothing due"}
-              hint="Sends an M-Pesa STK push to the guest's phone"
+              icon={requestBy === "mpesa" ? Smartphone : CreditCard}
+              label={t.price.balance_due > 0 ? `Request ${kes(t.price.balance_due)} ${requestBy === "mpesa" ? "by M-Pesa" : "by card"}` : "Request payment · nothing due"}
+              hint={requestBy === "mpesa" ? "Sends an M-Pesa STK push to the guest's phone" : "Texts the guest a secure card payment link"}
               disabled={t.price.balance_due <= 0}
             />
           }
@@ -994,16 +996,22 @@ function MessageDialog({ t, trigger }: { t: Trip; trigger: React.ReactNode }) {
   );
 }
 
+/** How Amina asks this guest for money: an M-Pesa prompt for a Kenyan number while M-Pesa is on, else a card link by SMS. */
+function useRequestMethod(t: Trip): "mpesa" | "card" {
+  const { mpesa } = usePayOptions();
+  return mpesa && (t.guest?.phone ?? "").startsWith("+254") ? "mpesa" : "card";
+}
+
 function RequestPaymentDialog({ t, trigger }: { t: Trip; trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const [amount, setAmount] = React.useState("");
+  const method = useRequestMethod(t);
   const phone = t.guest?.phone ?? "";
-  const kenyan = phone.startsWith("+254");
   const value = amount.trim() === "" ? t.price.balance_due : Number(amount);
   const request = useHostAction(
-    () => post(`/api/host/reservations/${t.ref}/request-payment`, { method: "mpesa", amount: amount.trim() === "" ? undefined : Number(amount) }),
+    () => post(`/api/host/reservations/${t.ref}/request-payment`, { method, amount: amount.trim() === "" ? undefined : Number(amount) }),
     {
-      success: `M-Pesa prompt for ${kes(value)} sent to ${fmtPhone(phone)}`,
+      success: method === "mpesa" ? `M-Pesa prompt for ${kes(value)} sent to ${fmtPhone(phone)}` : `Card payment link for ${kes(value)} texted to ${fmtPhone(phone)}`,
       onSuccess: () => {
         setAmount("");
         setOpen(false);
@@ -1015,24 +1023,22 @@ function RequestPaymentDialog({ t, trigger }: { t: Trip; trigger: React.ReactNod
       open={open}
       onOpenChange={setOpen}
       trigger={trigger}
-      title="Request M-Pesa payment"
-      submitLabel={`Send prompt for ${kes(value)}`}
+      title={method === "mpesa" ? "Request M-Pesa payment" : "Send a card payment link"}
+      submitLabel={method === "mpesa" ? `Send prompt for ${kes(value)}` : `Send link for ${kes(value)}`}
       onSubmit={() => request.mutate()}
       loading={request.isPending}
-      disabled={!kenyan || !(value > 0)}
+      disabled={!(value > 0)}
     >
       <p className="text-sm text-ink-2">
-        An STK push pops up on <span className="font-semibold text-ink">{fmtPhone(phone)}</span>. The guest enters their M-Pesa PIN and the booking updates
-        here the moment it&apos;s paid.
+        {method === "mpesa" ? (
+          <>An STK push pops up on <span className="font-semibold text-ink">{fmtPhone(phone)}</span>. The guest enters their M-Pesa PIN and the booking updates here the moment it&apos;s paid.</>
+        ) : (
+          <>We text <span className="font-semibold text-ink">{fmtPhone(phone)}</span> a link to a secure card checkout. The booking updates here the moment it&apos;s paid.</>
+        )}
       </p>
       <Field label="Amount (KES)" hint={`Balance due: ${kes(t.price.balance_due)}`}>
         <Input type="number" inputMode="numeric" min={1} placeholder={String(t.price.balance_due)} value={amount} onChange={(e) => setAmount(e.target.value)} />
       </Field>
-      {!kenyan && (
-        <p className="rounded-xl bg-warning-50 px-4 py-3 text-[13px] font-medium text-warning">
-          M-Pesa needs a Kenyan (+254) number. For this guest, record a card or bank payment instead, or message them a payment link.
-        </p>
-      )}
     </FormDialog>
   );
 }

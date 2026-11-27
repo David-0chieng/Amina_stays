@@ -7,7 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/host/shell";
-import { useMe } from "@/components/providers";
+import { useMe, usePayOptions } from "@/components/providers";
 import { AuthGate } from "@/components/site/auth-gate";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ export function InvoiceView({ bookingRef }: { bookingRef: string }) {
 function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
   const qc = useQueryClient();
   const asHost = !!useMe().data?.is_host; // Amina opens the same invoice from the reservation page
+  const { methods } = usePayOptions();
   const { data: inv, error, isLoading } = useQuery({ queryKey: ["invoice", ref], queryFn: () => get<Invoice>(`/api/bookings/${ref}/invoice`), retry: false });
   const [buyer, setBuyer] = React.useState<{ name: string; pin: string } | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -91,7 +92,7 @@ function InvoiceBody({ bookingRef: ref }: { bookingRef: string }) {
                 <div className="sm:text-right">
                   <p className="text-xs font-bold tracking-wide text-ink-2 uppercase">Amount due</p>
                   <p className="mt-2 text-3xl font-bold tracking-tight">{kes(inv.balance)}</p>
-                  <p className="text-sm text-ink-2">{inv.balance > 0 ? "Pay by M-Pesa or card from your trip page" : "Paid in full — thank you"}</p>
+                  <p className="text-sm text-ink-2">{inv.balance > 0 ? `Pay by ${methods} from your trip page` : "Paid in full — thank you"}</p>
                 </div>
               </section>
 

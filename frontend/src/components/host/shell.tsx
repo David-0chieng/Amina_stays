@@ -9,7 +9,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
-import { useConfig, useLogout, useMe } from "@/components/providers";
+import { useConfig, useLogout, useMe, usePayOptions } from "@/components/providers";
 import { BrandLink, BrandMark } from "@/components/site/brand";
 import { PhoneLogin } from "@/components/site/phone-login";
 import { Button } from "@/components/ui/button";
@@ -99,13 +99,13 @@ const TABS: { href: string; label: string; icon: LucideIcon; badge?: Badge }[] =
 
 export const HOST_MENU: {
   group: string;
-  items: { href: string; label: string; text: string; icon: Icon3DName; lucide: LucideIcon; badge?: Badge; demoOnly?: boolean }[];
+  items: { href: string; label: string; text: string; cardOnlyText?: string; icon: Icon3DName; lucide: LucideIcon; badge?: Badge; demoOnly?: boolean }[];
 }[] = [
   {
     group: "Business",
     items: [
       { href: "/host/reservations", label: "Reservations", text: "Every booking from every channel, in one list", icon: "clipboard", lucide: ClipboardList },
-      { href: "/host/payments", label: "Earnings & payments", text: "M-Pesa, cards, refunds and balances due", icon: "money-bag", lucide: Wallet },
+      { href: "/host/payments", label: "Earnings & payments", text: "M-Pesa, cards, refunds and balances due", cardOnlyText: "Card payments, refunds and balances due", icon: "money-bag", lucide: Wallet },
       { href: "/host/insights", label: "Insights", text: "Occupancy, nightly rates, channels and demand", icon: "bar-chart", lucide: TrendingUp },
       { href: "/host/reviews", label: "Reviews", text: "Ratings, replies and what guests mention", icon: "star", lucide: Star },
       { href: "/host/guests", label: "Guests", text: "Profiles, stays, preferences and IDs", icon: "guests", lucide: Users },
@@ -271,6 +271,7 @@ function BottomBar({ pathname, badges, menuActive }: { pathname: string; badges:
 export function HostMenuPage() {
   const { data: me } = useMe();
   const { data: config } = useConfig();
+  const { mpesa } = usePayOptions();
   const badges = useBadges();
   const logout = useLogout();
   return (
@@ -294,7 +295,7 @@ export function HostMenuPage() {
                 <Link key={i.href} href={i.href} className="group relative rounded-2xl p-5 shadow-[0_6px_16px_rgb(0_0_0/0.12)] transition-shadow hover:shadow-[0_8px_28px_rgb(0_0_0/0.18)]">
                   <Icon3D name={i.icon} size={40} />
                   <p className="mt-6 font-semibold">{i.label}</p>
-                  <p className="mt-1 text-sm text-ink-2">{i.text}</p>
+                  <p className="mt-1 text-sm text-ink-2">{(!mpesa && i.cardOnlyText) || i.text}</p>
                   {i.badge && badges[i.badge] > 0 && (
                     <span className="absolute top-5 right-5 grid h-6 min-w-6 place-items-center rounded-full bg-danger px-2 text-xs font-semibold text-white">{badges[i.badge]}</span>
                   )}

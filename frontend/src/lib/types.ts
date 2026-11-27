@@ -5,7 +5,7 @@ export type Lang = "en" | "sw" | "it" | "de" | "fr";
 export interface Config {
   business: { name: string; host_name: string; tagline: string; email: string; tra_licence: string; checkin_time: string; checkout_time: string };
   channels: { ussd_code: string; sms_number: string; voice_number: string; whatsapp: string };
-  payments: { mpesa: string; card: string; simulated: boolean };
+  payments: { mpesa: "off" | "simulate" | "daraja" | "africastalking"; card: "simulate" | "stripe" | "paystack"; simulated: boolean; card_test_mode?: boolean };
   paybill?: { number: string; account_hint: string } | null;
   currencies: Record<string, number>;
   deposit_percent: number;

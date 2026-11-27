@@ -5,6 +5,7 @@ import { ArrowRight, CalendarClock, Clock } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { usePayOptions } from "@/components/providers";
 import { GuestPicker, type Guests } from "@/components/site/guest-picker";
 import { FailureNotice, PaybillBox } from "@/components/site/payment-help";
 import { RangeCalendar, type Range } from "@/components/site/range-calendar";
@@ -39,7 +40,8 @@ function afterChange(qc: ReturnType<typeof useQueryClient>, ref: string, r: { ch
     return;
   }
   if (r.change.status === "applied") toast.success("Done — your stay is updated. We've sent the details by SMS.");
-  else if (r.change.status === "pending_payment") toast.success(`M-Pesa prompt sent for ${kes(r.change.pay_now)} — your new dates are confirmed the moment you pay.`);
+  else if (r.change.status === "pending_payment")
+    toast.success(r.payment?.method === "mpesa" ? `M-Pesa prompt sent for ${kes(r.change.pay_now)} — your new dates are confirmed the moment you pay.` : `Pay ${kes(r.change.pay_now)} to confirm your new dates.`);
   else if (r.change.status === "pending_host") toast.success("Request sent — Amina will reply by SMS, usually within the hour.");
   else toast.message(r.change.status_label);
 }
@@ -178,6 +180,7 @@ export function ChangeTrip({ trip: t }: { trip: Trip }) {
 export function PendingChange({ trip: t }: { trip: Trip }) {
   const qc = useQueryClient();
   const [busy, setBusy] = React.useState<string | null>(null);
+  const { mpesa } = usePayOptions();
   const c = t.changes?.find((x) => PENDING.includes(x.status));
   if (!c) return null;
   const lastPay = t.payments.find((p) => p.purpose === "change");
@@ -213,16 +216,18 @@ export function PendingChange({ trip: t }: { trip: Trip }) {
         </p>
         {failed && (
           <div className="mt-3">
-            <FailureNotice payment={failed} busy={busy} onRetry={() => act("mpesa")} onCard={() => act("card")} />
+            <FailureNotice payment={failed} busy={busy} onRetry={mpesa ? () => act("mpesa") : undefined} onCard={() => act("card")} />
           </div>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
-          {c.status === "pending_payment" && !failed && (
+          {c.status === "pending_payment" && !failed && (mpesa ? (
             <>
               <Button size="sm" variant="dark" loading={busy === "mpesa"} disabled={!!busy} onClick={() => act("mpesa")}>Pay with M-Pesa</Button>
               <Button size="sm" variant="soft" loading={busy === "card"} disabled={!!busy} onClick={() => act("card")}>Card</Button>
             </>
-          )}
+          ) : (
+            <Button size="sm" variant="dark" loading={busy === "card"} disabled={!!busy} onClick={() => act("card")}>{`Pay ${kes(c.pay_now)} by card`}</Button>
+          ))}
           <Button size="sm" variant="ghost" loading={busy === "cancel"} disabled={!!busy} onClick={() => act("cancel")}>Withdraw</Button>
         </div>
         {c.status === "pending_payment" && (

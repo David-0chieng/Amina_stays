@@ -72,6 +72,15 @@ export function useConfig() {
   return hydrationSafe(q, useHydrated());
 }
 
+/** How guests can pay here. M-Pesa only while the site has it on (MPESA_PROVIDER isn't "off"); until the config
+ * has loaded it counts as off, so nothing offers a prompt the site can't send. `methods` is ready for copy:
+ * "Pay by {methods}". `cardTest` is Stripe in test mode, where Stripe's test cards work. */
+export function usePayOptions() {
+  const { data } = useConfig();
+  const mpesa = !!data && data.payments.mpesa !== "off";
+  return { mpesa, methods: mpesa ? "M-Pesa or card" : "card", cardTest: !!data?.payments.card_test_mode };
+}
+
 export function useLogout() {
   const qc = useQueryClient();
   return async () => {

@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useAuthDialog, useConfig, useMe } from "@/components/providers";
+import { useAuthDialog, useConfig, useMe, usePayOptions } from "@/components/providers";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/overlays";
 import { patch } from "@/lib/api";
@@ -14,7 +14,7 @@ import type { Lang, Me } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
- * Airbnb's "Languages & currency". Guests always pay in KES (M-Pesa or card), so the currency is a display
+ * Airbnb's "Languages & currency". Guests always pay in KES (by card, or M-Pesa when it's on), so the currency is a display
  * preference kept in this browser; the language is the guest's account setting for Amina's texts and WhatsApps.
  */
 export type Currency = "KES" | "USD" | "EUR" | "GBP";
@@ -149,6 +149,7 @@ function LanguagePanel({ onDone }: { onDone: () => void }) {
 function CurrencyPanel({ onDone }: { onDone: () => void }) {
   const code = useCurrency();
   const { data: config } = useConfig();
+  const { methods } = usePayOptions();
   const rates = config?.currencies ?? {};
   const shown = CURRENCIES.filter((c) => c.code === "KES" || rates[c.code]);
   return (
@@ -169,7 +170,7 @@ function CurrencyPanel({ onDone }: { onDone: () => void }) {
         ))}
       </div>
       <p className="mt-6 max-w-2xl text-sm text-ink-2">
-        You always pay in Kenyan shillings, by M-Pesa or card. Other currencies are a guide, converted at Amina&apos;s rates
+        You always pay in Kenyan shillings, by {methods}. Other currencies are a guide, converted at Amina&apos;s rates
         {shown.length > 1 && <>: {shown.filter((c) => c.code !== "KES").map((c) => `1 ${c.code} = ${kes(rates[c.code])}`).join(" · ")}</>}.
       </p>
     </>

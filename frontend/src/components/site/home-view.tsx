@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
-import { useConfig, useHydrated } from "@/components/providers";
+import { useConfig, useHydrated, usePayOptions } from "@/components/providers";
 import { CarouselRow } from "@/components/site/carousel";
 import { ExtraCard, ExtraDialog, useAddons } from "@/components/site/extras";
 import { guestsLabel } from "@/components/site/guest-picker";
@@ -189,6 +189,7 @@ const USSD_MENU = ["Book a stay", "Prices & homes", "My booking", "Breakfast", "
 
 function BookWithoutData() {
   const { data: config } = useConfig();
+  const { mpesa } = usePayOptions();
   const c = config?.channels;
   const ways: { icon: Icon3DName; title: string; value?: string; fallback: string; text: string }[] = [
     { icon: "mobile-phone", title: "USSD", value: c?.ussd_code, fallback: "Dial our code", text: "Any phone, no internet" },
@@ -202,7 +203,10 @@ function BookWithoutData() {
           <p className="text-sm font-semibold text-brand-600">No data? No problem.</p>
           <h2 className="mt-2 max-w-lg text-[28px] leading-tight font-semibold tracking-tight md:text-[32px]">Book from any phone — even without internet.</h2>
           <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-ink-2">
-            Your phone number is your account on every channel. Start on USSD, pay with M-Pesa, and pick up your trip here — or never open a browser at all.
+            Your phone number is your account on every channel.{" "}
+            {mpesa
+              ? "Start on USSD, pay with M-Pesa, and pick up your trip here — or never open a browser at all."
+              : "Start on USSD, pay by card through the secure link we text you, and pick up your trip here."}
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {ways.map((w) => (
@@ -237,8 +241,9 @@ function BookWithoutData() {
 }
 
 export function WhyDirect() {
+  const { mpesa } = usePayOptions();
   const items: { icon: Icon3DName; title: string; text: string }[] = [
-    { icon: "money-bag", title: "No booking fees", text: "The price you see is the total — cleaning and the 2% tourism levy included. Pay by M-Pesa, card, or 30% now and the rest later." },
+    { icon: "money-bag", title: "No booking fees", text: `The price you see is the total — cleaning and the 2% tourism levy included. ${mpesa ? "Pay by M-Pesa, card, or 30% now and the rest later." : "Pay by card, in full or 30% now and the rest later."}` },
     { icon: "shield", title: "Safe by design", text: "Licensed by the Tourism Regulatory Authority, guarded 24/7, and a HELP line that rings Amina's phone — day or night." },
     { icon: "key", title: "Self check-in", text: "Your door code arrives by SMS on arrival morning and stops working at checkout. No waiting around for keys." },
     { icon: "hot-beverage", title: "A real host", text: "Swahili breakfast on your veranda, airport pickups, local tips — and answers in minutes, in your language." },

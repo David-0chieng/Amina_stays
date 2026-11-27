@@ -4,13 +4,13 @@ import { Globe } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
-import { useConfig } from "@/components/providers";
+import { useConfig, usePayOptions } from "@/components/providers";
 import { CURRENCIES, openLocaleDialog, useCurrency } from "@/components/site/locale";
 import { cn } from "@/lib/utils";
 
 type Item = { title: string; text: string; href: string };
 
-const INSPIRATION: Record<string, Item[]> = {
+const inspiration = (mpesa: boolean): Record<string, Item[]> => ({
   Neighbourhoods: [
     { title: "Nyali", text: "Beach suburb", href: "/s?area=nyali" },
     { title: "Diani", text: "White sand & reef", href: "/s?area=diani" },
@@ -32,21 +32,24 @@ const INSPIRATION: Record<string, Item[]> = {
     { title: "SGR Miritini terminus", text: "Nairobi in about 5 hours", href: "/services" },
     { title: "Likoni ferry", text: "The way to Diani by road", href: "/help" },
     { title: "Ukunda airstrip", text: "10 minutes to Diani", href: "/s?area=diani" },
-    { title: "Tuk-tuks & taxis", text: "Pay by M-Pesa", href: "/help" },
+    // Drivers take M-Pesa even when this site doesn't; the text then names the driver so it isn't read as a way to pay us.
+    { title: "Tuk-tuks & taxis", text: mpesa ? "Pay by M-Pesa" : "Cash or M-Pesa to the driver", href: "/help" },
     { title: "Book without data", text: "USSD, SMS or a call", href: "/help#book-your-way" },
   ],
   "Good to know": [
     { title: "Prices in KES", text: "Every fee included", href: "/help#prices" },
-    { title: "Pay by M-Pesa", text: "Or card, or 30% now", href: "/help" },
+    mpesa ? { title: "Pay by M-Pesa", text: "Or card, or 30% now", href: "/help" } : { title: "Pay by card", text: "Or 30% now", href: "/help" },
     { title: "Tourism levy", text: "2%, shown up front", href: "/help#prices" },
     { title: "Guest registration", text: "Required by Kenyan law", href: "/privacy" },
     { title: "24/7 HELP line", text: "Text HELP, Amina calls", href: "/help#safety" },
     { title: "Your data", text: "Kenya Data Protection Act", href: "/privacy" },
   ],
-};
+});
 
 export function SiteFooter() {
   const { data: config } = useConfig();
+  const { mpesa } = usePayOptions();
+  const groups = inspiration(mpesa);
   const code = useCurrency();
   const currency = CURRENCIES.find((x) => x.code === code)!;
   const [tab, setTab] = React.useState("Neighbourhoods");
@@ -87,7 +90,7 @@ export function SiteFooter() {
       <div className="container-site pt-12">
         <h2 className="text-[22px] font-semibold tracking-tight">Inspiration for future getaways</h2>
         <div className="no-scrollbar mt-3 flex gap-6 overflow-x-auto border-b border-line" role="tablist">
-          {Object.keys(INSPIRATION).map((t) => (
+          {Object.keys(groups).map((t) => (
             <button
               key={t}
               type="button"
@@ -101,7 +104,7 @@ export function SiteFooter() {
           ))}
         </div>
         <ul className="grid grid-cols-2 gap-x-6 gap-y-6 py-8 sm:grid-cols-3 lg:grid-cols-6">
-          {INSPIRATION[tab].map((i) => (
+          {groups[tab].map((i) => (
             <li key={i.title}>
               <Link href={i.href} className="group block text-sm">
                 <span className="block font-medium group-hover:underline">{i.title}</span>
