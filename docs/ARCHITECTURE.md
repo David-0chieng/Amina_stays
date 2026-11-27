@@ -45,6 +45,10 @@ In production, Django runs under gunicorn with several workers (`--keep-alive 0`
 | `safety` | Alerts and the SOS escalation ladder, follow-ups, guest register CSV |
 | `reviews` | Ratings by SMS/web with category scores, host responses |
 | `insights` | Occupancy, ADR, RevPAR, channel mix, forward bookings, "Today" view, monthly TRA return |
+| `support` | The support desk: tickets with a reference (T12) and a reply-by time from every channel, Amina's replies (console or `T12 …` by SMS), click-to-call bridging through AT Voice, escalation (SMS, then a call), 1–5 ratings; problem-in-the-home tickets follow their work order |
+| `notices` | Service alerts: outages, planned maintenance and advisories for some or all homes; who was told what (`Delivery`), heads-ups a day ahead, updates, "it's fixed", the outage data bundle, and the "we already know" answer to duplicate problem reports |
+| `guide` | The local guide: places (category, area, hours, price, tips, pin) and events (weekly or dated, yearly), served by USSD, SMS, voice and the web, sorted by distance from the guest's home |
+| `rewards` | Points for stays and feedback, invite codes and referral rewards, and the airtime/data ledger (`Payout`) shared by rewards, gifts and outage bundles: idempotency keys, a monthly airtime budget with approval, AT delivery callbacks, points returned on failure |
 
 ## Data model (core)
 
@@ -76,6 +80,16 @@ erDiagram
   BOOKING ||--o{ TASK : creates
   USER ||--o{ TASK : "assigned to (staff)"
   BOOKING ||--o{ ALERT : raises
+  BOOKING ||--o{ TICKET : "supported by"
+  TASK ||--o{ TICKET : "fixes"
+  TICKET ||--o{ TICKET_EVENT : timeline
+  NOTICE }o--o{ UNIT : affects
+  NOTICE ||--o{ DELIVERY : "told"
+  AREA ||--o{ PLACE : "guide to"
+  PLACE ||--o{ EVENT : hosts
+  USER ||--o| MEMBER : "rewards member"
+  USER ||--o{ POINTS_ENTRY : earns
+  USER ||--o{ PAYOUT : "airtime & data"
 ```
 
 ## Booking lifecycle
@@ -144,6 +158,9 @@ stateDiagram-v2
 | `reviews` | after checkout | SMS review request (reply 1–5) |
 | `alert_followups` | every tick | Escalate unacknowledged SOS alerts (calls Amina, then the backup contact) |
 | `changes_expire` | every tick | Lapse date changes left unpaid or unapproved past their deadline (applies any that were paid) |
+| `service_notices` | every tick | Start planned work on time, send day-ahead heads-ups, tell guests who arrive mid-outage (and send their data bundle), ask Amina once if an outage runs 30 min past its expected end |
+| `support_escalation` | 1 min | Tickets past their reply-by time: SMS Amina and the backup; complaints and call-backs still waiting after twice that time ring Amina's phone (low priority waits for the morning) |
+| `rewards` | 1 min | Points for stays that just ended and for feedback; airtime to both guests once a referred guest's first stay is over |
 | `payments_reconcile` | 2 min | Query pending STK pushes and card payments |
 | `ical_sync` | 15 min | Import Airbnb/Booking.com calendars; alert on conflicts |
 | `host_digest` | 07:00 | Amina's morning SMS: arrivals, departures, in-house, breakfasts, open tasks, unanswered messages, alerts, week occupancy |
@@ -158,9 +175,9 @@ stateDiagram-v2
 
 | Channel | Entry point | Notes |
 |---|---|---|
-| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Separate menus for guests, staff (tasks) and the host (today, approvals, tonight's availability). The M-Pesa prompt is sent after the `END` reply (`comms/deferred.py`), so a slow payment API can't time out the session. |
-| SMS | `comms/smsbot.py` | Keywords in 5 languages, then the conversation state, then NLU (dates, nights, guests, area), then the FAQ knowledge base, then relay to Amina. HELP is checked first, always. Host commands: `#12 text`, `YES 34`, `NO 34`, `OK`. Staff: `DONE 7`. |
-| Voice | `comms/voice.py` | AT voice XML: `<Say>` (Kiswahili voice), `<GetDigits>`, `<Dial>` to Amina, `<Record>` voicemail. DB-backed sessions. Outbound SOS call to Amina ("press 1 to call the guest"). A missed bridged call triggers SMS follow-up or escalation; an unanswered SOS call escalates at once, and an unanswered welcome call becomes a welcome SMS. |
+| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Guests: 6 Talk to Amina (call-back, complaint, my requests) and 8 More (local guide, service status, rewards, language); 9 stays EMERGENCY. Separate menus for staff (tasks) and the host (today, approvals, tonight's availability). The M-Pesa prompt is sent after the `END` reply (`comms/deferred.py`), so a slow payment API can't time out the session. |
+| SMS | `comms/smsbot.py` | Keywords in 5 languages, then the conversation state, then NLU (dates, nights, guests, area), then the FAQ knowledge base, then relay to Amina. HELP is checked first, always. Add-ons: `COMPLAIN …`, `CALL ME`, `TICKETS`, `T12`, a 1–5 rating; `EXPLORE` (then numbers), `EVENTS`, `FOOD`; `ALERTS`, `DATA`; `POINTS`, `REDEEM AIRTIME|DATA`, `REFER`, `REF <code>`. A problem report an active alert covers gets the alert. Host commands: `#12 text`, `YES 34`, `NO 34`, `OK`, `T12 text`, `CALL T12`, `RESOLVE T12`, `TICKETS`, `OUTAGE <service> <home\|ALL> …`, `RESTORED 4`, `ALERTS`. Staff: `DONE 7`, `OUTAGE …`, `RESTORED 4`. |
+| Voice | `comms/voice.py` | AT voice XML: `<Say>` (Kiswahili voice), `<GetDigits>`, `<Dial>` to Amina, `<Record>` voicemail. DB-backed sessions. Outbound SOS call to Amina ("press 1 to call the guest"). Press 5 records a complaint (the recording becomes a ticket), press 6 reads three local favourites and texts the list. Support call-backs ring Amina first (`clientRequestId` `bridge-<ticket>`) and `<Dial>` the guest when she answers; an escalation call (`ticket-<id>`) offers "press 1 to call them now". A missed bridged call becomes a call-back ticket; an unanswered SOS call escalates at once, and an unanswered welcome call becomes a welcome SMS. |
 | Web | `frontend/` | Next.js; the same services as every other channel |
 
 ## Security & privacy
@@ -190,7 +207,7 @@ stateDiagram-v2
 
   | Guest | Host console (`/host`) |
   |---|---|
-  | `/` home feed · `/experiences` · `/services` | Today (Today \| Upcoming cards) |
+  | `/` home feed · `/experiences` · `/services` · `/guide` local guide | Today (Today \| Upcoming cards) |
   | `/s` search results + map + filters | Menu (grouped hub) |
   | `/stays/[slug]` listing | Calendar (multi-unit, prices) |
   | `/book/[slug]` checkout | Reservations + detail |
@@ -201,10 +218,11 @@ stateDiagram-v2
   | `/account` | Messaging (templates, automations, FAQ, broadcasts) |
   | `/help`, `/privacy`, `/login` | Reviews, Insights (+ TRA return), Payments |
   | `/demo` Demo Lab | Safety, Channels (AT status, iCal), Settings |
+  | | Support desk, Service alerts, Local guide, Rewards & airtime |
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite (596 tests) on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (622 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;
@@ -217,4 +235,4 @@ stateDiagram-v2
 - webhook secrets and delivery reports;
 - OTP login, permissions, staged disclosure, the web booking API and iCal round-trips.
 
-End-to-end flow suites walk every journey through the public API the way the web, USSD, SMS and voice channels use it: `test_flows_guest`, `_host`, `_ops`, `_payments`, `_sms`, `_ussd`, `_voice` and `_webhooks`, with shared helpers in `tests/flowkit.py`. Feature suites (`test_feature_bookings`, `_payments`, `_channels`, `_stripe`) cover Stripe Checkout (sessions, the webhook signature, return-page and scheduler settlement, refunds), a site with M-Pesa off on every channel, date changes and extensions, the waitlist, deposits on manual bookings, M-Pesa result codes, Paybill matching, invoices and credit notes, the balance ladder, licence reminders and SMS retry rules; `test_scheduler` covers the core jobs, the single-instance lock and failure isolation.
+End-to-end flow suites walk every journey through the public API the way the web, USSD, SMS and voice channels use it: `test_flows_guest`, `_host`, `_ops`, `_payments`, `_sms`, `_ussd`, `_voice` and `_webhooks`, with shared helpers in `tests/flowkit.py`. `test_flows_addons` covers the Africa's Talking challenge add-ons on every channel: support tickets from SMS, USSD and voice recordings, click-to-call bridging, SMS-then-call escalation, ratings; outage alerts with data bundles, mid-outage arrivals, planned maintenance, staff SMS commands and "we already know" answers; the guide by USSD, SMS conversation and voice; points, redemption with delivery callbacks and refunds, invite codes, the monthly budget and the APIs. Feature suites (`test_feature_bookings`, `_payments`, `_channels`, `_stripe`) cover Stripe Checkout (sessions, the webhook signature, return-page and scheduler settlement, refunds), a site with M-Pesa off on every channel, date changes and extensions, the waitlist, deposits on manual bookings, M-Pesa result codes, Paybill matching, invoices and credit notes, the balance ladder, licence reminders and SMS retry rules; `test_scheduler` covers the core jobs, the single-instance lock and failure isolation.

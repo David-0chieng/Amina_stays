@@ -11,10 +11,10 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 | | |
 |---|---|
 | 🌍 **Web** | Search with an all-in price, listing pages, checkout by card through Stripe (or M-Pesa with a Paybill fallback, once Safaricom's Go-Live is done), in full or with a 30% deposit, and a living trip page with directions, Wi-Fi, door code, breakfast, extras, help, date changes and extensions, and a tax invoice |
-| 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina, check out, language, emergency |
-| 💬 **SMS — "Ask Amina"** | Natural-language booking in English, Kiswahili, Italian, German and French; instant answers from each home's knowledge base; HELP for emergencies |
-| 📞 **Voice — "Call Amina"** | English/Kiswahili IVR: availability and booking, prices, directions, bridge to Amina, voicemail, emergencies |
-| 🛎️ **Host console** | Today view, multi-home calendar and pricing, reservations, a unified inbox, tasks and kitchen, listings editor, guest CRM, messaging automations, reviews, insights with the TRA return, payments, safety and channels |
+| 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina (a call-back, a complaint, my requests), check out, emergency, and More: the local guide, service status, rewards and language |
+| 💬 **SMS — "Ask Amina"** | Natural-language booking in English, Kiswahili, Italian, German and French; instant answers from each home's knowledge base; complaints with a reference (`COMPLAIN`, `TICKETS`), the local guide (`EXPLORE`), service status (`ALERTS`), rewards (`POINTS`); HELP for emergencies |
+| 📞 **Voice — "Call Amina"** | English/Kiswahili IVR: availability and booking, prices, directions, bridge to Amina, voicemail, a complaint by voice message, things to do nearby, emergencies; call-backs that ring Amina and connect her to the guest |
+| 🛎️ **Host console** | Today view, multi-home calendar and pricing, reservations, a unified inbox, tasks and kitchen, listings editor, guest CRM, messaging automations, reviews, insights with the TRA return, payments, safety and channels, plus the support desk, service alerts, local guide and rewards & airtime |
 
 **Research first.** We studied Airbnb, Booking.com, Vrbo, Agoda and Trip.com, small-host operations, Kenyan regulation and Africa's Talking's real limits before writing code, then compared every guest and host flow end to end with Airbnb, Hospitable and Hostaway. See [docs/RESEARCH.md](docs/RESEARCH.md) for the problem → solution matrix, and [docs/research/](docs/research/) for the eight full briefs with sources.
 
@@ -28,9 +28,28 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 596 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
-| **Africa's Talking** | SMS (two-way, delivery reports, opt-out), USSD, Voice (IVR, bridge, voicemail, outbound safety calls), Airtime, Mobile Data, SIM Swap; WhatsApp and AT checkout optional. |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 622 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
+| **Africa's Talking** | SMS (two-way, delivery reports, opt-out, service alerts), USSD, Voice (IVR, call-back bridging, voice complaints, escalation and safety calls), Airtime (rewards, referrals, gifts), Mobile Data (outage and reward bundles), SIM Swap; WhatsApp and AT checkout optional. Every challenge area is covered: see [the add-ons](#africas-talking-challenge-add-ons). |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
+
+---
+
+## Africa's Talking challenge add-ons
+
+Amina Stays also answers the six challenge areas of Africa's Talking's hospitality and tourism hackathons. They all use the same phone-number account, work with no data and are simulated when there are no API keys.
+
+| Challenge | What Amina Stays does | AT APIs | Try it |
+|---|---|---|---|
+| **Customer service & support** | A **support desk**. Every complaint, question or call-back request gets a reference (T12) and a reply-by time, whether it came by SMS (`COMPLAIN …`, `CALL ME`), USSD (Talk to Amina → Make a complaint), a voice message (press 5) or the website. Amina answers in the console or by SMS (`T12 …`), or taps **Call**: Africa's Talking rings her phone and connects her to the guest. An unanswered request escalates: an SMS to Amina and her backup, then a phone call. Guests rate the outcome 1–5 by SMS. | Voice, SMS | Demo Lab: as Wanjiku, text `COMPLAIN the music next door is too loud`, then answer from Amina's phone with the reference she got (`T7 Pole sana!` on fresh demo data); Host › Support desk |
+| **USSD services** | Everything works with no data: booking, my booking, breakfast, report a problem, talk to Amina, check out, emergency and **More**: the local guide, service status, rewards and language. Every screen fits in 160 characters. | USSD | Demo Lab USSD phone: 8 → 1 (Explore), 8 → 2 (Service status), 8 → 3 (Rewards) |
+| **Service & network notifications** | **Service alerts**. Amina, or a caretaker by SMS (`OUTAGE POWER ALL generator on`), posts an outage or planned maintenance. The guests staying at those homes, and anyone arriving while it lasts, get an SMS: a day ahead for planned work, again if the expected time changes, and when it's fixed. A guest who reports a problem an alert already covers gets the alert instead of a new work order. `ALERTS` by SMS or USSD shows the status. | SMS | Demo Lab time machine: *Wi-Fi outage at this home*, then *Fix it*; Host › Service alerts |
+| **Airtime & customer incentives** | **Amina Rewards**: points for every stay and for feedback, swapped for airtime (`REDEEM AIRTIME`); invite codes (`REF <code>`) that pay airtime to both guests after the friend's first stay; airtime gifts from the console. Every top-up goes through one ledger with an idempotency key, a monthly budget (over it, rewards wait for Amina's approval) and Africa's Talking's delivery callbacks; a failed top-up gives the points back. | Airtime | Demo Lab: text `POINTS`, then `REDEEM AIRTIME`; the guest's account page; Host › Rewards & airtime |
+| **Mobile connectivity** | When the Wi-Fi or power fails, every guest staying gets a mobile-data bundle automatically (a guest who arrives later can text `DATA`). Points also swap for data (`REDEEM DATA`), and arriving guests can get a welcome bundle. | Mobile Data | The time-machine outage: the guest's alert SMS mentions the bundle; Host › Rewards › payouts |
+| **Smart communication platforms** | One conversation per guest across SMS, USSD, voice, WhatsApp and the web: a request raised on USSD is answered by SMS and closed after a call; a tourist with no data browses the guide by USSD and gets the map link by SMS. | SMS, USSD, Voice | All of the above |
+
+The **local guide** has 28 real places on the coast and what's on, sorted by distance from the guest's home. It's on the web at `/guide`, by USSD, by SMS (`EXPLORE`, `EVENTS`, `FOOD`) and on a call (press 6).
+
+The app is also packaged for the **Africa's Talking Marketplace** as one Docker image: see [Africa's Talking Marketplace](#africas-talking-marketplace).
 
 ---
 
@@ -63,7 +82,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 
 ### Africa's Talking products used
 
-**SMS** (two-way, delivery reports, opt-out) · **USSD** · **Voice** (IVR, bridging, recording, outbound safety calls) · **Airtime** (automatic apology when Amina cancels) · **Mobile Data** (optional welcome bundle) · **Insights SIM Swap** (before door codes) · WhatsApp (optional) · M-Pesa checkout via AT (optional; see [payments](#payments)).
+**SMS** (two-way, delivery reports, opt-out, service alerts) · **USSD** · **Voice** (IVR, bridging, recording, call-backs, voice complaints, escalation and safety calls) · **Airtime** (rewards, referrals, gifts, an automatic apology when Amina cancels) · **Mobile Data** (outage and reward bundles, an optional welcome bundle) · **Insights SIM Swap** (before door codes) · WhatsApp (optional) · M-Pesa checkout via AT (optional; see [payments](#payments)).
 
 ---
 
@@ -278,7 +297,7 @@ Real guests need no code changes. Each simulated service switches to the real on
    | For | Set |
    |---|---|
    | The site | `DEBUG=0`, `DEMO=0`, `SECRET_KEY`, `ALLOWED_HOSTS`, `FRONTEND_URL` and `PUBLIC_URL` (your https address), `ID_ENCRYPTION_KEY`, `AMINA_PHONE` (the host's own number) |
-   | Africa's Talking | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` (a sender ID approved in the AT dashboard; without it or `AT_SMS_NUMBER`, AT's default sender only reaches Airtel numbers), `AT_SMS_NUMBER`, `AT_USSD_CODE`, `AT_VOICE_NUMBER`, `AT_WEBHOOK_SECRET`; optionally `AT_DATA_PRODUCT` and `AT_WHATSAPP_NUMBER` |
+   | Africa's Talking | `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID` (a sender ID approved in the AT dashboard; without it or `AT_SMS_NUMBER`, AT's default sender only reaches Airtel numbers), `AT_SMS_NUMBER`, `AT_USSD_CODE`, `AT_VOICE_NUMBER`, `AT_WEBHOOK_SECRET`; optionally `AT_DATA_PRODUCT` (the Mobile Data product for outage and reward bundles: without it, live sites offer no data bundles) and `AT_WHATSAPP_NUMBER` |
    | Cards (Stripe) | `STRIPE_SECRET_KEY` (the live `sk_live_…` key) and `STRIPE_WEBHOOK_SECRET` |
    | M-Pesa (later, optional) | `MPESA_PROVIDER=daraja`, `DARAJA_ENV=production`, `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`, `DARAJA_SHORTCODE`, `DARAJA_PASSKEY` (emailed after Daraja Go-Live), `DARAJA_CALLBACK_SECRET`, `MPESA_SHORTCODE`; for a Till, `DARAJA_TRANSACTION_TYPE=CustomerBuyGoodsOnline` and `DARAJA_PARTY_B` |
    | Smart locks (optional) | `IGLOOHOME_API_KEY`, `IGLOOHOME_API_BASE`, and each home's lock device ID in the listing editor |
@@ -289,6 +308,17 @@ Real guests need no code changes. Each simulated service switches to the real on
 
    Once M-Pesa is on, also register the Paybill callbacks with `register_c2b` (M-Pesa prompts carry their own callback URL). Live M-Pesa callbacks must be on your own https domain: Safaricom blocks ngrok and similar tunnels in production.
 4. Serve the site over HTTPS, on any host or with `docker compose up -d` behind a TLS proxy, and keep the scheduler running. Reminders, door codes and payment checks depend on it. `migrate` also creates the cache table that every API worker shares, so login-code limits and provider tokens hold across workers. Without Docker, also run `uv run python manage.py collectstatic --noinput` in `backend/` (with `DEBUG=0` set) after each update; the Docker image does this when it's built.
+
+## Africa's Talking Marketplace
+
+Amina Stays is also packaged as a plugin for the [Africa's Talking Marketplace](https://marketplace.africastalking.dev): any business can pick a plan, click Deploy and get its own instance. The root [Dockerfile](Dockerfile) builds one image with the website, the API and the scheduler. It listens on `$PORT` (8080) and needs only PostgreSQL. On every start, [docker/supervise.py](docker/supervise.py) waits for the database and migrates. It loads the demo data when `DEMO=1` and makes `AMINA_PHONE` the host's login.
+
+```bash
+docker build --platform linux/amd64 -t <registry-host>/<username>/amina-stays:v1.0.0 .
+docker push <registry-host>/<username>/amina-stays:v1.0.0
+```
+
+[marketplace/README.md](marketplace/README.md) has every field of the submission form: name, slug, descriptions, logo, image URL, database (PostgreSQL), environment variables, AT products (USSD, Voice, Airtime, Insights, Bulk SMS, Mobile Data), industry and pricing plans. It also covers what a customer does after deploying. [marketplace/listing.json](marketplace/listing.json) has the same in machine-readable form. The [CI workflow](.github/workflows/ci.yml) runs the tests, then builds the image and pushes it from `main` or a tag once the `AT_REGISTRY`, `AT_REGISTRY_USERNAME` and `AT_REGISTRY_PASSWORD` repository secrets are set. `docker compose up` works as before.
 
 ## Demo script (5 minutes)
 
@@ -305,6 +335,10 @@ More flows, if there's time:
 - **Change of plans.** On a confirmed trip, *Change dates or guests* (or *Extend your stay* once checked in) shows the new price before the guest commits; pay the difference and the dates move. Turn off *Instant date changes* in Settings and the request waits on Amina's Today page instead.
 - **M-Pesa, once it's approved.** Start with `MPESA_PROVIDER=simulate`: checkout offers an M-Pesa prompt next to the card, a failed prompt (*Simulate "insufficient funds"*) offers the 30% deposit, a card or the Paybill, and the Demo Lab's *Simulate Paybill payment* is matched to the booking by its reference.
 - **Waitlist.** On a listing whose dates are taken, *Notify me*; cancel the blocking stay in the console and the waiting guest gets an SMS offer.
+- **Support desk.** Holding Wanjiku's phone, text `COMPLAIN the music next door is too loud`: she gets a reference, and Amina's phone gets the complaint. Reply from Amina's phone using the reference in her SMS (T7 on fresh demo data): `T7 Pole sana, Juma is on his way` (or open Host › Support desk), then `RESOLVE T7`: Wanjiku is asked to rate it, and texting `5` closes the loop. In the console, *Call guest* rings Amina first; in the Demo Lab, hold Amina's phone and *Answer a support call-back*.
+- **Service alert.** In the time machine, pick Wanjiku's booking and press *Wi-Fi outage at this home*: her phone gets the alert and a 100 MB data bundle. Text "no wifi" and she's told it's known, with no new work order. *Fix it* sends "it's fixed".
+- **Local guide.** Text `EXPLORE`, reply `3` (beaches), then `1` for the details and a map link; or dial USSD 8 → 1; or call and press 6. The same places are on the web at `/guide` and on each trip page, sorted by distance.
+- **Rewards.** Text `POINTS`, then `REDEEM AIRTIME`: the airtime is sent through Africa's Talking (simulated without keys). Each guest's invite code (`REF <code>`) pays airtime to both after the friend's first stay. Host › Rewards & airtime has the budget, payouts and gifts.
 
 ## Tests
 
@@ -312,7 +346,7 @@ They use the database from the quick start; pytest creates and drops its own tes
 
 ```bash
 cd backend
-uv run pytest            # 596 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run pytest            # 622 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
 uv run ruff check .
 cd ../frontend
 npx tsc --noEmit
@@ -334,6 +368,10 @@ backend/                 Django 6 + DRF API, Africa's Talking webhooks, schedule
   apps/safety            SOS alerts and escalation, guest register export
   apps/reviews           ratings and responses
   apps/insights          occupancy, ADR, RevPAR, TRA monthly return
+  apps/support           support desk: tickets, call-back bridging, escalation, ratings
+  apps/notices           service alerts: outages and maintenance, the outage data bundle
+  apps/guide             local guide: places and events by USSD, SMS, voice and web
+  apps/rewards           points, invite codes, the airtime and data ledger
   tests/                 pytest suite
 frontend/                Next.js 16 (App Router), Tailwind CSS v4, TanStack Query, Radix
   src/app/(site)         guest site, Demo Lab
@@ -341,6 +379,9 @@ frontend/                Next.js 16 (App Router), Tailwind CSS v4, TanStack Quer
   src/components         UI kit, site, host and demo components
 docs/                    research synthesis, architecture, full research briefs
 scripts/                 dev.sh (run everything on Linux, macOS, WSL), dev.ps1 (the same on Windows), db.sh (local PostgreSQL)
+docker/                  supervise.py: entrypoint of the all-in-one marketplace image (root Dockerfile)
+marketplace/             Africa's Talking Marketplace listing, logo and deployment guide
+.github/workflows/       CI: tests, type check, lint, image build and push
 ```
 
 More: [Architecture](docs/ARCHITECTURE.md) · [Research](docs/RESEARCH.md) · [Project brief](<AMINA-STAYS_Project_Brief (2).pdf>)
