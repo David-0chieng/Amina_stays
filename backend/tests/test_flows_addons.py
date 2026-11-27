@@ -311,6 +311,9 @@ def test_an_outage_texts_the_guests_staying_with_a_data_bundle_and_says_when_its
     assert sms("DATA") == [
         "You've already had your data bundle for this outage - we'll text you as soon as it's fixed."
     ]
+    tasks = Task.objects.count()
+    [known] = sms("no wifi")  # what the alert already covers: no password, no new work order
+    assert known.startswith("We know - Wi-Fi down at Blue Reef Apartment since") and Task.objects.count() == tasks
     assert notices.run() == 0  # nobody new to tell
 
     assert notices.resolve(n, note="Line repaired.") == 1
@@ -516,6 +519,16 @@ def test_explore_by_sms_is_a_two_step_conversation(places, in_house):
     assert sms("EVENTS")[0].startswith("What's on: ")
     assert Conversation.objects.get(phone=KE_GUEST).state == "idle"
     assert Place.objects.filter(hits__gt=0).count() == 2
+
+
+@pytest.mark.django_db
+def test_explore_by_sms_takes_over_a_pending_booking_offer(places, in_house):
+    sms("Nataka nyumba 12 Dec siku 3 watu 2")
+    assert Conversation.objects.get(phone=KE_GUEST).state not in guide.STATES  # an offer waiting for a reply
+    assert sms("EXPLORE")[0].startswith("Explore the coast - reply with a number")
+    assert sms("3")[0].startswith("Beaches & sea: 1) ")
+    assert "Map: " in sms("1")[0]  # the place's details, not the offer's first home
+    assert not Booking.objects.filter(status="held").exists()
 
 
 @pytest.mark.django_db

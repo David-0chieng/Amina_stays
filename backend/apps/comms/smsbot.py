@@ -712,7 +712,7 @@ class GuestBot:
         body, keys = guide.menu_message(self.lang)
         if not body:
             return self.reply(guide.word("none", self.lang), kind="guide_none")
-        guide.remember(self.phone, "guide_menu", {"keys": keys})
+        guide.remember(self.phone, "guide_menu", {"keys": keys}, force=True)
         return self.reply(body, kind="guide_menu")
 
     def events(self):
@@ -732,7 +732,7 @@ class GuestBot:
         if not places:
             set_convo(self.phone, "idle")
             return self.reply(guide.word("none", self.lang), kind="guide_none")
-        guide.remember(self.phone, "guide_list", {"places": [p.pk for p in places]})
+        guide.remember(self.phone, "guide_list", {"places": [p.pk for p in places]}, force=True)
         return self.reply(guide.list_message(key, places, self.lang), kind="guide_list")
 
     # -- service alerts (SMS) and the outage data bundle (Mobile Data)

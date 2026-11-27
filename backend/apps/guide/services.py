@@ -243,10 +243,12 @@ def _free_for_guide(phone):
     return c is None or c.state in STATES or c.updated_at < timezone.now() - FRESH
 
 
-def remember(phone, state, data):
+def remember(phone, state, data, force=False):
+    """Let a numbered SMS reply pick from what we just sent. force: the guest asked for it by SMS (EXPLORE, FOOD...),
+    so it takes over the conversation; a list sent from a call or USSD only does when nothing else is going on."""
     from apps.messaging.models import Conversation
 
-    if _free_for_guide(phone):
+    if force or _free_for_guide(phone):
         Conversation.objects.update_or_create(phone=phone, defaults={"state": state, "data": data})
 
 

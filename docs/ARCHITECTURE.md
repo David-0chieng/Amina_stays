@@ -222,7 +222,7 @@ stateDiagram-v2
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite (622 tests) on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (623 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;

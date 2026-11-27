@@ -28,7 +28,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 622 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 623 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out, service alerts), USSD, Voice (IVR, call-back bridging, voice complaints, escalation and safety calls), Airtime (rewards, referrals, gifts), Mobile Data (outage and reward bundles), SIM Swap; WhatsApp and AT checkout optional. Every challenge area is covered: see [the add-ons](#africas-talking-challenge-add-ons). |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
 
@@ -324,10 +324,10 @@ docker push <registry-host>/<username>/amina-stays:v1.0.0
 ## Demo script (5 minutes)
 
 1. **The problem.** Amina answers the same questions all day across WhatsApp, calls and SMS. Breakfast orders get lost, guests wait outside for keys, and she can't see who's arriving.
-2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 2 (Diani) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (pay all now). The session ends with "We'll text you a secure card payment link"; tap that link on the SMS phone and pay (with Stripe test keys: card 4242 4242 4242 4242, any future date and CVC). The confirmation SMS with a trip link arrives on the SMS phone.
+2. **Feature-phone booking.** In the Demo Lab, holding *New guest*'s phone, dial USSD and answer 1 (book) → 1 (Nyali) → 3 (this weekend) → 2 nights → 2 guests → 1 (the home) → 1 (Swahili breakfast) → 1 (confirm & pay). The session ends with "We'll text you a secure card payment link"; tap that link on the SMS phone and pay (with Stripe test keys: card 4242 4242 4242 4242, any future date and CVC). The confirmation SMS with a trip link arrives on the SMS phone.
 3. **Ask Amina by SMS.** Text "Bei?" (Kiswahili for "price?"), then "WIFI", then "Nataka nyumba Diani 12 Dec siku 3 watu 2" (a booking in plain Kiswahili).
 4. **Call Amina.** Press 2 for Kiswahili, then 2 for prices and breakfast. The IVR is read aloud in the browser.
-5. **Web.** Search → listing → checkout with breakfast, choosing the 30% deposit, then *Pay by card*: Stripe's checkout opens, and back on Amina Stays the booking confirms in seconds. Open the trip page: the checklist, directions unlocking 48 h before, the balance due before arrival, the receipt and the tax invoice.
+5. **Web.** Search → listing → checkout with breakfast, choosing the 30% deposit, then *Pay by card*: the card page opens (Stripe's checkout once its test key is set, a simulated card page without one), and back on Amina Stays the booking confirms in seconds. Open the trip page: the checklist, directions unlocking 48 h before, the balance due before arrival, the receipt and the tax invoice.
 6. **Time machine.** Pick Hans's booking and press *Release door code*: it is held because the guest register (ID) is missing. Hold Hans's phone, text "ID C01X00T47", release again, and the door code arrives by SMS in German.
 7. **Safety.** Holding Wanjiku's phone, text "HELP": she gets an instant reply in Kiswahili and Amina gets an SMS alert. Switch to Amina's phone and *Answer the SOS safety call*: it names the guest, home and booking, and pressing 1 connects Amina to her.
 8. **Host console.** Today (the Today | Upcoming reservation cards), Calendar and Messages (Amina can also reply from her phone with "#3 …"). Then open the Menu for the kitchen sheet, insights and the one-click TRA return.
@@ -347,7 +347,7 @@ They use the database from the quick start; pytest creates and drops its own tes
 
 ```bash
 cd backend
-uv run pytest            # 622 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run pytest            # 623 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
 uv run ruff check .
 cd ../frontend
 npx tsc --noEmit

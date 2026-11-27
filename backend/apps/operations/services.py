@@ -64,8 +64,11 @@ def looks_like_issue(text):
     low = (text or "").lower()
     return bool(
         re.search(
-            r"broken|not working|doesn'?t work|isn'?t working|problem|issue|no water|no power|blackout|leak|locked out|"
-            r"cockroach|bed ?bug|dirty|stopped|imeharibika|haifanyi|tatizo|hakuna maji|hakuna stima",
+            r"broken|not working|doesn'?t work|isn'?t working|problem|issue|blackout|leak|locked out|"
+            r"\bno (hot )?water\b|\bno (power|electricity|lights?|wi-?fi|internet|network)\b|"
+            r"\b(wi-?fi|internet|network) (is )?down\b|\bpower (is )?(out|off|cut)\b|"
+            r"cockroach|bed ?bug|dirty|stopped|imeharibika|haifanyi|tatizo|"
+            r"hakuna (maji|stima|umeme|wi-?fi|mtandao|internet)",
             low,
         )
     )
