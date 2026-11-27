@@ -175,7 +175,7 @@ stateDiagram-v2
 
 | Channel | Entry point | Notes |
 |---|---|---|
-| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Guests: 6 Talk to Amina (call-back, complaint, my requests) and 8 More (local guide, service status, rewards, language); 9 stays EMERGENCY. Separate menus for staff (tasks) and the host (today, approvals, tonight's availability). The M-Pesa prompt is sent after the `END` reply (`comms/deferred.py`), so a slow payment API can't time out the session. |
+| USSD | `comms/ussd.py` | A cursor replays AT's `*`-joined text chain, so the session is stateless and resilient. Every screen ≤ 160 chars (tested). `0` back, `00` home, `98` more. Guests: 6 Talk to Amina (call-back, a typed question answered on screen from the homes, their calendars and the knowledge base or else relayed to Amina, complaint, my requests) and 8 More (local guide, service status, rewards, language); 9 stays EMERGENCY. Separate menus for staff (tasks) and the host (today, approvals, tonight's availability). The M-Pesa prompt is sent after the `END` reply (`comms/deferred.py`), so a slow payment API can't time out the session. |
 | SMS | `comms/smsbot.py` | Keywords in 5 languages, then the conversation state, then NLU (dates, nights, guests, area), then the FAQ knowledge base, then relay to Amina. HELP is checked first, always. Add-ons: `COMPLAIN …`, `CALL ME`, `TICKETS`, `T12`, a 1–5 rating; `EXPLORE` (then numbers), `EVENTS`, `FOOD`; `ALERTS`, `DATA`; `POINTS`, `REDEEM AIRTIME|DATA`, `REFER`, `REF <code>`. A problem report an active alert covers gets the alert. Host commands: `#12 text`, `YES 34`, `NO 34`, `OK`, `T12 text`, `CALL T12`, `RESOLVE T12`, `TICKETS`, `OUTAGE <service> <home\|ALL> …`, `RESTORED 4`, `ALERTS`. Staff: `DONE 7`, `OUTAGE …`, `RESTORED 4`. |
 | Voice | `comms/voice.py` | AT voice XML: `<Say>` (Kiswahili voice), `<GetDigits>`, `<Dial>` to Amina, `<Record>` voicemail. DB-backed sessions. Outbound SOS call to Amina ("press 1 to call the guest"). Press 5 records a complaint (the recording becomes a ticket), press 6 reads three local favourites and texts the list. Support call-backs ring Amina first (`clientRequestId` `bridge-<ticket>`) and `<Dial>` the guest when she answers; an escalation call (`ticket-<id>`) offers "press 1 to call them now". A missed bridged call becomes a call-back ticket; an unanswered SOS call escalates at once, and an unanswered welcome call becomes a welcome SMS. |
 | Web | `frontend/` | Next.js; the same services as every other channel |
@@ -222,7 +222,7 @@ stateDiagram-v2
 
 ## Testing
 
-`cd backend && uv run pytest` runs the suite (623 tests) on a real PostgreSQL test database. It covers:
+`cd backend && uv run pytest` runs the suite (629 tests) on a real PostgreSQL test database. It covers:
 - pricing;
 - the overlap constraint and a concurrent race;
 - hold expiry;

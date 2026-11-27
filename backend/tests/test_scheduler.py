@@ -11,6 +11,7 @@ from django.core.management import CommandError, call_command
 from django.db import connections
 from django.utils import timezone
 
+from apps.accounts.models import User
 from apps.accounts.services import set_identity
 from apps.bookings import services as bookings
 from apps.bookings.models import AccessCode, Booking, BookingGuest, Waitlist
@@ -26,6 +27,7 @@ from apps.payments import services as payments
 from apps.payments.models import Payment
 from apps.properties.models import CalendarBlock, ICalFeed
 from apps.reviews.models import Review
+from apps.rewards import services as rewards
 from apps.safety.models import Alert
 from apps.safety.services import escalate
 
@@ -549,6 +551,56 @@ def test_the_seeded_airbnb_calendar_auto_syncs_only_in_demo_mode(homes, settings
     with mock.patch("httpx.Client", FakeCalendar):
         run("ical_sync")
     assert FakeCalendar.calls == ([feed.url] if demo else [])
+
+
+SIM_PHONES = ["+254711000001", "+254711000002", "+254711000003", "+254711000004", "+254711000005"]
+
+
+@pytest.mark.django_db
+def test_simulator_guests_are_real_guests_each_at_another_point_of_a_stay(
+    homes, host, settings, django_capture_on_commit_callbacks
+):
+    settings.SIMULATOR_GUESTS = SIM_PHONES
+    out = io.StringIO()
+    call_command("simulator_guests", stdout=out)
+    assert out.getvalue().splitlines()[0] == "+254711000001 Asha Njeri: no booking"
+    users = [User.objects.get(phone=p) for p in SIM_PHONES]
+    assert [u.name for u in users] == ["Asha Njeri", "Kevin Mutua", "Grace Atieno", "Daniel Kiprono", "Halima Abdalla"]
+    assert all(u.tags == [] and u.has_id for u in users)
+    asha, kevin, grace, daniel, halima = users
+    assert not asha.bookings.exists()
+    [arriving] = kevin.bookings.all()
+    assert arriving.status == "confirmed" and arriving.check_in > days(0) and arriving.balance_due == 0
+    [staying] = grace.bookings.all()
+    assert staying.status == "checked_in" and staying.check_in <= days(0) < staying.check_out
+    [upcoming] = daniel.bookings.all()
+    assert (
+        upcoming.status == "confirmed"
+        and upcoming.payment_plan == "deposit"
+        and 0 < upcoming.amount_paid < upcoming.total
+    )
+    [stayed] = halima.bookings.all()
+    assert stayed.status == "completed" and stayed.check_out < days(0) and halima.lang == "sw"
+    assert rewards.balance(halima) >= rewards.program().redeem_points  # enough to redeem airtime
+
+    # nothing that fell due before they existed goes out at once...
+    before = last_id()
+    run("automations", "balance_ladder", "reviews", "rewards", "release_codes", at=kenya(days(0), "12:00"))
+    assert not Message.objects.filter(phone__in=SIM_PHONES, id__gt=before).exists()
+    # ...but what they're sent really goes out through Africa's Talking, unlike the seeded people's messages
+    accepted = {"recipients": [{"statusCode": 101, "messageId": "ATXid_1", "status": "Success"}]}
+    with (
+        mock.patch("apps.comms.at.send_sms", return_value=accepted) as at_sms,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        messaging.send(grace.phone, "Karibu!")
+    at_sms.assert_called_once_with(grace.phone, "Karibu!")
+    assert Message.objects.filter(phone=grace.phone).latest("id").status == "sent"
+
+    call_command("simulator_guests", stdout=io.StringIO())  # again: nothing new
+    assert Booking.objects.filter(guest__in=users).count() == 4
+    seed = SeedDemo()
+    assert seed.simulator_guests([HOST]) == [f"{HOST}: skipped - Amina's or a staff number, not a guest's"]
 
 
 # ---------- the daily jobs ----------

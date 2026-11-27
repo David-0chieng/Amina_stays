@@ -33,6 +33,7 @@ def _isolated(settings, monkeypatch):
     settings.DARAJA_ENV, settings.DARAJA_SHORTCODE = "sandbox", "174379"
     settings.DARAJA_CONSUMER_KEY = settings.DARAJA_CONSUMER_SECRET = settings.DARAJA_PASSKEY = ""
     settings.AMINA_PHONE = "+254700000001"
+    settings.SIMULATOR_GUESTS = []
     settings.FRONTEND_URL = settings.PUBLIC_URL = "http://localhost:3000"
     for var in ("DARAJA_CALLBACK_SECRET", "MPESA_SHORTCODE"):  # read from the environment directly
         monkeypatch.delenv(var, raising=False)

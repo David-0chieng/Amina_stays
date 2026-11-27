@@ -778,16 +778,8 @@ class GuestBot:
         return self.reply(text, kind="rewards_referral")
 
     def relay(self):
-        s = SiteSettings.load()
-        thread = messaging.get_thread(self.phone, self.g)
         b = self.booking()
-        context = f" [{b.ref} {b.unit.name}]" if b else ""
-        messaging.send(
-            s.host_contact,
-            f"#{thread.pk} {self.g.name or self.phone}{context}: {self.text[:300]} (reply #{thread.pk} <text>)",
-            kind="relay",
-            booking=b,
-        )
+        thread = relay_to_host(self.phone, self.g, self.text, b)
         messaging.mark(self.inbound, "relayed", "question")
         recently_acked = thread.messages.filter(
             direction="out", kind="relay_ack", created_at__gt=timezone.now() - timezone.timedelta(minutes=30)
@@ -804,6 +796,19 @@ class GuestBot:
 
     def _thread_id(self):
         return messaging.get_thread(self.phone, self.g).pk
+
+
+def relay_to_host(phone, guest, text, booking=None):
+    """Pass a guest's question to Amina's phone. She answers with '#<thread> <reply>' (HostCommands)."""
+    thread = messaging.get_thread(phone, guest)
+    context = f" [{booking.ref} {booking.unit.name}]" if booking else ""
+    messaging.send(
+        SiteSettings.load().host_contact,
+        f"#{thread.pk} {guest.name or phone}{context}: {text[:300]} (reply #{thread.pk} <text>)",
+        kind="relay",
+        booking=booking,
+    )
+    return thread
 
 
 # keyword → handler (checked in order; a handler returning None falls through)

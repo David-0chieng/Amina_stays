@@ -19,12 +19,13 @@ from apps.core.activity import record
 from apps.core.api import STAFF_ROLES
 from apps.core.models import SiteSettings
 from apps.core.utils import first_name, kes, same_phone, today, weekend_start
+from apps.guide.services import plain
 from apps.messaging import services as messaging
-from apps.properties.models import Area, PriceOverride, Unit
+from apps.properties.models import Amenity, Area, PriceOverride, Unit
 from apps.properties.services import available_units, from_price
 from apps.properties.services import quote as price_quote
 
-from . import deferred
+from . import deferred, nlu
 
 log = logging.getLogger("amina.ussd")
 LIMIT = 160
@@ -87,7 +88,17 @@ S = {
             "Other",
         ],
         "issue_ok": "Logged #{task}. {who} has been told and will sort it. Reply HELP by SMS if urgent.",
-        "talk_opts": ["Call me back", "I'll text a question", "Make a complaint", "My requests"],
+        "talk_opts": ["Call me back", "Ask a question", "Make a complaint", "My requests"],
+        "ask_q": "Ask anything, e.g. prices, free suites this weekend, breakfast, check-in time:",
+        "ask_more": " More by SMS.",
+        "ask_relayed": "Asante! Amina has your question and will reply by SMS shortly.",
+        "found_free": "Free {dates}:",
+        "found_free_with": "Free {dates} with {what}:",
+        "found_homes": "Per night from:",
+        "found_with": "With {what}, per night from:",
+        "found_none": "Nothing free {dates}. Try other dates, or redial and choose 1: we'll SMS you if one opens.",
+        "found_no_match": "None of our homes matches that. Redial and choose 2 for all homes and prices.",
+        "found_tail": "Redial & choose 1 to book. Links by SMS.",
         "complaint_q": "What's it about?",
         "complaint_opts": [
             "Noise/neighbours",
@@ -109,7 +120,6 @@ S = {
         "rewards_opts": ["KES {airtime} airtime", "{data}MB data", "Enter a friend's code", "How it works (SMS)"],
         "enter_code": "Enter your friend's code:",
         "callback": "Amina will call you back shortly.",
-        "text_us": "Text your question to {number} and Amina will reply.",
         "co_q": "Check out of {unit} now? Your door code will stop working.",
         "yes_no": ["Yes", "No"],
         "co_done": "Checked out. Asante, safe travels!",
@@ -179,7 +189,17 @@ S = {
             "Nyingine",
         ],
         "issue_ok": "Tumeandika #{task}. {who} ameambiwa. Tuma MSAADA kwa SMS kama ni dharura.",
-        "talk_opts": ["Nipigie", "Nitatuma swali", "Toa malalamiko", "Maombi yangu"],
+        "talk_opts": ["Nipigie", "Uliza swali", "Toa malalamiko", "Maombi yangu"],
+        "ask_q": "Uliza chochote, mf. bei, nyumba wazi wikendi hii, kifungua kinywa, wifi:",
+        "ask_more": " Zaidi kwa SMS.",
+        "ask_relayed": "Asante! Amina amepata swali lako na atakujibu kwa SMS hivi karibuni.",
+        "found_free": "Wazi {dates}:",
+        "found_free_with": "Wazi {dates} zenye {what}:",
+        "found_homes": "Kwa usiku kuanzia:",
+        "found_with": "Zenye {what}, kwa usiku kuanzia:",
+        "found_none": "Hakuna nafasi {dates}. Jaribu tarehe nyingine, au piga tena uchague 1: tutakutumia SMS.",
+        "found_no_match": "Hakuna nyumba inayolingana. Piga tena uchague 2 kuona nyumba zote na bei.",
+        "found_tail": "Piga tena uchague 1 kuweka nafasi. Viungo kwa SMS.",
         "complaint_q": "Ni kuhusu nini?",
         "complaint_opts": ["Kelele/majirani", "Usafi", "Wafanyakazi", "Malipo", "Nafasi yangu", "Kitu kingine"],
         "complaint_detail": "Tueleze kwa ufupi kilichotokea:",
@@ -194,7 +214,6 @@ S = {
         "rewards_opts": ["Salio KES {airtime}", "Data MB {data}", "Weka nambari ya rafiki", "Inavyofanya kazi (SMS)"],
         "enter_code": "Andika nambari ya rafiki yako:",
         "callback": "Amina atakupigia hivi karibuni.",
-        "text_us": "Tuma swali lako kwa {number} na Amina atakujibu.",
         "co_q": "Toka {unit} sasa? Nambari ya mlango itazimwa.",
         "yes_no": ["Ndiyo", "Hapana"],
         "co_done": "Umetoka. Asante, safari njema!",
@@ -211,6 +230,66 @@ S = {
 ISSUE_CATEGORIES = ["water", "power", "wifi", "ac", "cleanliness", "lock", "security", "other"]
 COMPLAINT_CATEGORIES = ["complaint", "complaint", "complaint", "billing", "booking", "other"]
 BF_STYLES = ["swahili", "continental", "english", "vegetarian"]
+
+# ---------- typed questions (6 Talk to Amina > 2 Ask a question) ----------
+HOME_NOUNS = {
+    "home",
+    "homes",
+    "house",
+    "houses",
+    "suite",
+    "suites",
+    "apartment",
+    "apartments",
+    "studio",
+    "studios",
+    "loft",
+    "lofts",
+    "cottage",
+    "cottages",
+    "room",
+    "rooms",
+    "nyumba",
+    "chumba",
+    "vyumba",
+    "malazi",
+}
+FREE_WORDS = re.compile(r"\b(free|available|availability|vacan\w*|tonight|nafasi|wazi)\b", re.IGNORECASE)
+PRICE_WORDS = re.compile(r"\b(prices?|costs?|rates?|how much|bei|ngapi)\b", re.IGNORECASE)
+# words that add nothing to "which homes?": "homes in Diani", "what do you have in Nyali?"
+FILLER = {"in", "at", "the", "a", "an", "any", "show", "me", "your", "you", "what", "which", "do", "have", "near"}
+FILLER |= {"around", "of", "for", "is", "are", "there", "and", "katika", "huko", "za", "ya", "zenu", "kwenye"}
+# words in home and amenity names too general to pick one out ("is the apartment safe?", "free parking")
+GENERIC_WORDS = HOME_NOUNS | {"family", "villa", "free", "secure", "full", "fast", "shared", "private", "standby"}
+GENERIC_WORDS |= {"dedicated", "available", "storage", "exterior", "hour", "access", "view", "self", "first"}
+GENERIC_WORDS |= {"high", "smart", "board", "games", "step", "entrance", "alarm", "safe", "backup", "ceiling"}
+GENERIC_WORDS |= {"machine", "breakfast", "water", "power", "inverter", "only", "gate"}
+
+
+def _words(text):
+    return re.findall(r"[a-z]+", (text or "").lower())
+
+
+def named_homes(words):
+    """Homes a question names by their own words ("Blue Reef", "Palm"), not by area or by type."""
+    area_words = {w for name in Area.objects.values_list("name", flat=True) for w in _words(name)}
+    homes = Unit.objects.filter(status="active").select_related("area").order_by("sort_order")
+    return [u for u in homes if ({w for w in _words(u.name) if len(w) > 3} - area_words - GENERIC_WORDS) & words]
+
+
+def asked_amenities(words):
+    """Amenities a question names ("pool", "kitchen", "ocean view", "kayaks") and the words it named them with."""
+    found, said = [], set()
+    for a in Amenity.objects.all():
+        for w in _words(a.name):
+            if len(w) < 4 or w in GENERIC_WORDS:
+                continue
+            hit = next((q for q in words if q == w or (min(len(q), len(w)) >= 5 and q[:5] == w[:5])), None)
+            if hit:
+                found.append(a)
+                said.add(hit)
+                break
+    return found, sorted(said)
 
 
 class Reply(Exception):
@@ -444,31 +523,29 @@ class Ussd:
             if not self.c.has_more():
                 raise Reply(f"{self.t['invalid']} {self.t['ddmm']}")
 
+    def unit_info(self, u):
+        """One home: a screen with its size, price and breakfast, and an SMS with its summary and page."""
+        from django.conf import settings
+
+        bf = Addon.objects.filter(code="breakfast", active=True).first()
+        screen = self.t["unit_info"].format(
+            name=u.name,
+            area=u.area.name,
+            beds=u.bedrooms,
+            guests=u.max_guests,
+            price=kes(from_price(u)),
+            bf=f" Breakfast {kes(bf.price)}." if bf and u.breakfast_available else "",
+        )
+        return screen, f"{u.name} ({u.area.name}): {u.summary} Photos & booking: {settings.FRONTEND_URL}/stays/{u.slug}"
+
     def prices(self):
         units = list(Unit.objects.filter(status="active").select_related("area"))
         idx = self.choose(
             self.t["pick"].format(dates="/night"), [f"{u.name[:18]} {kes(from_price(u))}" for u in units], per_page=4
         )
-        u = units[idx]
-        bf = Addon.objects.filter(code="breakfast", active=True).first()
-        bf_text = f" Breakfast {kes(bf.price)}." if bf and u.breakfast_available else ""
-        from django.conf import settings
-
-        messaging.send(
-            self.phone,
-            f"{u.name} ({u.area.name}): {u.summary} Photos & booking: {settings.FRONTEND_URL}/stays/{u.slug}",
-            kind="ussd_info",
-        )
-        self.end(
-            self.t["unit_info"].format(
-                name=u.name,
-                area=u.area.name,
-                beds=u.bedrooms,
-                guests=u.max_guests,
-                price=kes(from_price(u)),
-                bf=bf_text,
-            )
-        )
+        screen, sms = self.unit_info(units[idx])
+        messaging.send(self.phone, sms, kind="ussd_info")
+        self.end(screen)
 
     def my_booking(self):
         b = bookings.current_booking(self.phone)
@@ -555,8 +632,6 @@ class Ussd:
         self.end(self.t["issue_ok"].format(task=task.pk, who=who))
 
     def talk(self):
-        from django.conf import settings
-
         from apps.messaging.models import Thread
         from apps.support import services as support
 
@@ -583,10 +658,115 @@ class Ussd:
             )
             self.end(self.t["callback"])
         if choice == 1:
-            self.end(self.t["text_us"].format(number=settings.AT_SMS_NUMBER or "this number"))
+            self.ask()
         if choice == 2:
             self.complaint()
         self.my_requests()
+
+    def ask(self):
+        """A typed question, answered on the spot from the same data as the website and the SMS line: the homes it
+        names or asks about (free on the dates asked, with prices), else the knowledge base (with this guest's own
+        Wi-Fi and directions). Anything else goes to Amina's phone, and her '#<thread> reply' comes back by SMS."""
+        from .smsbot import relay_to_host
+
+        question = nlu.clean(self.text(self.t["ask_q"]))[:300]
+        b = bookings.current_booking(self.phone)
+        asked = messaging.record_inbound(self.phone, f"[USSD] {question}", channel="ussd", booking=b)
+        answer, kind, sms = self._answer(question, b)
+        if answer is None:
+            relay_to_host(self.phone, self.user, question, b)
+            messaging.mark(asked, "relayed", "question")
+            self.end(self.t["ask_relayed"])
+        messaging.mark(asked, "auto", kind)
+        screen = plain(answer)
+        if len(screen) > LIMIT - 4:
+            sms = sms or answer
+            screen = fit(screen, LIMIT - 4 - len(self.t["ask_more"])) + self.t["ask_more"]
+        messaging.send(self.phone, screen, kind=kind, sender="bot", booking=b, channel="ussd")  # Amina sees it
+        if sms:
+            messaging.send(self.phone, sms, kind=kind, sender="bot", booking=b)
+        self.end(screen)
+
+    def _answer(self, question, b):
+        """(screen text, kind, SMS or None) for a typed question, or no text when only Amina can answer it. A question
+        about homes ("free suites this weekend", "Diani", "Blue Reef price", "rooms with a pool") is answered from the
+        homes and their calendars; anything else from the knowledge base, then by the homes it names or asks about."""
+        words = _words(question)
+        area = nlu.parse_area(question, Area.objects.filter(units__status="active").distinct())
+        named = named_homes(set(words))
+        amenities, said = asked_amenities(words)
+        ci, co = nlu.parse_dates(question)
+        guests = nlu.parse_guests(question)
+        about_homes = bool(HOME_NOUNS.intersection(words))
+        dated = bool(FREE_WORDS.search(question) or ci or guests)
+        priced = bool(PRICE_WORDS.search(question))
+        place = area is not None or bool(named)
+        place_words = {w for x in [*([area] if area else []), *named] for w in _words(x.name)}
+        only_place = place and all(w in place_words or w in HOME_NOUNS or w in FILLER for w in words)
+
+        def homes():
+            return self._homes(area, named, amenities, said, ci, co, guests, question)
+
+        if (place and (dated or priced or only_place)) or (about_homes and (dated or priced or amenities)):
+            return homes()
+        if SiteSettings.load().auto_answer:
+            ctx = messaging.faq_context(self.phone, b)
+            hit = messaging.match_faq(question, self.lang, unit=b.unit if b else None, ctx=ctx)
+            if hit:
+                return hit[1], f"faq:{hit[0].category}", None
+        if place or about_homes or amenities or dated or nlu.looks_like_booking(question):
+            return homes()
+        return None, "", None
+
+    def _homes(self, area, named, amenities, said, ci, co, guests, question):
+        """The homes asked about (named, else in the area; with the amenity; sleeping that many). With dates (tonight
+        for 'free'), those a booking would accept then, with the stay's price - without a length, the shortest stay
+        that has one. Without dates, each one's price per night, or one home's details. The SMS has their pages."""
+        from django.conf import settings
+
+        units = named or list(Unit.objects.filter(status="active", **({"area": area} if area else {})))
+        if amenities:
+            having = set(Unit.objects.filter(amenities__in=amenities).values_list("pk", flat=True))
+            units = [u for u in units if u.pk in having]
+        units = [u for u in units if u.max_guests >= (guests or 1)]
+        what = "/".join(said)
+        if ci is None and FREE_WORDS.search(question):
+            ci = today()
+        if ci:
+            # parse_dates makes it one night unless told: then try the shortest stay that a free home takes
+            given = co and co > ci and (nlu.parse_nights(question) or (co - ci).days > 1)
+            lengths = [(co - ci).days] if given else [1, 2, 3]
+            dates = f"{ci:%d/%m}-{ci + timedelta(days=lengths[0]):%d/%m}"
+            for nights in lengths:
+                end = ci + timedelta(days=nights)
+                free = set(available_units(ci, end, guests=guests).values_list("pk", flat=True))
+                found = [u for u in units if u.pk in free and u.min_nights <= nights <= u.max_nights]
+                if found:
+                    break
+            if not found:
+                return self.t["found_none"].format(dates=dates), "ussd_search", None
+            dates = f"{ci:%d/%m}-{end:%d/%m}"
+            priced = [(u, price_quote(u, ci, end, guests=guests or 1)["total"]) for u in found]
+            head = self.t["found_free_with" if what else "found_free"].format(dates=dates, what=what)
+        else:
+            if not units:
+                return self.t["found_no_match"], "ussd_search", None
+            if len(units) == 1:
+                screen, sms = self.unit_info(units[0])
+                return screen, "ussd_search", sms
+            priced = [(u, from_price(u)) for u in units]
+            head = self.t["found_with" if what else "found_homes"].format(what=what)
+        tail = "\n" + self.t["found_tail"]
+        screen = head
+        for u, price in priced:
+            line = plain(f"\n{u.name[:20]} {kes(price)}")
+            if len(screen) + len(line) + len(tail) > LIMIT - 4:
+                break
+            screen += line
+        sms = "; ".join(
+            f"{u.name} ({u.area.name}) {kes(p)}: {settings.FRONTEND_URL}/stays/{u.slug}" for u, p in priced[:4]
+        )
+        return screen + tail, "ussd_search", sms
 
     def complaint(self):
         from apps.support import services as support

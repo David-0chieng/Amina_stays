@@ -980,3 +980,13 @@ STAFF = [
     ("Mama Zawadi", "+254700000013", "cook", "sw"),
     ("Hassan Omar", "+254700000014", "security", "sw"),
 ]
+
+# The phones a presenter holds in Africa's Talking's simulator (SIMULATOR_GUESTS), in that order: each guest is at
+# another point of a stay, so every guest menu has something to show
+SIM_GUESTS = [
+    ("Asha Njeri", "en", "new"),  # planning a trip: prices, free homes, questions, books live
+    ("Kevin Mutua", "en", "arriving"),  # arrives in a day or two: check-in details, breakfast choice
+    ("Grace Atieno", "en", "staying"),  # in-house now: Wi-Fi, report a problem, late checkout, check out
+    ("Daniel Kiprono", "en", "upcoming"),  # next week, deposit paid: pay the balance, talk to Amina
+    ("Halima Abdalla", "sw", "returning"),  # stayed last month, Kiswahili: rewards (airtime), book again
+]

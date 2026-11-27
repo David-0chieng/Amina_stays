@@ -16,15 +16,24 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.bookings import locks
-from apps.bookings.models import AccessCode, Addon, Booking, BookingAddon, BookingEvent, BookingGuest, Waitlist
+from apps.bookings.models import (
+    ACTIVE_STATUSES,
+    AccessCode,
+    Addon,
+    Booking,
+    BookingAddon,
+    BookingEvent,
+    BookingGuest,
+    Waitlist,
+)
 from apps.core import seed_data as D
 from apps.core.models import Activity, SiteSettings
-from apps.core.utils import at_local, today
+from apps.core.utils import at_local, normalize_phone, same_phone, today
 from apps.messaging.automations import ensure_defaults
 from apps.messaging.models import FAQ, Message, Thread
 from apps.operations.models import Task
 from apps.payments.models import Payment, Refund
-from apps.properties.models import Amenity, Area, ICalFeed, PriceRule, Unit, UnitPhoto
+from apps.properties.models import Amenity, Area, CalendarBlock, ICalFeed, PriceRule, Unit, UnitPhoto
 from apps.properties.services import quote, sync_feed
 from apps.reviews.models import Review
 from apps.safety.models import Alert
@@ -69,11 +78,14 @@ class Command(BaseCommand):
             self.current()
             self.extras()
             self.addons()
+            simulator = self.simulator_guests()
         n = {m.__name__: m.objects.count() for m in (Unit, Booking, Review, Message, Task)}
         self.stdout.write(self.style.SUCCESS(f"Seeded: {n}"))
         self.stdout.write(
             f"Host console login: {settings.AMINA_PHONE} (OTP code is printed in the server log / shown in DEMO mode)"
         )
+        for line in simulator:
+            self.stdout.write(f"Simulator guest {line}")
 
     def addons(self):
         """The local guide, support desk, service alerts and rewards (rewards first: they mark past stays as
@@ -836,3 +848,94 @@ class Command(BaseCommand):
             active=settings.DEMO,
         )
         sync_feed(feed, text=sample_ics(unit.slug))
+
+    # ---------- the presenter's phones in Africa's Talking's simulator ----------
+    SIM_STAGES = {
+        # stage: status, (from, to) days from today to try, guests, payment plan, channel, homes tried first
+        "arriving": ("confirmed", [(2, 4), (1, 3), (3, 5)], 2, "full", "ussd", ["Diani Palm Suite", "Old Town Loft"]),
+        "staying": ("checked_in", [(-1, 1), (0, 1), (-1, 2)], 2, "full", "sms", ["Mtwapa Creek Cottage"]),
+        "upcoming": ("confirmed", [(5, 8), (6, 9), (7, 10), (4, 7)], 4, "deposit", "voice", ["Bamburi Family House"]),
+        "returning": ("completed", [(-40, -37), (-45, -42), (-33, -30)], 2, "full", "ussd", ["Nyali Breeze Studio"]),
+    }
+
+    def simulator_guests(self, phones=None):
+        """Make the phones used in Africa's Talking's simulator (SIMULATOR_GUESTS) real guests, each at another point
+        of a stay (D.SIM_GUESTS): unlike the 'seed' people, their SMS really go out. A number that already has
+        bookings keeps them. Returns a line per number."""
+        host = SiteSettings.load().host_contact
+        phones = list(settings.SIMULATOR_GUESTS if phones is None else phones)
+        lines = [f"{p}: not used - only the first {len(D.SIM_GUESTS)} numbers are" for p in phones[len(D.SIM_GUESTS) :]]
+        for raw, (name, lang, stage) in zip(phones, D.SIM_GUESTS, strict=False):
+            phone = normalize_phone(raw)
+            if not phone or same_phone(phone, host) or User.objects.filter(phone=phone).exclude(role="guest").exists():
+                lines.append(f"{raw}: skipped - Amina's or a staff number, not a guest's")
+                continue
+            user, _ = User.objects.get_or_create(phone=phone, defaults={"first_channel": "ussd", "nationality": "KE"})
+            if not user.name:
+                user.name, user.lang = name, lang
+            user.tags = [t for t in user.tags or [] if t != "seed"]
+            if not user.has_id:  # on the guest register, so a door code can be released on arrival day
+                user.set_id_number(str(self.rng.randint(20_000_000, 39_999_999)))
+                user.id_type = "national_id"
+                user.id_submitted_at = user.consent_at = timezone.now() - timedelta(days=30)
+            user.save()
+            b = user.bookings.order_by("-check_in").first()
+            if b is None and stage != "new":
+                b = self._sim_stay(user, *self.SIM_STAGES[stage])
+            stay = f"{b.ref} {b.unit.name} {b.check_in:%d/%m}-{b.check_out:%d/%m} ({b.status})" if b else "no booking"
+            lines.append(f"{phone} {user.name}: {stay}")
+        return lines
+
+    def _sim_stay(self, user, status, ranges, adults, plan, channel, prefer):
+        """The first free home (those named first) for the first date range that has one."""
+        from apps.messaging.automations import skip_overdue
+        from apps.rewards import services as rewards
+        from apps.rewards.models import PointsEntry
+
+        units = sorted(
+            Unit.objects.filter(status="active", max_guests__gte=adults),
+            key=lambda u: (prefer.index(u.name) if u.name in prefer else len(prefer), u.sort_order),
+        )
+        for start, end in ranges:
+            ci, co = self.t + timedelta(days=start), self.t + timedelta(days=end)
+            for unit in units:
+                if (
+                    Booking.objects.filter(unit=unit, check_in__lt=co, check_out__gt=ci)
+                    .filter(status__in=(*ACTIVE_STATUSES, "completed"))
+                    .exists()
+                    or CalendarBlock.objects.filter(unit=unit, start_date__lt=co, end_date__gt=ci).exists()
+                ):
+                    continue
+                created = min(timezone.now() - timedelta(days=5), at_local(ci, "10:00") - timedelta(days=14))
+                b = self._booking(
+                    unit, user, ci, co, status=status, channel=channel, created=created, adults=adults, plan=plan
+                )
+                if status == "checked_in":
+                    self._release(b, ci)
+                elif status == "confirmed":
+                    locks.create_code(b)
+                else:
+                    leave = at_local(co, "10:30")
+                    Booking.objects.filter(pk=b.pk).update(
+                        code_released_at=at_local(ci, "08:00"),
+                        checked_in_at=at_local(ci, "14:30"),
+                        checked_out_at=leave,
+                    )
+                    self._event(b, "checked_out", "Checked out via USSD - code deactivated", leave)
+                    b.refresh_from_db()
+                    points = rewards.award(
+                        user,
+                        rewards.stay_points(b),
+                        "stay",
+                        booking=b,
+                        note=f"{b.ref} {unit.name}",
+                        key=f"rewards:stay:{b.ref}",
+                    )
+                    if points is not None:
+                        PointsEntry.objects.filter(pk=points.pk).update(created_at=leave)
+                    short = rewards.program().redeem_points - rewards.balance(user)
+                    if short > 0:  # enough to redeem airtime on the day
+                        rewards.award(user, short, "bonus", note="Welcome back", key=f"rewards:welcome:{b.ref}")
+                skip_overdue(b)
+                return b
+        return None

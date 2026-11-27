@@ -14,7 +14,7 @@ from apps.messaging.models import Conversation, Message, Thread
 from apps.operations.models import Task
 from apps.operations.services import kitchen_sheet
 from apps.payments.models import Payment
-from apps.properties.models import PriceOverride, Unit
+from apps.properties.models import Amenity, PriceOverride, Unit
 from apps.properties.services import from_price
 from apps.properties.services import quote as price_quote
 from apps.safety.models import Alert
@@ -32,6 +32,7 @@ from .flowkit import (
     make_user,
     options,
     pay,
+    sms,
     stay,
     ussd,
     with_id,
@@ -427,10 +428,8 @@ def test_report_a_problem_opens_a_task_for_the_caretaker_and_tells_everyone(home
 
 
 @pytest.mark.django_db
-def test_talk_to_amina_call_back_request_and_text_option(homes, in_house, settings):
-    assert ussd("6") == (
-        "CON Talk to Amina\n1. Call me back\n2. I'll text a question\n3. Make a complaint\n4. My requests"
-    )
+def test_talk_to_amina_call_back_request(homes, in_house):
+    assert ussd("6") == ("CON Talk to Amina\n1. Call me back\n2. Ask a question\n3. Make a complaint\n4. My requests")
     before = last_id()
     assert ussd("6*1") == "END Amina will call you back shortly."
     thread = Thread.objects.get(phone=KE_GUEST)
@@ -444,8 +443,95 @@ def test_talk_to_amina_call_back_request_and_text_option(homes, in_house, settin
         f"Reply CALL {ticket.ref} to be connected."
     ]
     assert bodies(KE_GUEST, before, kind="ticket_callback")  # the guest gets the reference by SMS
-    settings.AT_SMS_NUMBER = "22384"
-    assert ussd("6*2") == "END Text your question to 22384 and Amina will reply."
+
+
+@pytest.mark.django_db
+def test_a_typed_question_is_answered_on_screen_and_logged_for_amina(homes, in_house):
+    assert ussd("6*2") == "CON Ask anything, e.g. prices, free suites this weekend, breakfast, check-in time:"
+    before = last_id()
+    # this guest's own Wi-Fi, from the knowledge base
+    assert ussd("6*2*wifi password") == "END Wi-Fi at Blue Reef Apartment: BlueReef / reef-sunrise-2026"
+    thread = Thread.objects.get(phone=KE_GUEST)
+    asked = Message.objects.get(thread=thread, direction="in", channel="ussd")
+    assert asked.body == "[USSD] wifi password" and asked.handled == "auto" and asked.kind == "faq:wifi"
+    assert bodies(KE_GUEST, before, channel="ussd") == ["Wi-Fi at Blue Reef Apartment: BlueReef / reef-sunrise-2026"]
+    assert bodies(KE_GUEST, before, channel="sms") == [] and bodies(HOST, before) == []
+    assert not Thread.objects.get(pk=thread.pk).needs_reply
+    # an answer longer than a screen: the start on screen, all of it by SMS
+    out = ussd("6*2*Is breakfast available?")
+    assert out.startswith("END Yes! Breakfast is KES 650 per person per day") and out.endswith("... More by SMS.")
+    [full] = bodies(KE_GUEST, before, channel="sms")
+    assert full.startswith("Yes! Breakfast is KES 650") and full.endswith(
+        "Booked guests can reply BREAKFAST to choose."
+    )
+
+
+@pytest.mark.django_db
+def test_a_typed_question_about_homes_shows_what_a_booking_would_get_and_its_price(homes, wanjiru):
+    nyali, blue, loft, diani = (
+        homes[n] for n in ("Nyali Breeze Studio", "Blue Reef Apartment", "Old Town Loft", "Diani Palm Suite")
+    )
+    stay(nyali, wanjiru, days(1), days(3))
+
+    def dates(nights):
+        return f"{days(1):%d/%m}-{days(1 + nights):%d/%m}"
+
+    def cost(u, nights):
+        return kes(price_quote(u, days(1), days(1 + nights), guests=2)["total"])
+
+    tail = "\nRedial & choose 1 to book. Links by SMS."
+    before = last_id()
+    # tomorrow, no length given: one night, so only the homes that take one (Blue Reef and most others need two)
+    assert ussd("6*2*room for 2 tomorrow", phone=NEW) == f"END Free {dates(1)}:\nOld Town Loft {cost(loft, 1)}{tail}"
+    assert bodies(NEW, before, channel="sms") == [
+        f"Old Town Loft (Old Town) {cost(loft, 1)}: http://localhost:3000/stays/{loft.slug}"
+    ]
+    # an area: Nyali Breeze is taken and Blue Reef needs two nights, so the shortest stay it takes is shown
+    assert (
+        ussd("6*2*Nyali tomorrow for 2", phone=NEW)
+        == f"END Free {dates(2)}:\nBlue Reef Apartment {cost(blue, 2)}{tail}"
+    )
+    stay(blue, wanjiru, days(1), days(4))
+    assert ussd("6*2*Nyali tomorrow for 2", phone=NEW) == (
+        f"END Nothing free {dates(1)}. Try other dates, or redial and choose 1: we'll SMS you if one opens."
+    )
+    # one home by name: its details on screen, its page by SMS
+    before = last_id()
+    out = ussd("6*2*Blue Reef", phone=NEW)
+    assert out.startswith(f"END Blue Reef Apartment, Nyali: 2 bed, sleeps 4. From {kes(from_price(blue))}/night.")
+    assert out.endswith(" Details sent by SMS.")
+    assert bodies(NEW, before, channel="sms") == [
+        f"Blue Reef Apartment (Nyali): {blue.summary} Photos & booking: http://localhost:3000/stays/{blue.slug}"
+    ]
+    # an amenity: the homes that have it
+    pool = Amenity.objects.create(code="pool", name="Shared pool", icon="waves", category="outdoor")
+    blue.amenities.add(pool)
+    diani.amenities.add(pool)
+    assert ussd("6*2*is there a pool?", phone=NEW) == (
+        f"END With pool, per night from:\nBlue Reef Apartment {kes(from_price(blue))}\n"
+        f"Diani Palm Suite {kes(from_price(diani))}{tail}"
+    )
+    # a place with something the knowledge base answers is a question for it, not a list of homes
+    assert ussd("6*2*Nyali parking", phone=NEW) == (
+        "END Yes - free secure parking at every home except the Old Town Loft (street parking; tuk-tuks recommended)."
+    )
+
+
+@pytest.mark.django_db
+def test_a_question_only_amina_can_answer_goes_to_her_phone_and_her_reply_comes_back(homes, host, in_house):
+    before = last_id()
+    assert ussd("6*2*Can my cousin visit us one evening?") == (
+        "END Asante! Amina has your question and will reply by SMS shortly."
+    )
+    thread = Thread.objects.get(phone=KE_GUEST)
+    assert thread.needs_reply and Message.objects.get(thread=thread, direction="in").handled == "relayed"
+    assert bodies(HOST, before) == [
+        f"#{thread.pk} Wanjiru Kamau [{in_house.ref} Blue Reef Apartment]: Can my cousin visit us one evening? "
+        f"(reply #{thread.pk} <text>)"
+    ]
+    sms(f"#{thread.pk} Of course, karibu!", phone=HOST)
+    assert bodies(KE_GUEST, before) == ["Amina: Of course, karibu!"]
+    assert not Thread.objects.get(pk=thread.pk).needs_reply
 
 
 # ---------- 7. Check out ----------

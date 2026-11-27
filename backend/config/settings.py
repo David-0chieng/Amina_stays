@@ -273,6 +273,8 @@ LOCK_PROVIDER_API_BASE = env("IGLOOHOME_API_BASE", "")
 IGLOOHOME_API_KEY = env("IGLOOHOME_API_KEY", "")
 
 AMINA_PHONE = env("AMINA_PHONE", "+254700000001")
+# Guest phones used in Africa's Talking's simulator: seed_demo makes them real guests (their SMS really go out)
+SIMULATOR_GUESTS = env_list("SIMULATOR_GUESTS")
 BACKEND_URL = (env("BACKEND_URL", "http://127.0.0.1:8000")).rstrip("/")
 DEMO = env_bool("DEMO", False)
 OUTBOX_MODE = env("OUTBOX_MODE", "sync" if TESTING else "thread")  # thread | sync | queue

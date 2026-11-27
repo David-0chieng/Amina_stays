@@ -128,9 +128,7 @@ def test_a_bare_complain_asks_for_details_and_a_low_rating_alerts_amina(homes, h
 @pytest.mark.django_db
 def test_guests_track_their_requests_by_sms_and_ussd(homes, host, in_house):
     assert sms("TICKETS")[0].startswith("You have no open requests.")
-    assert (
-        ussd("6") == "CON Talk to Amina\n1. Call me back\n2. I'll text a question\n3. Make a complaint\n4. My requests"
-    )
+    assert ussd("6") == "CON Talk to Amina\n1. Call me back\n2. Ask a question\n3. Make a complaint\n4. My requests"
     assert ussd("6*3") == (
         "CON What's it about?\n1. Noise/neighbours\n2. Cleanliness\n3. Staff/service\n4. Billing/payment\n"
         "5. My booking\n6. Something else"

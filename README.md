@@ -11,7 +11,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 | | |
 |---|---|
 | 🌍 **Web** | Search with an all-in price, listing pages, checkout by card through Stripe (or M-Pesa with a Paybill fallback, once Safaricom's Go-Live is done), in full or with a 30% deposit, and a living trip page with directions, Wi-Fi, door code, breakfast, extras, help, date changes and extensions, and a tax invoice |
-| 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina (a call-back, a complaint, my requests), check out, emergency, and More: the local guide, service status, rewards and language |
+| 📟 **USSD** | Full booking with no data and no smartphone. Also: prices, my booking, breakfast, report a problem, talk to Amina (a call-back, **a typed question answered on the spot**, a complaint, my requests), check out, emergency, and More: the local guide, service status, rewards and language |
 | 💬 **SMS — "Ask Amina"** | Natural-language booking in English, Kiswahili, Italian, German and French; instant answers from each home's knowledge base; complaints with a reference (`COMPLAIN`, `TICKETS`), the local guide (`EXPLORE`), service status (`ALERTS`), rewards (`POINTS`); HELP for emergencies |
 | 📞 **Voice — "Call Amina"** | English/Kiswahili IVR: availability and booking, prices, directions, bridge to Amina, voicemail, a complaint by voice message, things to do nearby, emergencies; call-backs that ring Amina and connect her to the guest |
 | 🛎️ **Host console** | Today view, multi-home calendar and pricing, reservations, a unified inbox, tasks and kitchen, listings editor, guest CRM, messaging automations, reviews, insights with the TRA return, payments, safety and channels, plus the support desk, service alerts, local guide and rewards & airtime |
@@ -28,7 +28,7 @@ Our answer is one source of truth for every home: prices, suites, breakfast, che
 |---|---|
 | **Usefulness** | Amina's daily pain (prices, suites, breakfast, check-in) is answered on every channel from one knowledge base. Her console's Today view and morning SMS digest show what needs doing; staff work from SMS. |
 | **Solves the problem** | Prices: all-in quotes on web/USSD/SMS/voice. Suites: listing pages and SMS/USSD price lists. Breakfast: structured preferences that reach the cook's sheet. Check-in: staged directions, Wi-Fi and a door code on arrival morning. See the [problem → solution matrix](docs/RESEARCH.md#industry-problems-and-how-amina-stays-answers-them). |
-| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 623 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
+| **Implementation** | Django + PostgreSQL with a database-enforced no-double-booking guarantee, idempotent payments, an outbox for messages, a single-instance scheduler and Stripe card payments confirmed three ways (webhook, return page, scheduler); Next.js 16 front end; 629 backend tests, including end-to-end flow suites for every channel. See [Architecture](docs/ARCHITECTURE.md). |
 | **Africa's Talking** | SMS (two-way, delivery reports, opt-out, service alerts), USSD, Voice (IVR, call-back bridging, voice complaints, escalation and safety calls), Airtime (rewards, referrals, gifts), Mobile Data (outage and reward bundles), SIM Swap; WhatsApp and AT checkout optional. Every challenge area is covered: see [the add-ons](#africas-talking-challenge-add-ons). |
 | **Demo** | `/demo` runs every channel live in the browser, with no handset or API key needed. |
 
@@ -41,7 +41,7 @@ Amina Stays also answers the six challenge areas of Africa's Talking's hospitali
 | Challenge | What Amina Stays does | AT APIs | Try it |
 |---|---|---|---|
 | **Customer service & support** | A **support desk**. Every complaint, question or call-back request gets a reference (T12) and a reply-by time, whether it came by SMS (`COMPLAIN …`, `CALL ME`), USSD (Talk to Amina → Make a complaint), a voice message (press 5) or the website. Amina answers in the console or by SMS (`T12 …`), or taps **Call**: Africa's Talking rings her phone and connects her to the guest. An unanswered request escalates: an SMS to Amina and her backup, then a phone call. Guests rate the outcome 1–5 by SMS. | Voice, SMS | Demo Lab: as Wanjiku, text `COMPLAIN the music next door is too loud`, then answer from Amina's phone with the reference she got (`T7 Pole sana!` on fresh demo data); Host › Support desk |
-| **USSD services** | Everything works with no data: booking, my booking, breakfast, report a problem, talk to Amina, check out, emergency and **More**: the local guide, service status, rewards and language. Every screen fits in 160 characters. | USSD | Demo Lab USSD phone: 8 → 1 (Explore), 8 → 2 (Service status), 8 → 3 (Rewards) |
+| **USSD services** | Everything works with no data: booking, my booking, breakfast, report a problem, talk to Amina, check out, emergency and **More**: the local guide, service status, rewards and language. Under Talk to Amina, **Ask a question** takes a typed question ("free suites this weekend", "Diani", "is there a pool?", "breakfast", "wifi password") and answers it on screen from the same homes, calendars and knowledge base as the website, with links by SMS; anything else goes to Amina's phone. Every screen fits in 160 characters. | USSD | Demo Lab USSD phone: 6 → 2 (Ask a question), 8 → 1 (Explore), 8 → 2 (Service status), 8 → 3 (Rewards) |
 | **Service & network notifications** | **Service alerts**. Amina, or a caretaker by SMS (`OUTAGE POWER ALL generator on`), posts an outage or planned maintenance. The guests staying at those homes, and anyone arriving while it lasts, get an SMS: a day ahead for planned work, again if the expected time changes, and when it's fixed. A guest who reports a problem an alert already covers gets the alert instead of a new work order. `ALERTS` by SMS or USSD shows the status. | SMS | Demo Lab time machine: *Wi-Fi outage at this home*, then *Fix it*; Host › Service alerts |
 | **Airtime & customer incentives** | **Amina Rewards**: points for every stay and for feedback, swapped for airtime (`REDEEM AIRTIME`); invite codes (`REF <code>`) that pay airtime to both guests after the friend's first stay; airtime gifts from the console. Every top-up goes through one ledger with an idempotency key, a monthly budget (over it, rewards wait for Amina's approval) and Africa's Talking's delivery callbacks; a failed top-up gives the points back. | Airtime | Demo Lab: text `POINTS`, then `REDEEM AIRTIME`; the guest's account page; Host › Rewards & airtime |
 | **Mobile connectivity** | When the Wi-Fi or power fails, every guest staying gets a mobile-data bundle automatically (a guest who arrives later can text `DATA`). Points also swap for data (`REDEEM DATA`), and arriving guests can get a welcome bundle. | Mobile Data | The time-machine outage: the guest's alert SMS mentions the bundle; Host › Rewards › payouts |
@@ -263,7 +263,31 @@ Demo personas (seeded): Giulia 🇮🇹 and Wanjiku 🇰🇪 are staying now, Ha
 | Mobile Data status | `https://<tunnel>/at/<secret>/data/status` |
 | SIM Swap (Insights) | `https://<tunnel>/at/<secret>/insights/simswap` |
 
-4. Test with the [AT simulator](https://simulator.africastalking.com): dial your USSD code or text your shortcode. The host console's **Channels** page shows which products are configured, plus the AT balance.
+4. Test with the [AT simulator](https://developers.africastalking.com/simulator): dial your USSD code or text your shortcode. The host console's **Channels** page shows which products are configured, plus the AT balance.
+
+### Five guests in the simulator
+
+Amina and her guests share one database. The host's number (`AMINA_PHONE`) gets Amina's USSD menu (today, free tonight, requests, message guests) and her SMS commands; every other number is a guest. To show several guests at once, list their numbers in `.env` (any +254 numbers) and add them to the data:
+
+```bash
+# .env
+SIMULATOR_GUESTS=+254711000001,+254711000002,+254711000003,+254711000004,+254711000005
+
+cd backend
+uv run python manage.py simulator_guests   # or reseed: seed_demo --reset adds them too
+```
+
+Each becomes a real guest at a different point of a stay, so every menu has something to show. Unlike the seeded personas, their SMS really go out through Africa's Talking:
+
+| # | Guest | Stage | On USSD (dial the code) | By SMS (to the shortcode) |
+|---|---|---|---|---|
+| 1 | Asha Njeri | Planning a trip, no booking | 2 (prices & homes) · 6 → 2 and type `free suites this weekend` · 1 (book, then pay with the card link) | `Bei?` · `breakfast` |
+| 2 | Kevin Mutua | Arrives in two days, paid | 3 → 1 (check-in info) · 4 (breakfast) | `ETA 3pm` · `directions` |
+| 3 | Grace Atieno | Staying now | 6 → 2 and type `wifi password` · 5 (report a problem) · 3 → 3 (late checkout) | `no hot water` · `LATE` |
+| 4 | Daniel Kiprono | Next week, 30% deposit paid | 3 → 2 (pay the balance by card link) · 6 → 1 (call me back) | `STATUS` · `COMPLAIN …` |
+| 5 | Halima Abdalla | Stayed last month, Kiswahili | 8 → 3 (rewards: airtime or data) | `POINTS` · `REDEEM AIRTIME` |
+
+Open the [simulator](https://developers.africastalking.com/simulator) in a new tab (or a private window) for each number, plus one as `AMINA_PHONE`. Amina's phone gets each new booking, problem, complaint and question. She answers by SMS (`#12 <reply>`, `T7 …`, `YES 34`, `STATUS`), or from the host console, where every guest's USSD, SMS and web messages share one inbox.
 
 ### Payments
 
@@ -347,7 +371,7 @@ They use the database from the quick start; pytest creates and drops its own tes
 
 ```bash
 cd backend
-uv run pytest            # 623 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
+uv run pytest            # 629 tests, incl. end-to-end flow suites (tests/test_flows_*.py)
 uv run ruff check .
 cd ../frontend
 npx tsc --noEmit

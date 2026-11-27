@@ -219,6 +219,19 @@ def run_automations():
     return sent
 
 
+def skip_overdue(booking):
+    """Count every timeline message already due for this booking as sent, without sending it: a stay entered after
+    the fact (demo guests) shouldn't get days of messages at once. Later ones still go out on time."""
+    s, now, t = SiteSettings.load(), timezone.now(), today()
+    for auto in Automation.objects.filter(enabled=True):
+        if _due_at(auto, booking, s)[0] <= now:
+            OnceMarker.mark(f"auto:{auto.key}:{booking.ref}")
+    if (booking.check_in - t).days <= HEADS_UP_DAYS:  # the balance ladder's reminders
+        OnceMarker.mark(f"balance-soon:{booking.ref}")
+    if t > booking.check_in - timedelta(days=s.balance_due_days):
+        OnceMarker.mark(f"balance-overdue:{booking.ref}")
+
+
 def preview(auto, booking):
     from apps.bookings.services import guest_context
     from apps.messaging import services as messaging
